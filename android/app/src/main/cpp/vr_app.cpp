@@ -432,7 +432,7 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         const Pose &g = in.grip[h];
         if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
-            AddBox(&props, g.position, {0.045f, 0.05f, 0.06f}, YawOf(g.orientation), Rgba(20, 20, 26));
+            AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
             if (h == weapon || dual) {
                 // Shaft, guard and teeth of a Kingdom Key, along the axis swings are measured on.
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
@@ -446,7 +446,10 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                                {0.05f, 0.016f, 0.03f}, q, Rgba(205, 205, 220));
             }
         } else if (mode != ViewMode::FirstPerson) {
-            AddBox(&props, g.position, {0.03f, 0.03f, 0.05f}, YawOf(g.orientation), Rgba(60, 60, 70));
+            // The controller with its full rotation, and a gold tip showing where it points.
+            AddOrientedBox(&props, g.position, {0.03f, 0.03f, 0.05f}, g.orientation, Rgba(60, 60, 70));
+            AddOrientedBox(&props, g.position + g.orientation.Rotate({0, 0, -0.06f}), {0.012f, 0.012f, 0.012f},
+                           g.orientation, Rgba(214, 178, 82));
         }
     }
     renderer_.DrawTriangles(props, vpTracking);
