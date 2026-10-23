@@ -445,12 +445,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                 AddOrientedBox(&props, g.position + axis * (len - 0.04f) + q.Rotate({0.05f, 0, 0}),
                                {0.05f, 0.016f, 0.03f}, q, Rgba(205, 205, 220));
             }
-        } else if (mode != ViewMode::FirstPerson) {
-            // The controller with its full rotation, and a gold tip showing where it points.
-            AddOrientedBox(&props, g.position, {0.03f, 0.03f, 0.05f}, g.orientation, Rgba(60, 60, 70));
-            AddOrientedBox(&props, g.position + g.orientation.Rotate({0, 0, -0.06f}), {0.012f, 0.012f, 0.012f},
-                           g.orientation, Rgba(214, 178, 82));
         }
+        // Outside first person the hands are not drawn: the wrist screen and the laser are enough.
     }
     renderer_.DrawTriangles(props, vpTracking);
 }
