@@ -1,0 +1,4 @@
+[submodule "decomp"]
+	path = decomp
+	url = https://github.com/Yokimitsuro/khdays-decomp
+	shallow = true

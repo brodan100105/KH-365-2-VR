@@ -1,0 +1,427 @@
+#include "vr_app.h"
+
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+
+#include "khvr/canvas.h"
+#include "log.h"
+
+namespace khvr {
+
+namespace {
+
+constexpr float kStickDeadzone = 0.2f;
+constexpr float kNear = 0.05f, kFar = 500.0f;
+constexpr float kIpd = 0.064f;
+constexpr int kGiantViewW = 1024, kGiantViewH = 768;  // 4:3 like the DS top screen
+
+float Deadzone(float v) { return std::fabs(v) < kStickDeadzone ? 0.0f : v; }
+
+Mat4 EyeProjection(const XrFovf &f) {
+    return Mat4::Projection(std::tan(f.angleLeft), std::tan(f.angleRight), std::tan(f.angleUp),
+                            std::tan(f.angleDown), kNear, kFar);
+}
+
+Mat4 ViewFromPose(const Pose &p) { return Mat4::FromPose(p.Inverse()); }
+
+// A view matrix for a game-world camera, built the way MTX_LookAt does.
+Mat4 LookAt(const Vec3 &eye, const Vec3 &target, const Vec3 &upHint) {
+    Vec3 f = Normalize(target - eye);
+    Vec3 r = Normalize(Cross(f, upHint));
+    if (Length(r) < 1e-4f) r = {1, 0, 0};
+    Vec3 u = Cross(r, f);
+    Mat4 m = Mat4::Identity();
+    m.at(0, 0) = r.x; m.at(0, 1) = r.y; m.at(0, 2) = r.z; m.at(0, 3) = -Dot(r, eye);
+    m.at(1, 0) = u.x; m.at(1, 1) = u.y; m.at(1, 2) = u.z; m.at(1, 3) = -Dot(u, eye);
+    m.at(2, 0) = -f.x; m.at(2, 1) = -f.y; m.at(2, 2) = -f.z; m.at(2, 3) = Dot(f, eye);
+    return m;
+}
+
+// The quad a placement draws faces +Z of its pose; this turns "facing the viewer at `from`".
+Pose FacingFrom(const Vec3 &at, const Vec3 &from) {
+    Vec3 d = from - at;
+    return {Quat::Yaw(std::atan2(d.x, d.z)), at};
+}
+
+uint16_t SampleThunk(void *ctx) { return static_cast<InputMapper *>(ctx)->SampleForGameFrame(); }
+
+}  // namespace
+
+void VrApp::LoadSettings(const std::string &filesDir) {
+    settingsPath_ = filesDir + "/khvr.ini";
+    std::ifstream in(settingsPath_);
+    if (in) {
+        std::stringstream ss;
+        ss << in.rdbuf();
+        std::vector<std::string> warnings;
+        settings_.LoadIni(ss.str(), &warnings);
+        for (const std::string &w : warnings) LOGW("khvr.ini %s", w.c_str());
+        LOGI("loaded %s", settingsPath_.c_str());
+    }
+    savedRevision_ = settings_.revision();
+    if (!in) SaveSettingsIfChanged(true);
+}
+
+void VrApp::SaveSettingsIfChanged(bool force) {
+    if (settingsPath_.empty() || (!force && settings_.revision() == savedRevision_)) return;
+    std::ofstream out(settingsPath_);
+    out << settings_.SaveIni();
+    savedRevision_ = settings_.revision();
+}
+
+bool VrApp::Init(XrPlatform *xr) {
+    xr_ = xr;
+    if (!renderer_.Init()) return false;
+    game_ = std::make_unique<DemoGame>();
+    lastMode_ = settings_.Enum<ViewMode>(SettingId::ViewMode);
+    blinkTime_ = -1.0f;
+    ApplyPlatformSettings();
+    return true;
+}
+
+ViewMode VrApp::EffectiveMode() const {
+    const GameFrame &g = game_->frame();
+    ViewMode mode = settings_.Enum<ViewMode>(SettingId::ViewMode);
+    if (g.inMenu || !g.inGameplay) return ViewMode::GiantScreen;
+    if (g.inCutscene) {
+        switch (settings_.Enum<CutsceneView>(SettingId::CutsceneView)) {
+        case CutsceneView::GiantScreen: return ViewMode::GiantScreen;
+        case CutsceneView::SameAsGameplay: return mode;
+        }
+    }
+    return mode;
+}
+
+void VrApp::ApplyPlatformSettings() {
+    static const float kRates[] = {72.0f, 90.0f, 120.0f};
+    xr_->SetRefreshRate(kRates[settings_.Int(SettingId::PicRefreshRate)]);
+    xr_->SetPassthrough(settings_.Bool(SettingId::Passthrough));
+    xr_->SetFoveation(settings_.Int(SettingId::PicFoveation));
+}
+
+void VrApp::UpdateTextures() {
+    const DsScreens &s = game_->screens();
+    if (s.revision != screensRevision_) {
+        bool linear = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter) == TextureFilter::Bilinear;
+        topTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.top.data(), linear);
+        hudTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.topHud.data(), linear);
+        bottomTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.bottom.data(), linear);
+        screensRevision_ = s.revision;
+    }
+    if (panel_.isOpen() && panel_.Redraw(settings_))
+        panelTex_.Upload(SettingsPanel::kWidth, SettingsPanel::kHeight, panel_.canvas().data(), true);
+}
+
+void VrApp::UpdatePlacements(const XrFrameInput &in) {
+    const Pose &head = in.head;
+    float headYaw = YawOf(head.orientation);
+    float hudScale = settings_.Get(SettingId::HudScale);
+    float hudDist = settings_.Get(SettingId::HudDistance);
+
+    // The giant screen stays in front of where you looked when you last recentered.
+    if (!placementsInitialized_ || recenterNext_) {
+        screenAnchor_ = head.position;
+        screenYaw_ = headYaw;
+        hudYaw_ = headYaw;
+        placementsInitialized_ = true;
+    }
+    Vec3 screenAt = screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * settings_.Get(SettingId::ScreenDistance);
+    giantScreen_.pose = FacingFrom(screenAt, screenAnchor_);
+    giantScreen_.width = settings_.Get(SettingId::ScreenWidth);
+    giantScreen_.height = giantScreen_.width * 0.75f;
+
+    // HUD: floating panels lazily follow your heading; head-locked ones follow exactly.
+    float diff = WrapAngle(headYaw - hudYaw_);
+    if (std::fabs(diff) > DegToRad(35.0f)) hudYaw_ = WrapAngle(hudYaw_ + diff * 0.08f);
+    hudPanel_.width = 0.55f * hudScale;
+    hudPanel_.height = hudPanel_.width * 0.75f;
+    if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
+        hudPanel_.pose = head * Pose{Quat(), {0, -0.05f, -hudDist}};
+    } else {
+        Vec3 fwd = Quat::Yaw(hudYaw_).Forward();
+        Vec3 at = head.position + fwd * hudDist + Vec3{0, -0.18f, 0};
+        hudPanel_.pose = FacingFrom(at, head.position);
+    }
+
+    // Bottom screen: on the back of the left wrist, facing up toward you, or floating low left.
+    bottomPanel_.width = 0.2f * hudScale;
+    bottomPanel_.height = bottomPanel_.width * 0.75f;
+    if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) == BottomScreenPlacement::LeftWrist) {
+        if (in.gripValid[0]) {
+            Pose wrist = in.grip[0] * Pose{Quat::AxisAngle({1, 0, 0}, -kPi / 2), {0.0f, 0.04f, 0.09f}};
+            bottomPanel_.pose = wrist;
+        }
+    } else {
+        bottomPanel_.width = 0.45f * hudScale;
+        bottomPanel_.height = bottomPanel_.width * 0.75f;
+        Vec3 fwd = Quat::Yaw(hudYaw_ + DegToRad(25)).Forward();
+        Vec3 at = head.position + fwd * (hudDist * 0.8f) + Vec3{0, -0.55f, 0};
+        bottomPanel_.pose = FacingFrom(at, head.position);
+        bottomPanel_.pose.orientation = bottomPanel_.pose.orientation * Quat::AxisAngle({1, 0, 0}, -0.5f);
+    }
+
+    settingsPanel_.width = 1.0f;
+    settingsPanel_.height = 0.75f;
+}
+
+bool VrApp::Laser(const XrFrameInput &in, const Placement &p, int texW, int texH, float *px,
+                  float *py, float *dist) {
+    if (!in.aimValid[1]) return false;
+    Vec3 o = in.aim[1].position, d = in.aim[1].orientation.Forward();
+    Vec3 n = p.pose.orientation.Rotate({0, 0, 1});
+    float denom = Dot(d, n);
+    if (std::fabs(denom) < 1e-5f) return false;
+    float t = Dot(p.pose.position - o, n) / denom;
+    if (t <= 0.0f) return false;
+    Vec3 local = p.pose.Inverse().Transform(o + d * t);
+    float u = local.x / p.width + 0.5f, v = 0.5f - local.y / p.height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return false;
+    *px = u * texW;
+    *py = v * texH;
+    *dist = t;
+    return true;
+}
+
+void VrApp::Frame(const XrFrameInput &in) {
+    const float dt = in.dt;
+    ViewMode mode = EffectiveMode();
+    UpdatePlacements(in);
+    recenterNext_ = false;
+
+    ControllerState buttons = in.buttons;
+
+    // ---- Laser pointer: the settings panel, then the bottom (touch) screen ----
+    float px = 0, py = 0, dist = 0;
+    bool click = buttons.trigger[1] > 0.6f && prevTrigger_[1] <= 0.6f;
+    prevTrigger_[0] = buttons.trigger[0];
+    prevTrigger_[1] = buttons.trigger[1];
+    laserOnPanel_ = laserOnBottom_ = false;
+    GameRequests touch;
+    if (panel_.isOpen()) {
+        laserOnPanel_ = Laser(in, settingsPanel_, SettingsPanel::kWidth, SettingsPanel::kHeight, &px, &py, &dist);
+        panel_.Pointer(laserOnPanel_, px, py, click, settings_);
+        laserEnd_ = in.aim[1].position + in.aim[1].orientation.Forward() * (laserOnPanel_ ? dist : 2.0f);
+        // While the panel is open the game gets no input.
+        buttons = ControllerState{};
+        buttons.menu = in.buttons.menu;
+    } else if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::Hidden &&
+               settings_.Enum<TouchInput>(SettingId::HudTouchInput) == TouchInput::Laser &&
+               Laser(in, bottomPanel_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)) {
+        laserOnBottom_ = true;
+        laserEnd_ = in.aim[1].position + in.aim[1].orientation.Forward() * dist;
+        touch.touching = buttons.trigger[1] > 0.6f;
+        touch.touchX = static_cast<uint8_t>(Clamp(px, 0, 255));
+        touch.touchY = static_cast<uint8_t>(Clamp(py, 0, 191));
+        buttons.trigger[1] = 0.0f;  // the trigger touches the screen instead of pressing R
+    }
+
+    // ---- Tracking for the rigs and gestures ----
+    TrackingFrame t;
+    t.dt = dt;
+    t.head = in.head;
+    for (int h = 0; h < 2; ++h) {
+        t.hands[h] = in.grip[h];
+        t.handValid[h] = in.gripValid[h];
+    }
+    t.turnAxis = panel_.isOpen() ? 0.0f : Deadzone(buttons.stickX[1]);
+    t.moveAxis = {Deadzone(buttons.stickX[0]), 0.0f, -Deadzone(buttons.stickY[0])};
+
+    CombatFrame combat;
+    const CombatFrame *combatPtr = nullptr;
+    if (mode == ViewMode::FirstPerson && !panel_.isOpen()) {
+        CombatInput ci;
+        ci.dt = dt;
+        ci.head = in.head;
+        for (int h = 0; h < 2; ++h) {
+            ci.hands[h] = in.grip[h];
+            ci.handValid[h] = in.gripValid[h];
+            ci.trigger[h] = buttons.trigger[h];
+        }
+        ci.moveAxis = t.moveAxis;
+        combat = combat_.Update(settings_, ci);
+        combatPtr = &combat;
+        for (int h = 0; h < 2; ++h) xr_->Haptic(h, combat.hapticAmplitude[h], combat.hapticSeconds[h]);
+    }
+
+    const GameFrame &before = game_->frame();
+    Vec3 camDir = before.camera.target - before.camera.eye;
+    float gameCamYaw = YawOf(Vec3{camDir.x, 0, camDir.z});
+    float moveBasis = mode == ViewMode::GiantScreen ? gameCamYaw : rig_.moveBasisYaw;
+    mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
+
+    const AppActions &act = mapper_.actions();
+    if (act.openSettingsPanel) {
+        if (panel_.isOpen()) {
+            panel_.Close();
+        } else {
+            Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
+            settingsPanel_.pose = FacingFrom(in.head.position + fwd * 1.1f + Vec3{0, -0.1f, 0}, in.head.position);
+            panel_.Open();
+        }
+    }
+    if (!panel_.isOpen()) SaveSettingsIfChanged();
+    if (act.toggleViewMode) {
+        ViewMode m = settings_.Enum<ViewMode>(SettingId::ViewMode);
+        settings_.SetEnum(SettingId::ViewMode, m == ViewMode::FirstPerson ? ViewMode::ThirdPerson : ViewMode::FirstPerson);
+        mode = EffectiveMode();
+    }
+    t.recenter = act.recenter;
+    if (act.recenter) recenterNext_ = true;
+    if (mode != lastMode_) {
+        thirdPerson_.Reset();
+        firstPerson_.Reset();
+        combat_.Reset();
+        if (settings_.Bool(SettingId::ComfortBlink)) blinkTime_ = 0.0f;
+        lastMode_ = mode;
+    }
+
+    // ---- Run the game ----
+    GameRequests req;
+    if (mode != ViewMode::GiantScreen) req = nextRequests_;
+    req.hasAnalogMove = Length(mapper_.analogMoveWorld()) > 0.0f;
+    req.analogMoveWorld = mapper_.analogMoveWorld();
+    req.hasRoomScaleStep = Length(pendingRoomScale_) > 0.0f;
+    req.roomScaleStep = pendingRoomScale_;
+    req.touching = touch.touching;
+    req.touchX = touch.touchX;
+    req.touchY = touch.touchY;
+    uint32_t frameBefore = game_->frame().frameCounter;
+    game_->Advance(in.time, req, SampleThunk, &mapper_);
+    if (game_->frame().frameCounter != frameBefore) pendingRoomScale_ = {};
+
+    // ---- Place the view ----
+    const GameFrame &g = game_->frame();
+    if (mode == ViewMode::ThirdPerson) rig_ = thirdPerson_.Update(settings_, g, t);
+    else if (mode == ViewMode::FirstPerson) rig_ = firstPerson_.Update(settings_, g, t);
+    else rig_ = RigOutput{};
+    nextRequests_ = rig_.requests;
+    if (rig_.requests.hasRoomScaleStep) pendingRoomScale_ += rig_.requests.roomScaleStep;
+    if (rig_.blinkStarted) blinkTime_ = 0.0f;
+    if (blinkTime_ >= 0.0f) {
+        blinkTime_ += dt;
+        if (blinkTime_ > settings_.Get(SettingId::ComfortBlinkMs) / 1000.0f) blinkTime_ = -1.0f;
+    }
+
+    ApplyPlatformSettings();
+    UpdateTextures();
+    if (!in.shouldRender) return;
+    if (mode == ViewMode::GiantScreen) RenderGiantScreenViews(in);
+    for (int eye = 0; eye < 2; ++eye) {
+        xr_->AcquireEye(eye);
+        RenderEye(in, eye);
+        xr_->ReleaseEye(eye);
+    }
+}
+
+void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
+    // The game's own camera, rendered at headset resolution instead of 256x192. With stereo on,
+    // each eye gets its own camera, so the level has depth behind the screen.
+    const GameFrame &g = game_->frame();
+    bool stereo = settings_.Bool(SettingId::ScreenStereo);
+    float sep = kIpd * settings_.Get(SettingId::ScreenDepth) * settings_.Get(SettingId::GameUnitsPerMeter);
+    float fovY = g.camera.fovYRad > 0 ? g.camera.fovYRad : DegToRad(55.0f);
+    float ty = std::tan(fovY * 0.5f), tx = ty * 4.0f / 3.0f;
+    Mat4 proj = Mat4::Projection(-tx, tx, ty, -ty, 0.1f, 1000.0f);
+    Vec3 f = Normalize(g.camera.target - g.camera.eye);
+    Vec3 right = Normalize(Cross(f, g.camera.up));
+    for (int eye = 0; eye < (stereo ? 2 : 1); ++eye) {
+        float offset = stereo ? (eye == 0 ? -0.5f : 0.5f) * sep : 0.0f;
+        Vec3 shift = right * offset;
+        Mat4 view = LookAt(g.camera.eye + shift, g.camera.target + shift, g.camera.up);
+        giantViews_[eye].Ensure(kGiantViewW, kGiantViewH);
+        giantViews_[eye].Bind();
+        glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        renderer_.DrawTriangles(game_->world(), proj * view);
+        renderer_.DrawTriangles(game_->playerMesh(), proj * view);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
+    WorldDrawList props;
+    const ViewMode mode = lastMode_;
+    BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
+    int weapon = settings_.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
+    bool dual = settings_.Bool(SettingId::FpDualWield);
+    for (int h = 0; h < 2; ++h) {
+        if (!in.gripValid[h]) continue;
+        const Pose &g = in.grip[h];
+        if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
+            // A gloved hand, and the Keyblade along the blade axis the combat code uses.
+            AddBox(&props, g.position, {0.045f, 0.05f, 0.06f}, YawOf(g.orientation), Rgba(20, 20, 26));
+            if (h == weapon || dual) {
+                // Shaft, guard and teeth of a Kingdom Key, along the axis swings are measured on.
+                float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
+                float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
+                Vec3 axis = BladeAxis(g, grip);
+                Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip);
+                AddOrientedBox(&props, g.position + axis * (len * 0.5f), {0.016f, 0.016f, len * 0.5f}, q,
+                               Rgba(205, 205, 220));
+                AddOrientedBox(&props, g.position + axis * 0.07f, {0.08f, 0.02f, 0.015f}, q, Rgba(230, 200, 70));
+                AddOrientedBox(&props, g.position + axis * (len - 0.04f) + q.Rotate({0.05f, 0, 0}),
+                               {0.05f, 0.016f, 0.03f}, q, Rgba(205, 205, 220));
+            }
+        } else if (mode != ViewMode::FirstPerson) {
+            AddBox(&props, g.position, {0.03f, 0.03f, 0.05f}, YawOf(g.orientation), Rgba(60, 60, 70));
+        }
+    }
+    renderer_.DrawTriangles(props, vpTracking);
+    if (laserOnPanel_ || laserOnBottom_ || panel_.isOpen())
+        renderer_.DrawLine(in.aim[1].position, laserEnd_, Rgba(214, 178, 82, 220), vpTracking);
+}
+
+void VrApp::RenderEye(const XrFrameInput &in, int eye) {
+    const ViewMode mode = lastMode_;
+    const bool passthrough = settings_.Bool(SettingId::Passthrough);
+    Mat4 proj = EyeProjection(in.eyes[eye].fov);
+    Mat4 vpTracking = proj * ViewFromPose(in.eyes[eye].pose);
+
+    if (passthrough) glClearColor(0, 0, 0, 0);
+    else if (mode == ViewMode::GiantScreen) glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
+    else glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    if (mode == ViewMode::GiantScreen) {
+        int view = settings_.Bool(SettingId::ScreenStereo) ? eye : 0;
+        float curv = settings_.Get(SettingId::ScreenCurvature);
+        float dist = settings_.Get(SettingId::ScreenDistance);
+        renderer_.DrawQuad(giantViews_[view].texture(), giantScreen_.pose, giantScreen_.width,
+                           giantScreen_.height, vpTracking, 1.0f, curv, dist, true);
+        // The 2D HUD sits on the screen surface, a few millimeters in front.
+        Pose hudOnScreen = giantScreen_.pose * Pose{Quat(), {0, 0, 0.005f}};
+        renderer_.DrawQuad(hudTex_.id(), hudOnScreen, giantScreen_.width, giantScreen_.height,
+                           vpTracking, 1.0f, curv, dist);
+    } else {
+        // The game world, through the rig's mapping from tracking space into the world.
+        Mat4 worldToTracking = Mat4::FromSimilarity(rig_.trackingToWorld.Inverse());
+        Mat4 vpWorld = vpTracking * worldToTracking;
+        renderer_.DrawTriangles(game_->world(), vpWorld);
+        bool drawPlayer = mode == ViewMode::ThirdPerson ||
+                          settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
+        if (drawPlayer) renderer_.DrawTriangles(game_->playerMesh(), vpWorld);
+        if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
+            renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
+    }
+    if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::Hidden &&
+        (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::LeftWrist ||
+         in.gripValid[0]))
+        renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width, bottomPanel_.height, vpTracking);
+    DrawProps(in, vpTracking);
+    if (panel_.isOpen())
+        renderer_.DrawQuad(panelTex_.id(), settingsPanel_.pose, settingsPanel_.width,
+                           settingsPanel_.height, vpTracking);
+
+    float blink = 0.0f;
+    if (blinkTime_ >= 0.0f) {
+        float len = settings_.Get(SettingId::ComfortBlinkMs) / 1000.0f;
+        float x = blinkTime_ / len;  // 0..1: fade out, hold, fade in
+        blink = x < 0.3f ? x / 0.3f : (x > 0.7f ? (1.0f - x) / 0.3f : 1.0f);
+    }
+    renderer_.DrawComfortOverlay(mode == ViewMode::GiantScreen ? 0.0f : rig_.vignette, blink);
+}
+
+}  // namespace khvr
