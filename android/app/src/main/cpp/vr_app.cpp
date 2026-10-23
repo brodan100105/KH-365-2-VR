@@ -115,7 +115,7 @@ std::vector<std::string> VrApp::StatusLines() const {
     std::vector<std::string> lines;
     if (!notice_.empty()) {
         lines.push_back("DEMO ARENA - the game is not running");
-        // Wrap the notice at the panel's width (76 characters at scale 1).
+        // Wrap the notice at the panel's width (74 characters at scale 1, inside the margins).
         std::string rest = notice_;
         while (!rest.empty()) {
             size_t cut = rest.size() <= 74 ? rest.size() : rest.rfind(' ', 74);
@@ -128,7 +128,7 @@ std::vector<std::string> VrApp::StatusLines() const {
     }
 #ifdef KHVR_HAS_GAME
     if (decomp_ && (decomp_->state() != PlatformState::Running || decomp_->frame().frameCounter < 2)) {
-        for (const std::string &l : decomp_->Status(10)) lines.push_back(l.substr(0, 76));
+        for (const std::string &l : decomp_->Status(10)) lines.push_back(l.substr(0, 74));
         lines.push_back("Full log: Android/data/com.khdays.vr/files/khvr_boot.log");
     }
 #endif
@@ -232,11 +232,11 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         bottomPanel_.pose.orientation = bottomPanel_.pose.orientation * Quat::AxisAngle({1, 0, 0}, -0.5f);
     }
 
-    // The status panel floats just below eye level, a little left of where the HUD is.
+    // The status panel floats just below eye level, to the left of the HUD and clear of it.
     statusPanel_.width = 0.8f;
     statusPanel_.height = statusPanel_.width * 288.0f / 768.0f;
     {
-        Vec3 fwd = Quat::Yaw(hudYaw_ + DegToRad(12)).Forward();
+        Vec3 fwd = Quat::Yaw(hudYaw_ + DegToRad(38)).Forward();
         Vec3 at = head.position + fwd * 1.3f + Vec3{0, -0.35f, 0};
         statusPanel_.pose = FacingFrom(at, head.position);
     }
@@ -450,8 +450,6 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         }
     }
     renderer_.DrawTriangles(props, vpTracking);
-    if (laserOnPanel_ || laserOnBottom_ || panel_.isOpen())
-        renderer_.DrawLine(in.aim[1].position, laserEnd_, Rgba(214, 178, 82, 220), vpTracking);
 }
 
 void VrApp::RenderEye(const XrFrameInput &in, int eye) {
@@ -490,19 +488,26 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
         if (drawPlayer) renderer_.DrawTriangles(game_->player(), vpWorld);
-        if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
-            renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
     }
+    DrawProps(in, vpTracking);
+
+    // Panels float in front of the world: never let a pillar, the floor or the character cut into
+    // them. They still sort against each other and the laser.
+    glClear(GL_DEPTH_BUFFER_BIT);
+    if (mode != ViewMode::GiantScreen &&
+        settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
+        renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
     if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::Hidden &&
         (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::LeftWrist ||
          in.gripValid[0]))
         renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width, bottomPanel_.height, vpTracking);
-    DrawProps(in, vpTracking);
     if (statusVisible_ && statusTex_.id())
         renderer_.DrawQuad(statusTex_.id(), statusPanel_.pose, statusPanel_.width, statusPanel_.height, vpTracking);
     if (panel_.isOpen())
         renderer_.DrawQuad(panelTex_.id(), settingsPanel_.pose, settingsPanel_.width,
                            settingsPanel_.height, vpTracking);
+    if (laserOnPanel_ || laserOnBottom_ || panel_.isOpen())
+        renderer_.DrawLine(in.aim[1].position, laserEnd_, Rgba(214, 178, 82, 220), vpTracking);
 
     float blink = 0.0f;
     if (blinkTime_ >= 0.0f) {

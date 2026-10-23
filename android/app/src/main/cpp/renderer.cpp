@@ -43,7 +43,12 @@ in vec2 vUv;
 uniform sampler2D uTex;
 uniform float uAlpha;
 out vec4 oColor;
-void main() { vec4 c = texture(uTex, vUv); oColor = vec4(c.rgb, c.a * uAlpha); })";
+// Fully transparent texels (the HUD's empty areas) write no depth, so they hide nothing behind.
+void main() {
+    vec4 c = texture(uTex, vUv);
+    if (c.a * uAlpha < 0.02) discard;
+    oColor = vec4(c.rgb, c.a * uAlpha);
+})";
 
 const char *kLineVs = R"(#version 300 es
 layout(location = 0) in vec3 aPos;
