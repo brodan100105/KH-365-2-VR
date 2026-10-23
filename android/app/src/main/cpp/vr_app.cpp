@@ -84,20 +84,42 @@ bool VrApp::Init(XrPlatform *xr) {
     return true;
 }
 
+void VrApp::SetSharedDir(const std::string &dir, bool hasAccess) {
+    sharedDir_ = hasAccess ? dir : std::string();
+    // Created up front so it shows up in SideQuest's file browser.
+    if (hasAccess) mkdir(dir.c_str(), 0777);
+}
+
 void VrApp::StartGame() {
-    // Where the ROM goes; created up front so it shows up in SideQuest's file browser.
-    mkdir((filesDir_ + "/game").c_str(), 0755);
 #ifdef KHVR_HAS_GAME
     if (settings_.Enum<GamePlay>(SettingId::GamePlay) == GamePlay::Auto) {
         auto game = std::make_unique<DecompGame>();
         std::string message;
         // The firmware's language numbers start at 1 (English) in the settings' order.
         int language = settings_.Int(SettingId::GameLanguage) + 1;
-        if (game->Start(filesDir_ + "/game", filesDir_, language, &message)) {
+        // Recent Quest system versions refuse adb writes into Android/data, so the ROM normally
+        // sits in the shared KHDaysVR (or Download) folder; files/game still works where adb can
+        // write there.
+        std::vector<std::string> romDirs;
+        if (!sharedDir_.empty()) {
+            romDirs.push_back(sharedDir_);
+            romDirs.push_back("/storage/emulated/0/Download");
+        }
+        romDirs.push_back(filesDir_ + "/game");
+        const std::string &dataDir = sharedDir_.empty() ? filesDir_ : sharedDir_;
+        if (game->Start(romDirs, dataDir, language, &message)) {
             decomp_ = game.get();
             game_ = std::move(game);
             LOGI("game: %s", message.c_str());
             return;
+        }
+        if (sharedDir_.empty()) {
+            needsStorageAccess_ = true;
+            message = "KH Days VR needs \"All files access\" to read your ROM from the KHDaysVR "
+                      "folder. Turn it on in the settings page that opened (or see the README).";
+        } else {
+            message += " Copy your own dump of the EU cartridge into the KHDaysVR folder on the "
+                       "headset (any name ending in .nds).";
         }
         notice_ = message;
         LOGW("game: %s - running the demo arena", message.c_str());
@@ -129,7 +151,8 @@ std::vector<std::string> VrApp::StatusLines() const {
 #ifdef KHVR_HAS_GAME
     if (decomp_ && (decomp_->state() != PlatformState::Running || decomp_->frame().frameCounter < 2)) {
         for (const std::string &l : decomp_->Status(10)) lines.push_back(l.substr(0, 74));
-        lines.push_back("Full log: Android/data/com.khdays.vr/files/khvr_boot.log");
+        lines.push_back(sharedDir_.empty() ? "Full log: Android/data/com.khdays.vr/files/khvr_boot.log"
+                                           : "Full log: KHDaysVR/khvr_boot.log");
     }
 #endif
     return lines;

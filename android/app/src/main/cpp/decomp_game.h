@@ -22,9 +22,11 @@ class DecompGame : public GameSource {
 public:
     ~DecompGame() override;
 
-    // Looks for an EU ROM (*.nds, game code YKGP) in `romDir` and boots it. On failure `message`
-    // says what to do; on success it names the ROM.
-    bool Start(const std::string &romDir, const std::string &filesDir, int language, std::string *message);
+    // Looks for an EU ROM (*.nds, game code YKGP) in `romDirs`, in order, and boots it; the save
+    // and the boot log go in `dataDir`. On failure `message` says what to do; on success it
+    // names the ROM.
+    bool Start(const std::vector<std::string> &romDirs, const std::string &dataDir, int language,
+               std::string *message);
 
     void Advance(double now, const GameRequests &requests, uint16_t (*sampleButtons)(void *ctx),
                  void *ctx) override;

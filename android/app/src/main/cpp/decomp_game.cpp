@@ -37,35 +37,38 @@ DecompGame::~DecompGame() {
     Platform::Get().Stop();
 }
 
-bool DecompGame::Start(const std::string &romDir, const std::string &filesDir, int language,
-                       std::string *message) {
+bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::string &dataDir,
+                       int language, std::string *message) {
     std::string rom;
     std::vector<std::string> others;
-    if (DIR *d = opendir(romDir.c_str())) {
+    for (const std::string &dir : romDirs) {
+        DIR *d = opendir(dir.c_str());
+        if (!d) {
+            LOGI("rom search: cannot open %s", dir.c_str());
+            continue;
+        }
         while (dirent *e = readdir(d)) {
             if (!EndsWithNds(e->d_name)) continue;
-            std::string path = romDir + "/" + e->d_name;
+            std::string path = dir + "/" + e->d_name;
             std::string code = GameCode(path);
             if (code == "YKGP" && rom.empty()) rom = path;
-            else others.push_back(std::string(e->d_name) + " (" + (code.empty() ? "unreadable" : code) + ")");
+            else if (code != "YKGP") others.push_back(std::string(e->d_name) + " (" + (code.empty() ? "unreadable" : code) + ")");
         }
         closedir(d);
     }
     if (rom.empty()) {
-        *message = "No European ROM (game code YKGP) in " + romDir + ".";
+        *message = "No European ROM (game code YKGP) found in the KHDaysVR or Download folder.";
         if (!others.empty()) {
             *message += " Found:";
             for (const std::string &o : others) *message += " " + o;
             *message += ". Only the EU release works: the decompilation matches that version.";
-        } else {
-            *message += " Copy your own dump of the EU cartridge there (any name ending in .nds).";
         }
         return false;
     }
     PlatformConfig cfg;
     cfg.romPath = rom;
-    cfg.savePath = filesDir + "/khdays.sav";
-    cfg.logPath = filesDir + "/khvr_boot.log";
+    cfg.savePath = dataDir + "/khdays.sav";
+    cfg.logPath = dataDir + "/khvr_boot.log";
     cfg.language = language;
     if (!Platform::Get().Start(cfg, message)) return false;
     *message = "Booting " + rom.substr(rom.find_last_of('/') + 1);

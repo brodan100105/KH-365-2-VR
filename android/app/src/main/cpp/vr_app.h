@@ -26,6 +26,11 @@ public:
     // Reads <filesDir>/khvr.ini (created with defaults when missing).
     void LoadSettings(const std::string &filesDir);
     const Settings &settings() const { return settings_; }
+    // The shared folder the ROM, the save and the boot log go in (/sdcard/KHDaysVR), when the app
+    // has all-files access; `hasAccess` false keeps everything in the app's own folder.
+    void SetSharedDir(const std::string &dir, bool hasAccess);
+    // The game could not start for lack of all-files access: main.cpp opens the settings page.
+    bool needsStorageAccess() const { return needsStorageAccess_; }
 
     bool Init(XrPlatform *xr);
     void Frame(const XrFrameInput &in);
@@ -63,6 +68,8 @@ private:
     DecompGame *decomp_ = nullptr;
 #endif
     std::string filesDir_;
+    std::string sharedDir_;  // empty without all-files access
+    bool needsStorageAccess_ = false;
     std::string notice_;  // why the demo arena runs instead of the game
     ThirdPersonRig thirdPerson_;
     FirstPersonRig firstPerson_;

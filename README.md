@@ -39,15 +39,24 @@ adb install -r app-release.apk
 ```
 
 To play the game, copy your own dump of the **European** cartridge (game code `YKGP`; the
-decompilation only matches that release) to the headset, with SideQuest's file browser or adb:
+decompilation only matches that release) into the `KHDaysVR` folder on the headset (or into
+`Download`), with SideQuest's file browser or adb:
 
 ```sh
-adb push "Kingdom Hearts 358-2 Days (EU).nds" /sdcard/Android/data/com.khdays.vr/files/game/
+adb push days.nds /sdcard/KHDaysVR/days.nds
 ```
 
-The app creates `files/game/` on its first launch; any file name ending in `.nds` works. Without a
-ROM it shows the demo arena and says why. The game writes its save to `files/khdays.sav` and a boot
-log to `files/khvr_boot.log`: if something goes wrong, pull that log and send it over.
+Recent Quest system versions refuse adb writes into `Android/data`, so the app reads the ROM from
+that shared folder, which needs **All files access**. On first launch it opens the settings page
+for it; turn it on, then restart the app. Or grant it over adb:
+
+```sh
+adb shell appops set --uid com.khdays.vr MANAGE_EXTERNAL_STORAGE allow
+```
+
+Any file name ending in `.nds` works. Without a ROM it shows the demo arena and says why. The game
+writes its save to `KHDaysVR/khdays.sav` and a boot log to `KHDaysVR/khvr_boot.log`: if something
+goes wrong, pull that log and send it over.
 
 The ROM is never part of the repository or the APK. Note that the APK does contain the game's code
 compiled from the decomp, so keep its download private (a private repository keeps CI artifacts

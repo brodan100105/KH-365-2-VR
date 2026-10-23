@@ -33,7 +33,7 @@ feedback from the first install decides what changes next.
 - [x] 2D engines rendered to the giant screen and the wrist screen; pad and touch input
 - [x] Boot log with backtraces (`tools/symbolize.py`), desktop runner, fake-ROM boot test in CI:
       the title scene loads
-- [ ] First boot with a real ROM on the headset (needs you: send `files/khvr_boot.log`)
+- [ ] First boot with a real ROM on the headset (needs you: send `KHDaysVR/khvr_boot.log`)
 - [ ] Sound (the ARM7's sound driver is acknowledged, not played)
 - [ ] MobiClip videos (the decoder's assembly parts are stubbed)
 

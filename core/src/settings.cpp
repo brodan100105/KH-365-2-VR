@@ -186,7 +186,7 @@ std::vector<SettingDef> BuildDefs() {
     // ---- Game ----
     d.push_back(E(S::GamePlay, "Game", "play", "Play", 0, {"auto", "demo"},
                   {"The game (if a ROM is found)", "Demo arena"},
-                  "Your EU ROM goes in Android/data/com.khdays.vr/files/game/. Applies on restart."));
+                  "Your EU ROM goes in the KHDaysVR folder on the headset. Applies on restart."));
     d.push_back(E(S::GameLanguage, "Game", "language", "Language", 0,
                   {"english", "french", "german", "italian", "spanish"},
                   {"English", "French", "German", "Italian", "Spanish"},
