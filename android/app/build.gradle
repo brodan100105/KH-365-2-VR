@@ -28,6 +28,12 @@ android {
         prefab true
     }
 
+    lint {
+        // Quest apps target API 32 as Meta's Horizon OS guidance says; the Play Store's
+        // newer-target rule does not apply to a sideloaded headset app.
+        disable 'ExpiredTargetSdkVersion'
+    }
+
     externalNativeBuild {
         cmake {
             path 'src/main/cpp/CMakeLists.txt'
