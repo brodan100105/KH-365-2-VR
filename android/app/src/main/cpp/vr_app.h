@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "khvr/canvas.h"
 #include "khvr/combat.h"
 #include "khvr/demo_game.h"
 #include "khvr/input_mapper.h"
@@ -14,6 +15,9 @@
 #include "khvr/view_rig.h"
 #include "renderer.h"
 #include "xr_platform.h"
+#ifdef KHVR_HAS_GAME
+#include "decomp_game.h"
+#endif
 
 namespace khvr {
 
@@ -42,6 +46,10 @@ private:
     void RenderGiantScreenViews(const XrFrameInput &in);
     void RenderEye(const XrFrameInput &in, int eye);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
+    void StartGame();
+    // The status panel: why the demo runs instead of the game, or the game's boot log.
+    std::vector<std::string> StatusLines() const;
+    void UpdateStatus(double now);
 
     XrPlatform *xr_ = nullptr;
     Renderer renderer_;
@@ -49,7 +57,13 @@ private:
     Settings settings_;
     unsigned savedRevision_ = 0;
 
-    std::unique_ptr<DemoGame> game_;
+    std::unique_ptr<GameSource> game_;
+    DemoGame *demo_ = nullptr;
+#ifdef KHVR_HAS_GAME
+    DecompGame *decomp_ = nullptr;
+#endif
+    std::string filesDir_;
+    std::string notice_;  // why the demo arena runs instead of the game
     ThirdPersonRig thirdPerson_;
     FirstPersonRig firstPerson_;
     CombatRecognizer combat_;
@@ -64,10 +78,13 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_;
+    Canvas statusCanvas_{768, 288};
+    double statusDrawn_ = -10.0;
+    bool statusVisible_ = false;
     uint32_t screensRevision_ = ~0u;
     RenderTarget giantViews_[2];
-    Placement giantScreen_, hudPanel_, bottomPanel_, settingsPanel_;
+    Placement giantScreen_, hudPanel_, bottomPanel_, settingsPanel_, statusPanel_;
     bool placementsInitialized_ = false;
     Vec3 screenAnchor_;             // head position at the last recenter
     float screenYaw_ = 0.0f;

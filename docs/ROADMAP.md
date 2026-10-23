@@ -22,13 +22,20 @@ feedback from the first install decides what changes next.
 - [x] Demo arena standing in for the game, so all of the above can be tested now
 - [x] Measured how much of the decomp builds as a 32-bit guest (`tools/guest/probe_decomp.sh`)
 
-## Iteration 2: the game boots
+## Iteration 2 (this one): the game boots
 
-- [ ] Guest build: source pre-pass for the link issues, wasm32 -> wasm2c -> ARM64, linked into the APK
-- [ ] Memory map, VBlank-driven frame loop, overlays, the ROM file system from the user's ROM
-- [ ] 2D engines: title screen, menus and the touch screen on the giant screen
-- [ ] Pad and touch input through `Pad_Sample` and the touch hook
-- [ ] `tools/push_rom.py` to copy your ROM to the headset
+- [x] Guest build: all 24,497 C files of the decomp compile and link (one sound streaming
+      function is stubbed); wasm32 -> wasm2c -> ARM64, in the APK
+- [x] Memory map with DTCM and the shared area at their DS addresses, mwcc's struct layout
+- [x] Threads, interrupts, VBlank frame loop, timers, DMA, divider, IPC
+- [x] The ARM7's answers: PXI handshake, power, touch, RTC, sound driver, card backup (saves)
+- [x] ROM file system from your ROM, overlays, save file
+- [x] 2D engines rendered to the giant screen and the wrist screen; pad and touch input
+- [x] Boot log with backtraces (`tools/symbolize.py`), desktop runner, fake-ROM boot test in CI:
+      the title scene loads
+- [ ] First boot with a real ROM on the headset (needs you: send `files/khvr_boot.log`)
+- [ ] Sound (the ARM7's sound driver is acknowledged, not played)
+- [ ] MobiClip videos (the decoder's assembly parts are stubbed)
 
 ## Iteration 3: the world in VR
 

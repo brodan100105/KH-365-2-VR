@@ -1,0 +1,300 @@
+// Guest threads and interrupts.
+//
+// The SDK schedules its threads itself (OSi_RescheduleThread) and switches between them with
+// OS_SaveContext / OS_LoadContext, which are register save and restore on the DS. Here every
+// guest thread runs on its own host thread, and a baton says which one may run: "load context X"
+// hands the baton to X's host thread and parks the current one until someone loads its context
+// again. The SDK always calls `if (OS_SaveContext(cur) == 0) OS_LoadContext(next);`, so a parked
+// thread that gets the baton back simply returns from load, which is the same as its save
+// returning non-zero.
+//
+// Interrupts are delivered at the points the hardware could take them: when the idle thread
+// halts (the normal case, once per frame for VBlank), and when the guest re-enables interrupts.
+#include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+#include <pthread.h>
+
+#include "guest.h"
+#include "hle.h"
+#include "platform_internal.h"
+
+extern "C" {
+#include "wasm-rt-exceptions.h"
+#include "wasm-rt-impl.h"
+}
+
+extern "C" {
+// Per-thread guest stack pointer (guest/postprocess.py makes wasm's global thread-local).
+thread_local u32 khvr_guest_sp;
+}
+
+namespace khvr::hle {
+
+namespace {
+
+struct GuestThread {
+    uint32_t context = 0;
+    uint32_t entry = 0, arg = 0, sp = 0, lr = 0;
+    std::condition_variable cv;
+    bool started = false;
+};
+
+// Guest code nests deeply and wasm2c's frames are large: give every guest thread a big host stack.
+constexpr size_t kHostStack = 32u << 20;
+
+void StartHostThread(void *(*fn)(void *), void *arg) {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, kHostStack);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t th;
+    if (pthread_create(&th, &attr, fn, arg) != 0) Log("thread: pthread_create failed");
+    pthread_attr_destroy(&attr);
+}
+
+std::mutex gMu;
+std::condition_variable gIdleCv;
+GuestThread *gRunning = nullptr;
+std::unordered_map<uint32_t, GuestThread *> gByContext;
+std::vector<GuestThread *> gAll;
+thread_local GuestThread *tSelf = nullptr;
+
+bool gIdle = false;        // the idle thread is halted: the guest has nothing to do
+uint64_t gHalts = 0;       // how many times it halted
+bool gWake = false;        // an event (VBlank) arrived for the halted guest
+bool gStopping = false;
+int gIrqNesting = 0;
+
+// OSThreadInfo (decomp: data_0204430c +0x24): isNeedRescheduling, irqDepth.
+uint32_t gThreadInfo = 0;
+
+// KHVR_TRACE=threads logs every context switch with the SDK's scheduler state.
+bool TraceThreads() {
+    static const bool on = [] {
+        const char *t = std::getenv("KHVR_TRACE");
+        return t && std::strstr(t, "threads");
+    }();
+    return on;
+}
+
+void TraceSwitch(const char *what, uint32_t context) {
+    if (!TraceThreads()) return;
+    uint32_t g = SymbolAddress("data_0204430c");
+    uint32_t curPtr = Read32(g + 0x08);
+    uint32_t cur = curPtr ? Read32(curPtr) : 0;
+    Log("trace: %s ctx 0x%08x | cur 0x%08x (state %u id %u) resched %u irqDepth %u needResched %u",
+        what, context, cur, cur ? Read32(cur + 0x64) : 0, cur ? Read32(cur + 0x6c) : 0, Read32(g + 0x04),
+        Read16(g + 0x26), Read16(g + 0x24));
+}
+
+void WaitForBaton(std::unique_lock<std::mutex> &lock) {
+    tSelf->cv.wait(lock, [] { return gRunning == tSelf || gStopping; });
+}
+
+void RunThread(GuestThread *t);
+
+void HandTo(GuestThread *next, std::unique_lock<std::mutex> &lock) {
+    gRunning = next;
+    if (!next->started) {
+        next->started = true;
+        StartHostThread([](void *p) -> void * { RunThread(static_cast<GuestThread *>(p)); return nullptr; }, next);
+    } else {
+        next->cv.notify_one();
+    }
+}
+
+}  // namespace
+
+bool GuestIrqsDisabled() {
+    static uint32_t addr = SymbolAddress("khvr_cpsr_i");
+    return addr && (Read32(addr) & 0x80);
+}
+
+void RaiseIrq(uint32_t bits) { RegIf() |= bits; }
+
+void DispatchIrqs() {
+    if (!(RegIme() & 1) || gIrqNesting) return;
+    if (!gThreadInfo) gThreadInfo = SymbolAddress("data_0204430c") + 0x24;
+    ++gIrqNesting;
+    Write16(gThreadInfo + 2, Read16(gThreadInfo + 2) + 1);  // irqDepth: rescheduling waits
+    for (int guard = 0; guard < 32; ++guard) {
+        uint32_t pending = RegIf() & RegIe();
+        if (!pending) break;
+        int bit = __builtin_ctz(pending);
+        RegIf() &= ~(1u << bit);
+        IoOnIrqTaken(bit);
+        // OS_IRQTable lives at the start of DTCM (guest/build_guest.py).
+        uint32_t handler = Read32(0x027e0000 + 4 * bit);
+        if (handler) CallGuest(handler);
+    }
+    // OS_IrqHandler_ThreadSwitch: wake the threads waiting in OS_WaitIrq (their reschedule is
+    // deferred while irqDepth is raised), then switch threads if anything asked for it.
+    static const uint32_t irqQueue = SymbolAddress("data_027e006c");
+    if (irqQueue && Read32(irqQueue)) w2c_khdays_OS_WakeupThread(Guest(), irqQueue);
+    Write16(gThreadInfo + 2, Read16(gThreadInfo + 2) - 1);
+    --gIrqNesting;
+    if (Read16(gThreadInfo + 2) == 0 && Read16(gThreadInfo)) {
+        Write16(gThreadInfo, 0);
+        w2c_khdays_OSi_RescheduleThread(Guest());
+    }
+}
+
+namespace {
+
+// A guest thread's whole life on its host thread.
+void RunThread(GuestThread *t) {
+    {
+        std::unique_lock<std::mutex> lock(gMu);
+        tSelf = t;
+        WaitForBaton(lock);
+        if (gStopping) return;
+    }
+    khvr_guest_sp = t->sp;
+    if (wasm_rt_impl_try() == 0) {
+        CallGuest(t->entry, t->arg);
+        // OS_CreateThread puts OS_ExitThread in lr; returning from the entry ends the thread.
+        if (t->lr) CallGuest(t->lr);
+    } else {
+        PlatformReportTrap("guest thread");
+    }
+    // An exited thread never gets the baton again; park until shutdown.
+    std::unique_lock<std::mutex> lock(gMu);
+    tSelf->cv.wait(lock, [] { return gStopping; });
+}
+
+}  // namespace
+
+// ---- Imports the guest calls (guest/include/khvr_host.h) ----
+
+extern "C" {
+
+u32 w2c_env_khvr_host_save_context(struct w2c_env *, u32 context) {
+    TraceSwitch("save", context);
+    std::lock_guard<std::mutex> lock(gMu);
+    gByContext[context] = tSelf;
+    tSelf->context = context;
+    return 0;
+}
+
+void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
+    TraceSwitch("load", context);
+    std::unique_lock<std::mutex> lock(gMu);
+    GuestThread *next;
+    auto it = gByContext.find(context);
+    if (it != gByContext.end()) {
+        next = it->second;
+    } else {
+        // A thread OS_CreateThread set up with OS_InitContext: start it on a new host thread.
+        next = new GuestThread;
+        next->context = context;
+        next->entry = Read32(context + 0x40) - 4;  // pc_plus4
+        next->arg = Read32(context + 0x04);        // r0
+        next->sp = Read32(context + 0x38);
+        next->lr = Read32(context + 0x3c);
+        gByContext[context] = next;
+        gAll.push_back(next);
+        Log("thread: start context 0x%08x entry %u sp 0x%08x", context, next->entry, next->sp);
+    }
+    if (next == tSelf) return;
+    HandTo(next, lock);
+    WaitForBaton(lock);
+}
+
+void w2c_env_khvr_host_halt(struct w2c_env *) {
+    {
+        std::unique_lock<std::mutex> lock(gMu);
+        gIdle = true;
+        ++gHalts;
+        gIdleCv.notify_all();
+        gIdleCv.wait(lock, [] { return gWake || gStopping; });
+        gWake = false;
+        gIdle = false;
+        if (gStopping) {
+            lock.unlock();
+            for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    DispatchIrqs();
+}
+
+void w2c_env_khvr_host_irq_window(struct w2c_env *) {
+    if (RegIf() & RegIe()) DispatchIrqs();
+}
+
+void w2c_env_khvr_host_reset(struct w2c_env *) { PlatformReportTrap("OS_ResetSystem"); }
+
+void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
+
+}  // extern "C"
+
+// ---- The platform's side ----
+
+void ThreadsStartMain(uint32_t initialSp) {
+    auto *t = new GuestThread;
+    t->started = true;
+    t->sp = initialSp;
+    gAll.push_back(t);
+    {
+        std::lock_guard<std::mutex> lock(gMu);
+        gRunning = t;
+    }
+    StartHostThread(
+        [](void *p) -> void * {
+            tSelf = static_cast<GuestThread *>(p);
+            khvr_guest_sp = tSelf->sp;
+            if (wasm_rt_impl_try() == 0) {
+                Log("boot: entering main()");
+                w2c_khdays_main(Guest(), 0, 0);
+                Log("boot: main() returned");
+            } else {
+                PlatformReportTrap("main thread");
+            }
+            std::unique_lock<std::mutex> lock(gMu);
+            tSelf->cv.wait(lock, [] { return gStopping; });
+            return nullptr;
+        },
+        t);
+}
+
+bool ThreadsWaitIdle(int timeoutMs) {
+    std::unique_lock<std::mutex> lock(gMu);
+    return gIdleCv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [] { return gIdle || gStopping; });
+}
+
+bool ThreadsIsIdle() {
+    std::lock_guard<std::mutex> lock(gMu);
+    return gIdle;
+}
+
+uint64_t ThreadsWakeIdle() {
+    std::lock_guard<std::mutex> lock(gMu);
+    gWake = true;
+    gIdle = false;
+    gIdleCv.notify_all();
+    return gHalts;
+}
+
+bool ThreadsWaitHaltAfter(uint64_t halts, int timeoutMs) {
+    std::unique_lock<std::mutex> lock(gMu);
+    return gIdleCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                            [halts] { return (gHalts > halts && gIdle) || gStopping; });
+}
+
+void ThreadsStop() {
+    {
+        std::lock_guard<std::mutex> lock(gMu);
+        gStopping = true;
+        gIdleCv.notify_all();
+        for (GuestThread *t : gAll) t->cv.notify_all();
+    }
+    // Guest threads are detached: one may be deep inside guest code and never come back.
+}
+
+}  // namespace khvr::hle

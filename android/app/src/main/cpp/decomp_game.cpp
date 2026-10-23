@@ -1,0 +1,148 @@
+#include "decomp_game.h"
+
+#include <dirent.h>
+
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+
+#include "log.h"
+
+namespace khvr {
+
+namespace {
+
+constexpr double kDsFrameSeconds = 1.0 / 59.8261;
+
+// The game code at 0x0c of an NDS header.
+std::string GameCode(const std::string &path) {
+    char code[5] = {0};
+    if (FILE *f = std::fopen(path.c_str(), "rb")) {
+        if (std::fseek(f, 0x0c, SEEK_SET) != 0 || std::fread(code, 1, 4, f) != 4) code[0] = 0;
+        std::fclose(f);
+    }
+    return code;
+}
+
+bool EndsWithNds(const char *name) {
+    size_t n = std::strlen(name);
+    return n > 4 && (std::strcmp(name + n - 4, ".nds") == 0 || std::strcmp(name + n - 4, ".NDS") == 0);
+}
+
+}  // namespace
+
+DecompGame::~DecompGame() {
+    stop_ = true;
+    if (driver_.joinable()) driver_.join();
+    Platform::Get().Stop();
+}
+
+bool DecompGame::Start(const std::string &romDir, const std::string &filesDir, int language,
+                       std::string *message) {
+    std::string rom;
+    std::vector<std::string> others;
+    if (DIR *d = opendir(romDir.c_str())) {
+        while (dirent *e = readdir(d)) {
+            if (!EndsWithNds(e->d_name)) continue;
+            std::string path = romDir + "/" + e->d_name;
+            std::string code = GameCode(path);
+            if (code == "YKGP" && rom.empty()) rom = path;
+            else others.push_back(std::string(e->d_name) + " (" + (code.empty() ? "unreadable" : code) + ")");
+        }
+        closedir(d);
+    }
+    if (rom.empty()) {
+        *message = "No European ROM (game code YKGP) in " + romDir + ".";
+        if (!others.empty()) {
+            *message += " Found:";
+            for (const std::string &o : others) *message += " " + o;
+            *message += ". Only the EU release works: the decompilation matches that version.";
+        } else {
+            *message += " Copy your own dump of the EU cartridge there (any name ending in .nds).";
+        }
+        return false;
+    }
+    PlatformConfig cfg;
+    cfg.romPath = rom;
+    cfg.savePath = filesDir + "/khdays.sav";
+    cfg.logPath = filesDir + "/khvr_boot.log";
+    cfg.language = language;
+    if (!Platform::Get().Start(cfg, message)) return false;
+    *message = "Booting " + rom.substr(rom.find_last_of('/') + 1);
+    LOGI("%s", message->c_str());
+
+    frame_.inGameplay = false;
+    frame_.inMenu = true;  // everything on the giant screen until the 3D capture exists
+    frame_.camera.eye = {0, 0, 1};
+    frame_.camera.target = {0, 0, 0};
+    screens_.top.assign(DsScreens::kWidth * DsScreens::kHeight, 0xff000000u);
+    screens_.topHud.assign(DsScreens::kWidth * DsScreens::kHeight, 0);
+    screens_.bottom.assign(DsScreens::kWidth * DsScreens::kHeight, 0xff000000u);
+    latest_ = std::make_unique<PlatformScreens>();
+    driver_ = std::thread([this] { DriverLoop(); });
+    return true;
+}
+
+void DecompGame::DriverLoop() {
+    using clock = std::chrono::steady_clock;
+    auto frame = std::chrono::duration_cast<clock::duration>(std::chrono::duration<double>(kDsFrameSeconds));
+    auto next = clock::now();
+    auto scratch = std::make_unique<PlatformScreens>();
+    Platform &p = Platform::Get();
+    while (!stop_ && p.state() == PlatformState::Running) {
+        std::this_thread::sleep_until(next);
+        next += frame;
+        if (clock::now() > next + 10 * frame) next = clock::now();  // fell behind (loading): don't catch up
+        uint32_t t = touch_.load();
+        p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
+        if (!p.VBlank(100)) continue;  // still busy with the previous frame
+        p.CaptureScreens(scratch.get());
+        std::lock_guard<std::mutex> lock(screensMu_);
+        std::swap(scratch, latest_);
+        ++latestRevision_;
+    }
+}
+
+void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sampleButtons)(void *),
+                         void *ctx) {
+    // Sample the pad once per DS frame period, like the game's own Pad_Sample would; pulses from
+    // the input mapper (a swing's A press) then last the right number of game frames.
+    if (lastSample_ < 0) lastSample_ = now;
+    if (now - lastSample_ >= kDsFrameSeconds && sampleButtons) {
+        uint16_t bits = 0;
+        for (int i = 0; i < 4 && now - lastSample_ >= kDsFrameSeconds; ++i) {
+            bits |= sampleButtons(ctx);
+            lastSample_ += kDsFrameSeconds;
+        }
+        if (now - lastSample_ > kDsFrameSeconds) lastSample_ = now;
+        buttons_ = bits;
+    }
+    touch_ = (requests.touching ? 0x80000000u : 0u) | requests.touchX | (static_cast<uint32_t>(requests.touchY) << 8);
+
+    std::lock_guard<std::mutex> lock(screensMu_);
+    if (latestRevision_ != shownRevision_) {
+        shownRevision_ = latestRevision_;
+        const size_t n = DsScreens::kWidth * DsScreens::kHeight;
+        screens_.top.assign(latest_->top, latest_->top + n);
+        screens_.topHud.assign(latest_->topHud, latest_->topHud + n);
+        screens_.bottom.assign(latest_->bottom, latest_->bottom + n);
+        ++screens_.revision;
+        ++frame_.frameCounter;
+    }
+}
+
+std::vector<std::string> DecompGame::Status(size_t lines) const {
+    std::vector<std::string> out;
+    Platform &p = Platform::Get();
+    char head[96];
+    switch (p.state()) {
+    case PlatformState::Running: std::snprintf(head, sizeof head, "Running - %u frames", p.frames()); break;
+    case PlatformState::Crashed: std::snprintf(head, sizeof head, "Stopped: %s", p.crashReason().c_str()); break;
+    default: std::snprintf(head, sizeof head, "Not running"); break;
+    }
+    out.push_back(head);
+    for (const std::string &l : p.RecentLog(lines)) out.push_back(l);
+    return out;
+}
+
+}  // namespace khvr

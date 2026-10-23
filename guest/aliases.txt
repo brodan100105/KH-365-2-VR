@@ -1,0 +1,7 @@
+# Extra storage labels: `name address`, one per line. Globals that decomp sources define
+# themselves although the real variable is part of another symbol's block get a label at their
+# original address; its strong definition replaces the sources' own (weak) copies.
+#
+# build_guest.py derives most of these itself from the decomp's `khdays: shared-bss` blocks
+# (see shared_bss_aliases; the result is in build/guest/gen/aliases.txt). List here only what
+# that cannot work out.

@@ -25,8 +25,7 @@ public:
     const GameFrame &frame() const override { return frame_; }
     const WorldDrawList &world() const override { return world_; }
     const DsScreens &screens() const override { return screens_; }
-    // The character's own triangles, separate so first person can hide them.
-    const WorldDrawList &playerMesh() const { return player_; }
+    const WorldDrawList &player() const override { return player_; }
 
     // One fixed game frame (public for tests).
     void Step(const GameRequests &requests, uint16_t buttons);

@@ -93,6 +93,7 @@ enum class SettingId : int {
     HudScale,
     HudTouchInput,
     // Game
+    GamePlay,
     GameLanguage,
     GameInvertTurn,
     GameUnitsPerMeter,
@@ -115,6 +116,7 @@ enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 }
 enum class BottomScreenPlacement : int { LeftWrist = 0, Floating = 1, Hidden = 2 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
 enum class TextureFilter : int { Nearest = 0, Bilinear = 1 };
+enum class GamePlay : int { Auto = 0, Demo = 1 };
 // Buttons a gesture can press, in the order the Controls tab lists them.
 enum class DsBinding : int { A = 0, B = 1, X = 2, Y = 3, L = 4, R = 5, None = 6 };
 

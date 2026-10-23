@@ -5,10 +5,11 @@ A standalone **Meta Quest 3** VR port of *Kingdom Hearts 358/2 Days*, built on t
 [GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) for Super Mario Galaxy: the game's own code
 runs natively on the headset (no emulator) and is drawn in stereo from wherever your head is.
 
-> **Status: iteration 1, the VR shell.** The OpenXR app, both VR modes, motion combat, the
-> settings panel and comfort options are in place, running against a **demo arena** that stands
-> in for the game. Booting the real game from the decomp is the next iteration
-> ([roadmap](docs/ROADMAP.md)). None of this has run on a headset yet.
+> **Status: iteration 2, the game boots.** The whole decomp builds into the APK and runs on the
+> platform layer: OS, threads, interrupts, the ARM7's answers, file system and overlays come up
+> and the title scene loads. The game is shown on the giant screen (2D engines; the 3D world in VR
+> is iteration 3). It has not run with a real ROM yet: your first boot log decides what gets
+> fixed next. Without a ROM the app runs the demo arena from iteration 1 ([roadmap](docs/ROADMAP.md)).
 
 ## View modes
 
@@ -37,8 +38,20 @@ mode on the headset:
 adb install -r app-release.apk
 ```
 
-The game itself is not included and never will be: once the decomp boots (iteration 2) you will
-copy your own legally-obtained ROM to the headset.
+To play the game, copy your own dump of the **European** cartridge (game code `YKGP`; the
+decompilation only matches that release) to the headset, with SideQuest's file browser or adb:
+
+```sh
+adb push "Kingdom Hearts 358-2 Days (EU).nds" /sdcard/Android/data/com.khdays.vr/files/game/
+```
+
+The app creates `files/game/` on its first launch; any file name ending in `.nds` works. Without a
+ROM it shows the demo arena and says why. The game writes its save to `files/khdays.sav` and a boot
+log to `files/khvr_boot.log`: if something goes wrong, pull that log and send it over.
+
+The ROM is never part of the repository or the APK. Note that the APK does contain the game's code
+compiled from the decomp, so keep its download private (a private repository keeps CI artifacts
+private).
 
 ## Building
 
@@ -55,8 +68,17 @@ Khronos OpenXR loader from Maven Central):
 cd android && ./gradlew assembleRelease
 ```
 
-`tools/guest/probe_decomp.sh` measures how much of the decomp builds as the port's 32-bit guest
-module (`git submodule update --init decomp` first). [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+The game itself is built as a 32-bit "guest" from the decomp (`git submodule update --init decomp`
+first; needs clang/lld 17+ and wabt 1.0.34):
+
+```sh
+python3 guest/build_guest.py          # decomp -> wasm32 -> C in build/guest/wasm2c
+cmake -S platform -B build/platform && cmake --build build/platform
+build/platform/khdays_run --rom your.nds --frames 600 --screens out   # headless desktop run
+```
+
+The Android build picks the guest up automatically when `build/guest/wasm2c` exists; CI always
+builds it. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 explains the design: why the game code is compiled 32-bit, how the DS hardware is replaced, and how
 the game's 3D scene is re-projected for each eye.
 

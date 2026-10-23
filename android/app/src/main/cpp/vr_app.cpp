@@ -1,9 +1,11 @@
 #include "vr_app.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
 
 #include "khvr/canvas.h"
 #include "log.h"
@@ -50,6 +52,7 @@ uint16_t SampleThunk(void *ctx) { return static_cast<InputMapper *>(ctx)->Sample
 }  // namespace
 
 void VrApp::LoadSettings(const std::string &filesDir) {
+    filesDir_ = filesDir;
     settingsPath_ = filesDir + "/khvr.ini";
     std::ifstream in(settingsPath_);
     if (in) {
@@ -74,11 +77,78 @@ void VrApp::SaveSettingsIfChanged(bool force) {
 bool VrApp::Init(XrPlatform *xr) {
     xr_ = xr;
     if (!renderer_.Init()) return false;
-    game_ = std::make_unique<DemoGame>();
+    StartGame();
     lastMode_ = settings_.Enum<ViewMode>(SettingId::ViewMode);
     blinkTime_ = -1.0f;
     ApplyPlatformSettings();
     return true;
+}
+
+void VrApp::StartGame() {
+    // Where the ROM goes; created up front so it shows up in SideQuest's file browser.
+    mkdir((filesDir_ + "/game").c_str(), 0755);
+#ifdef KHVR_HAS_GAME
+    if (settings_.Enum<GamePlay>(SettingId::GamePlay) == GamePlay::Auto) {
+        auto game = std::make_unique<DecompGame>();
+        std::string message;
+        // The firmware's language numbers start at 1 (English) in the settings' order.
+        int language = settings_.Int(SettingId::GameLanguage) + 1;
+        if (game->Start(filesDir_ + "/game", filesDir_, language, &message)) {
+            decomp_ = game.get();
+            game_ = std::move(game);
+            LOGI("game: %s", message.c_str());
+            return;
+        }
+        notice_ = message;
+        LOGW("game: %s - running the demo arena", message.c_str());
+    }
+#else
+    if (settings_.Enum<GamePlay>(SettingId::GamePlay) == GamePlay::Auto)
+        notice_ = "This build has no game (built without the decomp guest). Running the demo arena.";
+#endif
+    auto demo = std::make_unique<DemoGame>();
+    demo_ = demo.get();
+    game_ = std::move(demo);
+}
+
+std::vector<std::string> VrApp::StatusLines() const {
+    std::vector<std::string> lines;
+    if (!notice_.empty()) {
+        lines.push_back("DEMO ARENA - the game is not running");
+        // Wrap the notice at the panel's width (76 characters at scale 1).
+        std::string rest = notice_;
+        while (!rest.empty()) {
+            size_t cut = rest.size() <= 74 ? rest.size() : rest.rfind(' ', 74);
+            if (cut == std::string::npos || cut == 0) cut = std::min<size_t>(74, rest.size());
+            lines.push_back(rest.substr(0, cut));
+            rest = rest.substr(cut < rest.size() && rest[cut] == ' ' ? cut + 1 : cut);
+        }
+        lines.push_back("Then restart the app. (Game > Play switches between game and demo.)");
+        return lines;
+    }
+#ifdef KHVR_HAS_GAME
+    if (decomp_ && (decomp_->state() != PlatformState::Running || decomp_->frame().frameCounter < 2)) {
+        for (const std::string &l : decomp_->Status(10)) lines.push_back(l.substr(0, 76));
+        lines.push_back("Full log: Android/data/com.khdays.vr/files/khvr_boot.log");
+    }
+#endif
+    return lines;
+}
+
+void VrApp::UpdateStatus(double now) {
+    std::vector<std::string> lines = StatusLines();
+    statusVisible_ = !lines.empty();
+    if (!statusVisible_ || now - statusDrawn_ < 0.5) return;
+    statusDrawn_ = now;
+    Canvas &c = statusCanvas_;
+    c.Clear(Rgba(16, 18, 34, 235));
+    c.StrokeRect(0, 0, c.width(), c.height(), Rgba(214, 178, 82), 3);
+    int y = 12;
+    for (size_t i = 0; i < lines.size() && y + Canvas::LineHeight() < c.height(); ++i) {
+        c.DrawText(14, y, lines[i], i == 0 ? Rgba(214, 178, 82) : Rgba(236, 236, 244));
+        y += Canvas::LineHeight() + 2;
+    }
+    statusTex_.Upload(c.width(), c.height(), c.data(), true);
 }
 
 ViewMode VrApp::EffectiveMode() const {
@@ -160,6 +230,15 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         Vec3 at = head.position + fwd * (hudDist * 0.8f) + Vec3{0, -0.55f, 0};
         bottomPanel_.pose = FacingFrom(at, head.position);
         bottomPanel_.pose.orientation = bottomPanel_.pose.orientation * Quat::AxisAngle({1, 0, 0}, -0.5f);
+    }
+
+    // The status panel floats just below eye level, a little left of where the HUD is.
+    statusPanel_.width = 0.8f;
+    statusPanel_.height = statusPanel_.width * 288.0f / 768.0f;
+    {
+        Vec3 fwd = Quat::Yaw(hudYaw_ + DegToRad(12)).Forward();
+        Vec3 at = head.position + fwd * 1.3f + Vec3{0, -0.35f, 0};
+        statusPanel_.pose = FacingFrom(at, head.position);
     }
 
     settingsPanel_.width = 1.0f;
@@ -306,8 +385,10 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     ApplyPlatformSettings();
     UpdateTextures();
+    UpdateStatus(in.time);
     if (!in.shouldRender) return;
-    if (mode == ViewMode::GiantScreen) RenderGiantScreenViews(in);
+    // The game's own picture needs no 3D re-render until the geometry capture exists.
+    if (mode == ViewMode::GiantScreen && !game_->world().triangles.empty()) RenderGiantScreenViews(in);
     for (int eye = 0; eye < 2; ++eye) {
         xr_->AcquireEye(eye);
         RenderEye(in, eye);
@@ -335,7 +416,7 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
         glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         renderer_.DrawTriangles(game_->world(), proj * view);
-        renderer_.DrawTriangles(game_->playerMesh(), proj * view);
+        renderer_.DrawTriangles(game_->player(), proj * view);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -386,15 +467,21 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     glEnable(GL_DEPTH_TEST);
 
     if (mode == ViewMode::GiantScreen) {
-        int view = settings_.Bool(SettingId::ScreenStereo) ? eye : 0;
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
-        renderer_.DrawQuad(giantViews_[view].texture(), giantScreen_.pose, giantScreen_.width,
-                           giantScreen_.height, vpTracking, 1.0f, curv, dist, true);
-        // The 2D HUD sits on the screen surface, a few millimeters in front.
-        Pose hudOnScreen = giantScreen_.pose * Pose{Quat(), {0, 0, 0.005f}};
-        renderer_.DrawQuad(hudTex_.id(), hudOnScreen, giantScreen_.width, giantScreen_.height,
-                           vpTracking, 1.0f, curv, dist);
+        if (game_->world().triangles.empty()) {
+            // The DS's top screen exactly as the game draws it.
+            renderer_.DrawQuad(topTex_.id(), giantScreen_.pose, giantScreen_.width, giantScreen_.height,
+                               vpTracking, 1.0f, curv, dist);
+        } else {
+            int view = settings_.Bool(SettingId::ScreenStereo) ? eye : 0;
+            renderer_.DrawQuad(giantViews_[view].texture(), giantScreen_.pose, giantScreen_.width,
+                               giantScreen_.height, vpTracking, 1.0f, curv, dist, true);
+            // The 2D HUD sits on the screen surface, a few millimeters in front.
+            Pose hudOnScreen = giantScreen_.pose * Pose{Quat(), {0, 0, 0.005f}};
+            renderer_.DrawQuad(hudTex_.id(), hudOnScreen, giantScreen_.width, giantScreen_.height,
+                               vpTracking, 1.0f, curv, dist);
+        }
     } else {
         // The game world, through the rig's mapping from tracking space into the world.
         Mat4 worldToTracking = Mat4::FromSimilarity(rig_.trackingToWorld.Inverse());
@@ -402,7 +489,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         renderer_.DrawTriangles(game_->world(), vpWorld);
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
-        if (drawPlayer) renderer_.DrawTriangles(game_->playerMesh(), vpWorld);
+        if (drawPlayer) renderer_.DrawTriangles(game_->player(), vpWorld);
         if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
             renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
     }
@@ -411,6 +498,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
          in.gripValid[0]))
         renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width, bottomPanel_.height, vpTracking);
     DrawProps(in, vpTracking);
+    if (statusVisible_ && statusTex_.id())
+        renderer_.DrawQuad(statusTex_.id(), statusPanel_.pose, statusPanel_.width, statusPanel_.height, vpTracking);
     if (panel_.isOpen())
         renderer_.DrawQuad(panelTex_.id(), settingsPanel_.pose, settingsPanel_.width,
                            settingsPanel_.height, vpTracking);

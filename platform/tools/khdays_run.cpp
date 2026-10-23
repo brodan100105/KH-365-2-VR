@@ -1,0 +1,166 @@
+// Desktop runner: boots the game headless on the platform layer and reports how far it gets.
+//
+//   khdays_run --rom game.nds [--frames 600] [--save khdays.sav] [--log boot.log] [--screens prefix]
+//   khdays_run --fake-rom [--frames 60]
+//
+// --fake-rom builds a minimal image with the right game code, an empty file system and an
+// overlay table, so the boot path (OS, threads, interrupts, ARM7 handshakes, file system set-up,
+// overlays) can be exercised without the game's data. The real game needs your own ROM.
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "khvr/platform.h"
+
+namespace {
+
+void Put32(std::vector<uint8_t> &b, size_t o, uint32_t v) { std::memcpy(&b[o], &v, 4); }
+void Put16(std::vector<uint8_t> &b, size_t o, uint16_t v) { std::memcpy(&b[o], &v, 2); }
+
+std::string WriteFakeRom(const std::string &path) {
+    const uint32_t kOverlays = 303, kFnt = 0x4000, kFat = 0x4100, kOvt = 0x6000;
+    std::vector<uint8_t> rom(0x20000, 0);
+    std::memcpy(&rom[0], "KH DAYS FAKE", 12);
+    std::memcpy(&rom[0x0c], "YKGP", 4);
+    std::memcpy(&rom[0x10], "8P", 2);
+    // File name table: the root directory, empty.
+    Put32(rom, 0x40, kFnt);
+    Put32(rom, 0x44, 16);
+    Put32(rom, kFnt + 0, 8);                 // sub-table offset
+    Put16(rom, kFnt + 4, static_cast<uint16_t>(kOverlays));  // first file id after the overlays
+    Put16(rom, kFnt + 6, 1);                 // one directory
+    rom[kFnt + 8] = 0;                       // end of the root's entries
+    // File allocation table: one empty file per overlay.
+    Put32(rom, 0x48, kFat);
+    Put32(rom, 0x4c, kOverlays * 8);
+    for (uint32_t i = 0; i < kOverlays; ++i) {
+        Put32(rom, kFat + 8 * i, 0x10000);
+        Put32(rom, kFat + 8 * i + 4, 0x10000);
+    }
+    // ARM9 overlay table: id, RAM address, sizes 0, file id = id.
+    Put32(rom, 0x50, kOvt);
+    Put32(rom, 0x54, kOverlays * 32);
+    for (uint32_t i = 0; i < kOverlays; ++i) {
+        size_t o = kOvt + 32 * i;
+        Put32(rom, o + 0, i);
+        Put32(rom, o + 4, 0x0204cac0);
+        Put32(rom, o + 24, i);
+    }
+    FILE *f = std::fopen(path.c_str(), "wb");
+    if (!f || std::fwrite(rom.data(), 1, rom.size(), f) != rom.size()) {
+        std::fprintf(stderr, "cannot write %s\n", path.c_str());
+        std::exit(1);
+    }
+    std::fclose(f);
+    return path;
+}
+
+void WritePpm(const char *path, const uint32_t *px) {
+    FILE *f = std::fopen(path, "wb");
+    if (!f) return;
+    std::fprintf(f, "P6 256 192 255\n");
+    for (int i = 0; i < 256 * 192; ++i) {
+        uint8_t rgb[3] = {static_cast<uint8_t>(px[i]), static_cast<uint8_t>(px[i] >> 8), static_cast<uint8_t>(px[i] >> 16)};
+        std::fwrite(rgb, 1, 3, f);
+    }
+    std::fclose(f);
+}
+
+// Checks the 2D renderer without a ROM: one text background half filled with a red tile over a
+// blue backdrop, and a green 8x8 sprite.
+int RenderTest(const char *ppm) {
+    using khvr::PlatformTestWrite;
+    khvr::PlatformInitForTests();
+    PlatformTestWrite(0x04000304, 0x8000, 2);       // POWCNT1: engine A on the top screen
+    PlatformTestWrite(0x04000240, 0x81, 1);         // bank A -> BG VRAM A
+    PlatformTestWrite(0x04000241, 0x82, 1);         // bank B -> OBJ VRAM A
+    PlatformTestWrite(0x04000000, 0x00011110, 4);   // display on, BG0 + OBJ, 1D sprites
+    PlatformTestWrite(0x04000008, 8 << 8, 2);       // BG0: tiles at 0, map at 0x4000
+    PlatformTestWrite(0x05000000, 0x7c00, 2);       // backdrop: blue
+    PlatformTestWrite(0x05000002, 0x001f, 2);       // colour 1: red
+    PlatformTestWrite(0x05000204, 0x03e0, 2);       // sprite colour 2: green
+    for (int i = 0; i < 32; i += 4) PlatformTestWrite(0x06000020 + i, 0x11111111, 4);  // tile 1
+    for (int row = 0; row < 32; ++row)
+        for (int col = 0; col < 16; ++col) PlatformTestWrite(0x06004000 + (row * 32 + col) * 2, 1, 2);
+    for (int i = 0; i < 32; i += 4) PlatformTestWrite(0x06400000 + i, 0x22222222, 4);  // sprite tile 0
+    for (int s = 1; s < 128; ++s) PlatformTestWrite(0x07000000 + 8 * s, 0x0200, 2);     // others off
+    PlatformTestWrite(0x07000000, 50, 2);           // sprite 0: y 50
+    PlatformTestWrite(0x07000002, 200, 2);          // x 200
+    PlatformTestWrite(0x07000004, 0, 2);            // tile 0, palette 0
+    static khvr::PlatformScreens s;
+    khvr::Platform::Get().CaptureScreens(&s);
+    if (ppm) WritePpm(ppm, s.top);
+    auto at = [&](int x, int y) { return s.top[y * 256 + x] & 0xffffff; };
+    bool ok = at(10, 10) == 0x0000ff && at(180, 10) == 0xff0000 && at(203, 53) == 0x00ff00 &&
+              (s.topHud[180 * 256 + 180] >> 24) == 0 && (s.bottom[0] & 0xffffff) == 0xffffff;
+    std::printf("render test: %s (bg 0x%06x, backdrop 0x%06x, sprite 0x%06x)\n", ok ? "ok" : "FAILED",
+                at(10, 10), at(180, 10), at(203, 53));
+    return ok ? 0 : 1;
+}
+
+}  // namespace
+
+int main(int argc, char **argv) {
+    if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
+    khvr::PlatformConfig cfg;
+    int frames = 600;
+    std::string screens;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        auto next = [&]() -> std::string {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "%s needs a value\n", a.c_str());
+                std::exit(2);
+            }
+            return argv[++i];
+        };
+        if (a == "--rom") cfg.romPath = next();
+        else if (a == "--fake-rom") cfg.romPath = WriteFakeRom("khdays_fake.nds");
+        else if (a == "--frames") frames = std::atoi(next().c_str());
+        else if (a == "--save") cfg.savePath = next();
+        else if (a == "--log") cfg.logPath = next();
+        else if (a == "--language") cfg.language = std::atoi(next().c_str());
+        else if (a == "--screens") screens = next();
+        else {
+            std::fprintf(stderr, "usage: %s --rom game.nds | --fake-rom [--frames N] [--save f] [--log f]\n", argv[0]);
+            return 2;
+        }
+    }
+    if (cfg.romPath.empty()) {
+        std::fprintf(stderr, "no ROM: pass --rom <your EU ROM> or --fake-rom\n");
+        return 2;
+    }
+    if (cfg.savePath.empty()) cfg.savePath = "khdays.sav";
+
+    khvr::Platform &p = khvr::Platform::Get();
+    std::string error;
+    if (!p.Start(cfg, &error)) {
+        std::fprintf(stderr, "start failed: %s\n", error.c_str());
+        return 1;
+    }
+    int idleFrames = 0, busy = 0;
+    for (int f = 0; f < frames && p.state() == khvr::PlatformState::Running; ++f) {
+        if (p.VBlank(200)) ++idleFrames;
+        else ++busy;
+    }
+    std::printf("state: %s after %u frames (%d completed, %d busy)\n",
+                p.state() == khvr::PlatformState::Running ? "running"
+                : p.state() == khvr::PlatformState::Crashed ? "crashed" : "stopped",
+                p.frames(), idleFrames, busy);
+    if (p.state() == khvr::PlatformState::Crashed) std::printf("crash: %s\n", p.crashReason().c_str());
+    if (!screens.empty()) {
+        // Both screens as they were at the end, as <prefix>_top.ppm and <prefix>_bottom.ppm.
+        static khvr::PlatformScreens s;
+        p.CaptureScreens(&s);
+        WritePpm((screens + "_top.ppm").c_str(), s.top);
+        WritePpm((screens + "_bottom.ppm").c_str(), s.bottom);
+        std::printf("screens written to %s_top.ppm / _bottom.ppm\n", screens.c_str());
+    }
+    std::printf("last log lines:\n");
+    for (const std::string &l : p.RecentLog(25)) std::printf("  %s\n", l.c_str());
+    p.Stop();
+    std::fflush(stdout);
+    std::_Exit(0);  // guest threads are parked; do not wait for them
+}
