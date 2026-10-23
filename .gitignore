@@ -1,0 +1,12 @@
+# Build output
+/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+*.apk
+
+# Never commit game data: the ROM and anything extracted from it stay on your machine.
+*.nds
+/game/
