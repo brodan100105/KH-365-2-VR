@@ -339,7 +339,21 @@ TEST(CombatStickFlickDodges) {
     in.dt = 1.0f / 90.0f;
     for (int i = 0; i < 20; ++i) r.Update(s, in);
     in.moveAxis = {1, 0, 0};
-    CHECK(r.Update(s, in).dodge);
+    CHECK(!r.Update(s, in).dodge);  // not yet: it could be the start of walking
+    r.Update(s, in);
+    in.moveAxis = {};
+    CombatFrame flick = r.Update(s, in);
+    CHECK(flick.dodge);
+    CHECK(flick.dodgeDirection.x > 0.9f);
+    // Pushing the stick to the edge fast and holding it is walking, not a dodge.
+    CombatRecognizer hold;
+    for (int i = 0; i < 20; ++i) hold.Update(s, in);
+    bool held = false;
+    in.moveAxis = {0, 0, -1};
+    for (int i = 0; i < 90; ++i) held |= hold.Update(s, in).dodge;
+    in.moveAxis = {};
+    for (int i = 0; i < 5; ++i) held |= hold.Update(s, in).dodge;
+    CHECK(!held);
     // Walking up to full speed slowly is not a dodge.
     CombatRecognizer walk;
     in.moveAxis = {};

@@ -33,7 +33,7 @@ DS buttons are named as the game names them. The defaults follow the game's **Ty
 | Swing the Keyblade | Attack: one swing is one press of **Swing presses** (A) | Combat > Swing threshold, Swing cooldown |
 | Hold the Keyblade level across your body, in front of your face | Guard: holds **Guard presses** (Y) | Combat > Guard gesture |
 | Point the off hand where you look and pull its trigger | Cast the selected command (**Cast presses**, X) | Combat > Magic / commands |
-| Flick the left stick from center to its edge | Dodge roll in that direction (**Dodge presses**, Y) | Combat > Dodge roll |
+| Flick the left stick to its edge and let go | Dodge roll in that direction (**Dodge presses**, Y) | Combat > Dodge roll |
 | Jump in your room | Jump (**Physical jump presses**, B) | Combat > Physical jump (off by default) |
 | Off-hand grip | **Grip presses** (R, lock-on) | |
 | Weapon-hand trigger | DS L | |

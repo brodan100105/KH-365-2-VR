@@ -6,7 +6,7 @@
 //  - Guard:  the blade is held roughly level across the body in front of the head.
 //  - Magic:  pointing the off hand forward and pulling its trigger casts the selected command.
 //  - Jump:   a quick upward head movement (optional, Combat > Physical jump).
-//  - Dodge:  flicking the movement stick from center to its edge.
+//  - Dodge:  flicking the movement stick from center to its edge and letting go.
 //
 // Everything works in tracking space (meters); the caller turns directions into world space
 // with the rig's trackingToWorld.
@@ -86,6 +86,9 @@ private:
     float stickRestTime_ = 0.0f;  // how long the stick has been near center
     float flickBandTime_ = 0.0f;  // how long the stick has been between center and edge
     bool stickWasCentered_ = false;
+    bool flickPending_ = false;   // reached the edge from center; a dodge if released soon
+    float flickHeldTime_ = 0.0f;
+    Vec3 flickDirection_;
 };
 
 SwingKind ClassifySwing(const Vec3 &tipVelocity, const Vec3 &bladeAxis, const Pose &head);
