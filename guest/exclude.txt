@@ -1,0 +1,24 @@
+# Decomp sources the guest build leaves out (fnmatch patterns on paths relative to decomp/;
+# `*` also matches `/`). Each excluded function is supplied by guest/runtime (guest-side C) or by
+# the platform layer (host imports), or is simply not run.
+
+# The libraries' own hand-written ARM assembly (as .c files of inline asm): cache and interrupt
+# control, context switching, BIOS calls, fast copies. guest/runtime/ and the platform replace them.
+libs/*/asm_stubs/*
+
+# DS Protect, the anti-tamper overlay: checks for flashcarts and emulators. Not run.
+src/overlays/system/ov028_dsprotect/*
+
+# DTCM's initialized IRQ table: generated together with the rest of DTCM (build_guest.py).
+libs/nitro/os/auto/os_irq_table_027e0000.c
+
+# MSL string functions written with mwcc lvalue casts; guest/runtime/libc.c has them.
+libs/msl/c/auto/strcmp.c
+libs/msl/c/auto/strcpy.c
+
+# Cache maintenance built on inline asm; the port has no caches to maintain.
+libs/nitro/os/calls/DC_FlushRange.c
+
+# Replaced by guest/runtime/card_fs.c: ROM reads are file reads, overlays are linked in.
+libs/nitro/card/calls/CARDi_ReadRom.c
+libs/nitro/fs/calls/FS_StartOverlay.c

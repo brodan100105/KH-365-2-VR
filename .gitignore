@@ -10,3 +10,6 @@ android/local.properties
 # Never commit game data: the ROM and anything extracted from it stay on your machine.
 *.nds
 /game/
+
+# Python bytecode
+__pycache__/

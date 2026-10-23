@@ -1,0 +1,1032 @@
+{
+ "data_not_function": {
+  "src/overlays/field/ov302/Ov302_InitObjectWithList.c": [
+   "gOv302UiCmStrWorldIdTextPath"
+  ]
+ },
+ "function_not_data": {
+  "src/overlays/enemies/ov147_enemy_cymbal_monkey/Ov147_PointHeadingCheckPose.c": [
+   "Ov147_InvokeWithVec3ThenSetSubState5"
+  ],
+  "src/overlays/enemies/ov148_enemy_cymbal_monkey_2/Ov148_PointHeadingCheckPose.c": [
+   "Ov148_InvokeWithVec3ThenSetSubState5"
+  ],
+  "src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeAimedShotState.c": [
+   "Ov156_stTimedInterpPhases"
+  ],
+  "src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeWindup.c": [
+   "Ov156_ChargeAimedShotState"
+  ],
+  "src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeAimedShotState.c": [
+   "Ov157_stTimedInterpPhases"
+  ],
+  "src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeWindup.c": [
+   "Ov157_ChargeAimedShotState"
+  ],
+  "src/overlays/enemies/ov191_enemy_poison_plant/Ov191_ChargeAimedShotState.c": [
+   "Ov191_stTimedInterpPhases"
+  ],
+  "src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_ChargeAimedShotState.c": [
+   "Ov192_stTimedInterpPhases"
+  ],
+  "src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_ChargeAimedShotState.c": [
+   "Ov193_stTimedInterpPhases"
+  ],
+  "src/overlays/enemies/ov194_enemy_snapper_dog/Ov194_BeginSwing.c": [
+   "Ov194_SwingTick"
+  ],
+  "src/overlays/enemies/ov195_enemy_snapper_dog_2/Ov195_BeginSwing.c": [
+   "Ov195_SwingTick"
+  ],
+  "src/overlays/enemies/ov196_enemy_snapper_dog_3/Ov196_BeginSwing.c": [
+   "Ov196_SwingTick"
+  ],
+  "src/overlays/enemies/ov197_enemy_tricky_monkey/Ov197_PointHeadingCheckPose.c": [
+   "Ov197_InvokeWithVec3ThenSetSubState5"
+  ],
+  "src/overlays/enemies/ov198_enemy_tricky_monkey_2/Ov198_PointHeadingCheckPose.c": [
+   "Ov198_InvokeWithVec3ThenSetSubState5"
+  ],
+  "src/overlays/enemies/ov199_enemy_tricky_monkey_3/Ov199_PointHeadingCheckPose.c": [
+   "Ov199_InvokeWithVec3ThenSetSubState5"
+  ],
+  "src/overlays/enemies/ov269_enemy_bully_dog/Ov269_BeginSwing.c": [
+   "Ov269_SwingTick"
+  ],
+  "src/overlays/enemies/ov270_enemy_bully_dog_2/Ov270_BeginSwing.c": [
+   "Ov270_SwingTick"
+  ],
+  "src/overlays/enemies/ov281_enemy_commander/Ov281_InitializeActor.c": [
+   "Ov281_HandleActorCommand",
+   "Ov281_Model_ReapplyTrack0",
+   "Ov281_ProcessHitReaction",
+   "Ov281_ReleaseByStateAndPublishPose",
+   "Ov281_ReleaseSubObjectsAndSlotArrayThenNotify",
+   "Ov281_RequestSubState10IfNotCurrent",
+   "Ov281_RequestSubState11IfIdle",
+   "Ov281_SpawnActorRegistryEntry",
+   "Ov281_TickWithChildRefresh",
+   "func_ov281_020cc63c",
+   "func_ov281_020cc648"
+  ],
+  "src/overlays/enemies/ov301_enemy_tt_leaf/Ov301_EnemyEnterSubState.c": [
+   "Ov301_AiSlot1NoOp",
+   "Ov301_SetupNodeCallback",
+   "Ov301_stateSetFlagsClearBit"
+  ],
+  "src/overlays/enemies/ov301_enemy_tt_leaf/Ov301_InitObject.c": [
+   "Ov301_CreateRegistryEntryForActor",
+   "Ov301_OnDespawn",
+   "Ov301_OnHitQueueAction3",
+   "Ov301_PropagateBlockToLinkedNodes",
+   "Ov301_SetSubitemStatesAndConfig",
+   "func_ov301_020cc1d8",
+   "func_ov301_020cc1e4"
+  ],
+  "src/overlays/players/ov030_player_roxas/func_ov030_020b3220.c": [
+   "Ov030_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov031_player_axel/func_ov031_020b3220.c": [
+   "Ov031_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov032_player_xigbar/func_ov032_020b3220.c": [
+   "Ov032_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov033_player_saix/func_ov033_020b3220.c": [
+   "Ov033_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov034_player_xaldin/func_ov034_020b3220.c": [
+   "Ov034_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov035_player_sora/func_ov035_020b3220.c": [
+   "Ov035_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov036_player_demyx/func_ov036_020b3220.c": [
+   "Ov036_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov037_player_larxene/func_ov037_020b3220.c": [
+   "Ov037_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov038_player_lexaeus/func_ov038_020b3220.c": [
+   "Ov038_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov039_player_luxord/func_ov039_020b3220.c": [
+   "Ov039_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov040_player_marluxia/func_ov040_020b3220.c": [
+   "Ov040_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov041_player_riku/func_ov041_020b3220.c": [
+   "Ov041_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov042_player_vexen/func_ov042_020b3220.c": [
+   "Ov042_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov043_player_xemnas/func_ov043_020b3220.c": [
+   "Ov043_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov044_player_xion/func_ov044_020b3220.c": [
+   "Ov044_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov045_player_zexion/func_ov045_020b3220.c": [
+   "Ov045_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov046_player_mickey/func_ov046_020b3220.c": [
+   "Ov046_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov047_player_donald/func_ov047_020b3220.c": [
+   "Ov047_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov048_player_goofy/func_ov048_020b3220.c": [
+   "Ov048_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov049_player_roxas_dual/func_ov049_020b3220.c": [
+   "Ov049_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov050_player_axel_2/func_ov050_020b5a20.c": [
+   "Ov050_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov051_player_saix_2/func_ov051_020b5a20.c": [
+   "Ov051_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov052_player_xigbar_2/func_ov052_020b5a20.c": [
+   "Ov052_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov053_player_xaldin_2/func_ov053_020b5a20.c": [
+   "Ov053_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov054_player_sora_2/func_ov054_020b5a20.c": [
+   "Ov054_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov055_player_demyx_2/func_ov055_020b5a20.c": [
+   "Ov055_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov056_player_larxene_2/func_ov056_020b5a20.c": [
+   "Ov056_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov057_player_lexaeus_2/func_ov057_020b5a20.c": [
+   "Ov057_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov058_player_luxord_2/func_ov058_020b5a20.c": [
+   "Ov058_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov059_player_marluxia_2/func_ov059_020b5a20.c": [
+   "Ov059_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov060_player_riku_2/func_ov060_020b5a20.c": [
+   "Ov060_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov061_player_vexen_2/func_ov061_020b5a20.c": [
+   "Ov061_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov062_player_xemnas_2/func_ov062_020b5a20.c": [
+   "Ov062_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov063_player_xion_2/func_ov063_020b5a20.c": [
+   "Ov063_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov064_player_zexion_2/func_ov064_020b5a20.c": [
+   "Ov064_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov065_player_mickey_2/func_ov065_020b5a20.c": [
+   "Ov065_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov066_player_donald_2/func_ov066_020b5a20.c": [
+   "Ov066_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov067_player_goofy_2/func_ov067_020b5a20.c": [
+   "Ov067_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov068_player_roxas_dual_2/func_ov068_020b5a20.c": [
+   "Ov068_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov070_player_axel_3/func_ov070_020b8100.c": [
+   "Ov070_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov071_player_saix_3/func_ov071_020b8100.c": [
+   "Ov071_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov072_player_xigbar_3/func_ov072_020b8100.c": [
+   "Ov072_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov073_player_xaldin_3/func_ov073_020b8100.c": [
+   "Ov073_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov074_player_sora_3/func_ov074_020b8100.c": [
+   "Ov074_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov075_player_demyx_3/func_ov075_020b8100.c": [
+   "Ov075_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov076_player_larxene_3/func_ov076_020b8100.c": [
+   "Ov076_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov077_player_lexaeus_3/func_ov077_020b8100.c": [
+   "Ov077_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov078_player_luxord_3/func_ov078_020b8100.c": [
+   "Ov078_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov079_player_marluxia_3/func_ov079_020b8100.c": [
+   "Ov079_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov080_player_riku_3/func_ov080_020b8100.c": [
+   "Ov080_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov081_player_vexen_3/func_ov081_020b8100.c": [
+   "Ov081_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov082_player_xion_3/func_ov082_020b8100.c": [
+   "Ov082_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov083_player_zexion_3/func_ov083_020b8100.c": [
+   "Ov083_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov084_player_mickey_3/func_ov084_020b8100.c": [
+   "Ov084_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov085_player_donald_3/func_ov085_020b8100.c": [
+   "Ov085_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov086_player_goofy_3/func_ov086_020b8100.c": [
+   "Ov086_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov087_player_roxas_dual_3/func_ov087_020b8100.c": [
+   "Ov087_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov088_player_axel_4/func_ov088_020ba7c0.c": [
+   "Ov088_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov089_player_saix_4/func_ov089_020ba7c0.c": [
+   "Ov089_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov090_player_xaldin_4/func_ov090_020ba7c0.c": [
+   "Ov090_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov091_player_sora_4/func_ov091_020ba7c0.c": [
+   "Ov091_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov092_player_demyx_4/func_ov092_020ba7c0.c": [
+   "Ov092_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov093_player_larxene_4/func_ov093_020ba7c0.c": [
+   "Ov093_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov094_player_lexaeus_4/func_ov094_020ba7c0.c": [
+   "Ov094_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov095_player_luxord_4/func_ov095_020ba7c0.c": [
+   "Ov095_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov096_player_marluxia_4/func_ov096_020ba7c0.c": [
+   "Ov096_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov097_player_riku_4/func_ov097_020ba7c0.c": [
+   "Ov097_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov098_player_vexen_4/func_ov098_020ba7c0.c": [
+   "Ov098_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov099_player_xion_4/func_ov099_020ba7c0.c": [
+   "Ov099_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov100_player_zexion_4/func_ov100_020ba7c0.c": [
+   "Ov100_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov101_player_mickey_4/func_ov101_020ba7c0.c": [
+   "Ov101_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov102_player_donald_4/func_ov102_020ba7c0.c": [
+   "Ov102_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov103_player_goofy_4/func_ov103_020ba7c0.c": [
+   "Ov103_InvokeWithDataTable"
+  ],
+  "src/overlays/players/ov104_player_roxas_dual_4/func_ov104_020ba7c0.c": [
+   "Ov104_InvokeWithDataTable"
+  ],
+  "src/overlays/scenes/ov003/Ov003_SceneInit.c": [
+   "Ov003_StateActivateLayers"
+  ],
+  "src/overlays/scenes/ov008_camp_menu/Ov008_MainMenuInit.c": [
+   "Ov008_ReceiveMenuMessage"
+  ]
+ },
+ "unstatic": {
+  "libs/nns/g2d/auto/NNS_G2dInitImagePaletteProxy.c": [
+   "InitializeVRamLocation_"
+  ],
+  "libs/nns/g2d/auto/NNS_G2dInitImageProxy.c": [
+   "InitializeVRamLocation_"
+  ],
+  "libs/nns/g2d/calls/NNS_G2dLoadImage1DMapping.c": [
+   "GXS_SetOBJVRamModeChar",
+   "GX_SetOBJVRamModeChar"
+  ],
+  "libs/nns/g3d/auto/NNSi_G3dAnmCalcNsBva.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/g3d/auto/getTransDataEx_.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/g3d/auto/getTransData_.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c": [
+   "G3_Identity",
+   "G3_MtxMode",
+   "G3_PopMtx",
+   "G3_PushMtx",
+   "MTX_Copy44To43"
+  ],
+  "libs/nns/g3d/calls/NNS_G3dInit.c": [
+   "G3X_SetFifoIntrCond"
+  ],
+  "libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBma.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBta.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBtp.c": [
+   "FX_Whole"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetBankInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c": [
+   "GetOffsetTable",
+   "GetPtrConst"
+  ]
+ },
+ "weak": {
+  "guest/runtime/libc.c": [
+   "strlen"
+  ],
+  "libs/msl/c/calls/strlen.c": [
+   "strlen"
+  ],
+  "libs/nitro/os/calls/OS_DisableScheduler.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OS_EnableScheduler.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OS_ExitThread.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OS_GetTick.c": [
+   "OSi_NeedResetTimer",
+   "data_02044664",
+   "data_0204466c"
+  ],
+  "libs/nitro/os/calls/OS_SleepThread.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OSi_ExitThread.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OSi_ExitThread_ArgSpecified.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OSi_ExitThread_Destroy.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OSi_GetUnusedThreadId.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/os/calls/OSi_RemoveThreadFromList.c": [
+   "OSi_CurrentThreadPtr",
+   "OSi_IsThreadInitialized",
+   "OSi_RescheduleCount",
+   "OSi_StackForDestructor",
+   "OSi_SystemStackBuffer",
+   "OSi_ThreadIdCount",
+   "data_0204430c",
+   "data_02044330",
+   "exitThreadStatus",
+   "killThreadStatus"
+  ],
+  "libs/nitro/snd/calls/InitPXI.c": [
+   "data_02044748",
+   "sCurrentTag",
+   "sFinishedTag",
+   "sFreeListEnd",
+   "sReserveList",
+   "sReserveListEnd",
+   "sWaitingCommandListCount",
+   "sWaitingCommandListQueueRead",
+   "sWaitingCommandListQueueWrite"
+  ],
+  "libs/nitro/snd/calls/SND_CommandInit.c": [
+   "data_02044748",
+   "sCurrentTag",
+   "sFinishedTag",
+   "sFreeListEnd",
+   "sReserveList",
+   "sReserveListEnd",
+   "sWaitingCommandListCount",
+   "sWaitingCommandListQueueRead",
+   "sWaitingCommandListQueueWrite"
+  ],
+  "libs/nitro/snd/calls/SND_RecvCommandReply.c": [
+   "data_02044748",
+   "sCurrentTag",
+   "sFinishedTag",
+   "sFreeListEnd",
+   "sReserveList",
+   "sReserveListEnd",
+   "sWaitingCommandListCount",
+   "sWaitingCommandListQueueRead",
+   "sWaitingCommandListQueueWrite"
+  ],
+  "libs/nns/snd/auto/CancelMemoryStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/auto/CloseMemoryStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/auto/FreePlayer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/auto/NNS_SndArcStrmStartPrepared.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/auto/NNS_SndStrmHandleRelease.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/AllocChannel.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/AllocCommandBuffer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/AllocPlayer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/CancelFileStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/CloseFileStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/CreateThread.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/DisposeCallback_2.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/ForceStopStrm_2.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/FreeChannel.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/FreeCommandBuffer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndAllocAlarm.c": [
+   "data_0204a2fc",
+   "sAlarmLock",
+   "sChannelLock"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetBankInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetFileAddress.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetFileID.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetFileOffset.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetFileSize.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcInit.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcReadFile.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcSetFileAddress.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcSetLoadBlockSize.c": [
+   "data_0204ad4c"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmGetCurrentPlayingPos.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmGetTimeLength.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmInit.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmPrepare.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmSetupPlayer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmStart.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmStop.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndArcStrmStopAll.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNS_SndLockChannel.c": [
+   "data_0204a2fc",
+   "sAlarmLock",
+   "sChannelLock"
+  ],
+  "libs/nns/snd/calls/NNS_SndStrmInit.c": [
+   "data_0204abe0"
+  ],
+  "libs/nns/snd/calls/NNS_SndStrmSetup.c": [
+   "data_0204abe0"
+  ],
+  "libs/nns/snd/calls/NNS_SndUnlockCapture.c": [
+   "data_0204a2fc",
+   "sAlarmLock",
+   "sChannelLock"
+  ],
+  "libs/nns/snd/calls/NNS_SndUnlockChannel.c": [
+   "data_0204a2fc",
+   "sAlarmLock",
+   "sChannelLock"
+  ],
+  "libs/nns/snd/calls/NNSi_SndArcStrmMain.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/NNSi_SndCaptureInit.c": [
+   "data_0204acb0"
+  ],
+  "libs/nns/snd/calls/OnDataEnd.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/OpenFileStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/OpenMemoryStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/PrepareStrm.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/ReadCommandBuffer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/ReadFileStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/ReadMemoryStream.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/RemoveCommandByPlayer.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/SetupStreamFunction.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/StrmCallback_2.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "libs/nns/snd/calls/StrmThread.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
+  "src/engine/PauseMenu_ConfirmFrame.c": [
+   "data_02042730"
+  ],
+  "src/engine/data/main_pause_menu_02042730.c": [
+   "data_02042730"
+  ],
+  "src/overlays/scenes/ov008_camp_menu/data/ov008_bss_02090f00.c": [
+   "data_ov008_02090f00"
+  ],
+  "src/overlays/scenes/ov008_camp_menu/data/ov008_bss_02090f04.c": [
+   "data_ov008_02090f04",
+   "data_ov008_02090f0c"
+  ],
+  "src/overlays/scenes/ov008_camp_menu/data/ov008_bss_02090f14.c": [
+   "data_ov008_02090f14",
+   "data_ov008_02090f18",
+   "data_ov008_02090f1c",
+   "data_ov008_02090f20",
+   "data_ov008_02090f24",
+   "data_ov008_02090f40"
+  ],
+  "src/overlays/scenes/ov008_camp_menu/data/ov008_bss_02090fa0.c": [
+   "data_ov008_02090fa0",
+   "data_ov008_02090fa4",
+   "data_ov008_02090fa8",
+   "data_ov008_02090fac",
+   "data_ov008_02090fb0",
+   "data_ov008_02090fb4"
+  ],
+  "src/overlays/scenes/ov011/Ov011_ApplyPaneFade.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_BlitTileRow.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_CreateScene.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_CreateTitleObjects.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_DrawTitleLine.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_EmitSlotGfx.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_InitTitleTileSurface.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_Mode2Teardown.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_ScrollTitleText.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/scenes/ov011/Ov011_TickLayoutAnimator.c": [
+   "data_ov011_0205e960"
+  ],
+  "src/overlays/scenes/ov011/Ov011_UpdateTitleFrame.c": [
+   "data_ov011_0205e960",
+   "data_ov011_0205e964"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_BlinkPanelSlot.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_DrawHintText.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_DrawPanelSlotShifted.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_ExitScene.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_FloatCharacterObject.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_GameOverChoice.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_GameOverFadeIn.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_GameOverFadeOut.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_GameOverIdle.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_GameOverMenu.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_InitCamera.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_InitCharacterObject.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_InitHintText.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_InitScene.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_LayoutChoicePanel.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_LayoutMenuPanel.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_LoadCharacterModels.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_LoadPanel.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_MoveCursor.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_PollChoice.c": [
+   "data_ov027_02083ee0",
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_PollMenu.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_StepScreenSwap.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/Ov027_UpdateModels.c": [
+   "data_ov027_02084360",
+   "data_ov027_02084364"
+  ],
+  "src/overlays/screens/ov027_game_over/data/ov027_tables_02083ee0.c": [
+   "data_ov027_02083ee0"
+  ],
+  "src/overlays/system/ov105_wireless/Ov105_WH_ChildConnect.c": [
+   "data_ov105_020c04c0",
+   "sWh_bAutoConnect",
+   "sWh_bPictoCatch",
+   "sWh_nChannelBitmap",
+   "sWh_nChannelBusyRatio",
+   "sWh_nConnectMode",
+   "sWh_nDisconnectReason",
+   "sWh_nErrCode",
+   "sWh_nField0e",
+   "sWh_nMeasuredChannel",
+   "sWh_nMpFreq",
+   "sWh_nRand",
+   "sWh_nRecvBufferSize",
+   "sWh_nSendBufferSize",
+   "sWh_nSysState",
+   "sWh_pChildWEPKeyGenerator",
+   "sWh_pField3c",
+   "sWh_pJudgeAccept",
+   "sWh_pParentWEPKeyGenerator",
+   "sWh_pReceiver",
+   "sWh_pRecvBuffer",
+   "sWh_pScanCallback",
+   "sWh_pSendBuffer",
+   "sWh_pWmBuffer"
+  ],
+  "src/overlays/system/ov105_wireless/Ov105_WH_Initialize.c": [
+   "data_ov105_020c04c0",
+   "sWh_bAutoConnect",
+   "sWh_bPictoCatch",
+   "sWh_nChannelBitmap",
+   "sWh_nChannelBusyRatio",
+   "sWh_nConnectMode",
+   "sWh_nDisconnectReason",
+   "sWh_nErrCode",
+   "sWh_nField0e",
+   "sWh_nMeasuredChannel",
+   "sWh_nMpFreq",
+   "sWh_nRand",
+   "sWh_nRecvBufferSize",
+   "sWh_nSendBufferSize",
+   "sWh_nSysState",
+   "sWh_pChildWEPKeyGenerator",
+   "sWh_pField3c",
+   "sWh_pJudgeAccept",
+   "sWh_pParentWEPKeyGenerator",
+   "sWh_pReceiver",
+   "sWh_pRecvBuffer",
+   "sWh_pScanCallback",
+   "sWh_pSendBuffer",
+   "sWh_pWmBuffer"
+  ],
+  "src/overlays/system/ov105_wireless/Ov105_WH_ParentConnect.c": [
+   "data_ov105_020c04c0",
+   "sWh_bAutoConnect",
+   "sWh_bPictoCatch",
+   "sWh_nChannelBitmap",
+   "sWh_nChannelBusyRatio",
+   "sWh_nConnectMode",
+   "sWh_nDisconnectReason",
+   "sWh_nErrCode",
+   "sWh_nField0e",
+   "sWh_nMeasuredChannel",
+   "sWh_nMpFreq",
+   "sWh_nRand",
+   "sWh_nRecvBufferSize",
+   "sWh_nSendBufferSize",
+   "sWh_nSysState",
+   "sWh_pChildWEPKeyGenerator",
+   "sWh_pField3c",
+   "sWh_pJudgeAccept",
+   "sWh_pParentWEPKeyGenerator",
+   "sWh_pReceiver",
+   "sWh_pRecvBuffer",
+   "sWh_pScanCallback",
+   "sWh_pSendBuffer",
+   "sWh_pWmBuffer"
+  ]
+ }
+}
