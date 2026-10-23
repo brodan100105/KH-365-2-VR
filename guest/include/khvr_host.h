@@ -13,6 +13,8 @@ void khvr_host_halt(void);
 /* Interrupts were just re-enabled: deliver any that are pending. */
 void khvr_host_irq_window(void);
 void khvr_host_reset(void);
+/* The game stopped on a fatal error (OS_Terminate). */
+void khvr_host_terminate(void);
 /* ROM and overlays (guest/runtime/card_fs.c). */
 void khvr_host_read_rom(unsigned long offset, void *dst, unsigned long len);
 void khvr_host_start_overlay(unsigned long id);

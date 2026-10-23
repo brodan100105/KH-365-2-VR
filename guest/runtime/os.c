@@ -129,3 +129,15 @@ void RtcWaitBusy(void) {}
 
 extern void OSi_ArrangeTimer(void);
 void OSi_AlarmHandler(void) { OSi_ArrangeTimer(); }
+
+/* The SDK's fatal-error stop (OS_Terminate spins in OS_Halt with interrupts off). The platform
+ * logs where it happened before the thread stops for good. */
+void khvr_host_terminate(void);
+void OS_Terminate(void)
+{
+    khvr_host_terminate();
+    for (;;) {
+        OS_DisableInterrupts();
+        OS_Halt();
+    }
+}

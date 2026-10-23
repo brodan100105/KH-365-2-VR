@@ -11,6 +11,11 @@ namespace khvr::hle {
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void LogOnce(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+// The calling thread's native call chain (the game's, for guest code) into the log.
+void LogBacktrace(const char *why);
+// The game cannot go on: record why (platform.cpp).
+void PlatformReportStop(const std::string &why);
+const char *LastTrapName();  // what the calling thread's last wasm trap was
 
 // ---- Interrupts (hle_thread.cpp) ----
 enum : uint32_t {

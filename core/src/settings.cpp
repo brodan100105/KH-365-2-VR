@@ -184,6 +184,9 @@ std::vector<SettingDef> BuildDefs() {
                   {"laser", "direct_touch"}, {"Laser pointer", "Touch with finger"},
                   "How you touch the bottom screen."));
     // ---- Game ----
+    d.push_back(E(S::GamePlay, "Game", "play", "Play", 0, {"auto", "demo"},
+                  {"The game (if a ROM is found)", "Demo arena"},
+                  "Your EU ROM goes in Android/data/com.khdays.vr/files/game/. Applies on restart."));
     d.push_back(E(S::GameLanguage, "Game", "language", "Language", 0,
                   {"english", "french", "german", "italian", "spanish"},
                   {"English", "French", "German", "Italian", "Spanish"},

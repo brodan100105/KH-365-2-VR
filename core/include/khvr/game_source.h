@@ -45,6 +45,11 @@ public:
     virtual const GameFrame &frame() const = 0;
     virtual const WorldDrawList &world() const = 0;
     virtual const DsScreens &screens() const = 0;
+    // The character's own triangles, kept apart so first person can hide them.
+    virtual const WorldDrawList &player() const {
+        static const WorldDrawList empty;
+        return empty;
+    }
 };
 
 }  // namespace khvr

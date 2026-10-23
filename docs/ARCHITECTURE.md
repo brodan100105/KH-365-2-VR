@@ -56,6 +56,27 @@ will be handled by a source pre-pass in the guest build (`extern` for the duplic
 definitions, function declarations for the data views), the same kind of `TARGET_PC` patch set
 GalaxyQuest keeps against Petari.
 
+### What it took (iteration 2)
+
+`guest/build_guest.py` builds the guest; the notes in its docstring and in `guest/*.txt` say why
+each step exists. The ones that matter for anyone touching it:
+
+* **mwcc's ABI.** mwcc aligns 64-bit types to 4 bytes; clang's wasm32 to 8. The guest is compiled
+  with `-fpack-struct=4`, or structures such as `OSContext` grow and code reading their fields by
+  offset misses them (the scheduler hung on exactly that).
+* **Original data layout.** The `.bss` of every module is generated from the decomp's config as one
+  block per module, symbols at their original offsets, because code reaches across symbols. The
+  first 128 KB of guest data are DTCM (0x027e0000) and the ARM7-shared page (0x027ff000) at their
+  real addresses, since the SDK uses literal addresses there.
+* **Variables the original only kept the code of.** Some sources define globals the ROM's link
+  discarded (the real variable is a field of another symbol's block). Labels at the original
+  addresses replace them: derived automatically from the decomp's `khdays: shared-bss` blocks, plus
+  `guest/aliases.txt`.
+* **Calls with mismatched declarations** (1,600 call sites) become adapters that behave like the ARM
+  calling convention; indirect calls skip wasm's signature check for the same reason.
+* **Hardware access** is two traps in wasm2c's memory accessors: 0x04xxxxxx (I/O) and 0x06xxxxxx
+  (VRAM) go to the platform, everything else is plain memory.
+
 ## The platform layer (DS hardware stand-ins)
 
 What the game touches, and what replaces it:
@@ -134,7 +155,10 @@ core/                 platform-independent VR logic (C++17) and its unit tests
   tools/              settings_doc.cpp (generates docs/SETTINGS.md)
 android/              the Quest app: Gradle project, manifest, native code in app/src/main/cpp
 decomp/               submodule: Yokimitsuro/khdays-decomp (C sources only, no game data)
-tools/guest/          guest build tooling; probe_decomp.sh today
+guest/                build_guest.py, postprocess.py, the guest runtime (C for the SDK's assembly)
+platform/             the DS hardware stand-ins, the 2D renderer, the desktop runner (tools/)
+tools/guest/          probe_decomp.sh (the iteration 1 measurement)
+tools/symbolize.py    resolves backtraces in a boot log
 tools/gen_font.py     regenerates the UI font
 docs/                 this file, SETTINGS.md, CONTROLS.md, ROADMAP.md
 ```

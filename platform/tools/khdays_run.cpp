@@ -1,6 +1,6 @@
 // Desktop runner: boots the game headless on the platform layer and reports how far it gets.
 //
-//   khdays_run --rom game.nds [--frames 600] [--save khdays.sav] [--log boot.log]
+//   khdays_run --rom game.nds [--frames 600] [--save khdays.sav] [--log boot.log] [--screens prefix]
 //   khdays_run --fake-rom [--frames 60]
 //
 // --fake-rom builds a minimal image with the right game code, an empty file system and an
@@ -106,6 +106,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     khvr::PlatformConfig cfg;
     int frames = 600;
+    std::string screens;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -121,6 +122,7 @@ int main(int argc, char **argv) {
         else if (a == "--save") cfg.savePath = next();
         else if (a == "--log") cfg.logPath = next();
         else if (a == "--language") cfg.language = std::atoi(next().c_str());
+        else if (a == "--screens") screens = next();
         else {
             std::fprintf(stderr, "usage: %s --rom game.nds | --fake-rom [--frames N] [--save f] [--log f]\n", argv[0]);
             return 2;
@@ -148,6 +150,14 @@ int main(int argc, char **argv) {
                 : p.state() == khvr::PlatformState::Crashed ? "crashed" : "stopped",
                 p.frames(), idleFrames, busy);
     if (p.state() == khvr::PlatformState::Crashed) std::printf("crash: %s\n", p.crashReason().c_str());
+    if (!screens.empty()) {
+        // Both screens as they were at the end, as <prefix>_top.ppm and <prefix>_bottom.ppm.
+        static khvr::PlatformScreens s;
+        p.CaptureScreens(&s);
+        WritePpm((screens + "_top.ppm").c_str(), s.top);
+        WritePpm((screens + "_bottom.ppm").c_str(), s.bottom);
+        std::printf("screens written to %s_top.ppm / _bottom.ppm\n", screens.c_str());
+    }
     std::printf("last log lines:\n");
     for (const std::string &l : p.RecentLog(25)) std::printf("  %s\n", l.c_str());
     p.Stop();

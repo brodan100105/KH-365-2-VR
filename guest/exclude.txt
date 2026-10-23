@@ -22,3 +22,6 @@ libs/nitro/os/calls/DC_FlushRange.c
 # Replaced by guest/runtime/card_fs.c: ROM reads are file reads, overlays are linked in.
 libs/nitro/card/calls/CARDi_ReadRom.c
 libs/nitro/fs/calls/FS_StartOverlay.c
+
+# Replaced by guest/runtime/os.c, which reports the fatal stop to the platform first.
+libs/nitro/os/calls/OS_Terminate.c

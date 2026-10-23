@@ -23,9 +23,10 @@ target_include_directories(khdays_guest PUBLIC "${KHVR_GUEST_DIR}" third_party/w
 target_compile_definitions(khdays_guest PUBLIC
     WASM_RT_MEMCHECK_BOUNDS_CHECK=1 WASM_RT_MEMCHECK_GUARD_PAGES=0 WASM_RT_MAX_CALL_STACK_DEPTH=20000)
 # The generated code is always optimized, even in debug builds of the app.
-target_compile_options(khdays_guest PRIVATE -O2 -w -fno-strict-aliasing)
+target_compile_options(khdays_guest PRIVATE -O2 -g0 -w -fno-strict-aliasing)
 
 add_library(khvr_platform STATIC
+    src/backtrace.cpp
     src/guest.cpp
     src/hle_arm7.cpp
     src/hle_gx.cpp
@@ -40,6 +41,9 @@ target_include_directories(khvr_platform PUBLIC include PRIVATE src)
 target_compile_options(khvr_platform PRIVATE -Wall -Wextra -Wno-unused-parameter)
 find_package(Threads REQUIRED)
 target_link_libraries(khvr_platform PUBLIC khdays_guest Threads::Threads)
+if(ANDROID)
+    target_link_libraries(khvr_platform PUBLIC log)
+endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Desktop runner: boots a ROM headless and reports how far the game gets.

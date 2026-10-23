@@ -29,13 +29,17 @@ constexpr uint64_t kFrameCycles = 263ull * 2130ull;
 
 InputState &Input() { return gInput; }
 
-void PlatformReportTrap(const char *where) {
+void PlatformReportStop(const std::string &why) {
     {
         std::lock_guard<std::mutex> lock(gCrashMu);
-        gCrash = std::string(where) + " stopped (wasm trap)";
+        gCrash = why;
     }
-    Log("crash: %s stopped by a trap after %u frames", where, gFrames.load());
+    Log("stop: %s, after %u frames", why.c_str(), gFrames.load());
     gState = PlatformState::Crashed;
+}
+
+void PlatformReportTrap(const char *where) {
+    PlatformReportStop(std::string(where) + " hit a wasm trap (" + LastTrapName() + ")");
 }
 }  // namespace hle
 

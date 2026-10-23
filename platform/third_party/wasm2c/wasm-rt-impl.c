@@ -62,8 +62,12 @@ extern void WASM_RT_TRAP_HANDLER(wasm_rt_trap_t code);
 extern void WASM_RT_GROW_FAILED_HANDLER();
 #endif
 
+/* khvr: lets the embedder log the trap (with a backtrace) while the stack is still intact. */
+extern void khvr_on_trap(wasm_rt_trap_t code) __attribute__((weak));
+
 void wasm_rt_trap(wasm_rt_trap_t code) {
   assert(code != WASM_RT_TRAP_NONE);
+  if (khvr_on_trap) khvr_on_trap(code);
 #if WASM_RT_USE_STACK_DEPTH_COUNT
   wasm_rt_call_stack_depth = wasm_rt_saved_call_stack_depth;
 #endif
