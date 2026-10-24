@@ -197,8 +197,8 @@ std::vector<SettingDef> BuildDefs() {
                   0.01f, "m", "Moves the screen along its own height."));
     d.push_back(F(S::HandScreenOffsetZ, "Hand screen", "move_toward", "Move toward / away", 0.0f, -0.3f,
                   0.3f, 0.01f, "m", "Moves the screen toward you (+) or away from you (-)."));
-    d.push_back(F(S::HandScreenTilt, "Hand screen", "tilt", "Tilt", 30.0f, -90.0f, 90.0f, 5.0f, "deg",
-                  "Tilts the top of the screen back (+) or forward (-)."));
+    d.push_back(F(S::HandScreenTilt, "Hand screen", "tilt", "Tilt", 40.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Tilts the top of the screen toward you (+) or away (-)."));
     d.push_back(F(S::HandScreenTurn, "Hand screen", "turn", "Turn", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
                   "Turns the screen left or right."));
     d.push_back(F(S::HandScreenRoll, "Hand screen", "roll", "Roll", 0.0f, -90.0f, 90.0f, 5.0f, "deg",

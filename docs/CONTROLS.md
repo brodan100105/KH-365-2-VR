@@ -16,7 +16,7 @@ DS buttons are named as the game names them. The defaults follow the game's **Ty
 | Right thumbstick left/right | Turn (snap or smooth, **Comfort** tab) |
 | Right thumbstick click, tap | Recenter (view, giant screen and panels) |
 | Right thumbstick click, hold | Switch between panoramic and first person (**View > Quick mode switch**) |
-| Trigger of the other hand, aimed at the touch screen | Touch (laser pointer; the screen is held or worn on one hand, see Settings > Hand screen) |
+| Trigger or A/X of the other hand, aimed at the touch screen | Touch (laser pointer; the screen is held or worn on one hand, see Settings > Hand screen) |
 | Right trigger on the settings panel | Select |
 
 ## Panoramic (third person) and giant screen

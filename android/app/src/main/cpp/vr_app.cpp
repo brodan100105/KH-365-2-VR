@@ -368,7 +368,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                             // Face up on top of the wrist, its top toward your fingers.
                             : in.grip[h] * Pose{Quat::AxisAngle({1, 0, 0}, -kPi / 2), {0.0f, 0.03f, 0.12f}};
             Quat turn = Quat::AxisAngle({0, 1, 0}, DegToRad(settings_.Get(SettingId::HandScreenTurn))) *
-                        Quat::AxisAngle({1, 0, 0}, -DegToRad(settings_.Get(SettingId::HandScreenTilt))) *
+                        Quat::AxisAngle({1, 0, 0}, DegToRad(settings_.Get(SettingId::HandScreenTilt))) *
                         Quat::AxisAngle({0, 0, 1}, -DegToRad(settings_.Get(SettingId::HandScreenRoll)));
             Vec3 move{settings_.Get(SettingId::HandScreenOffsetX), settings_.Get(SettingId::HandScreenOffsetY),
                       settings_.Get(SettingId::HandScreenOffsetZ)};
@@ -380,7 +380,9 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             Vec3 to = bottomPanel_.pose.position - head.position;
             float dist = Length(to);
             float angle = std::acos(Clamp(Dot(to * (1.0f / std::max(dist, 1e-4f)), head.orientation.Forward()), -1.0f, 1.0f));
-            wanted = dist < 1.2f && angle < DegToRad(handScreenShown_ > 0.5f ? 45.0f : 32.0f);
+            // Measured from where the head points; people glance down at a hand mostly with their
+            // eyes, so the cone is wide.
+            wanted = dist < 1.2f && angle < DegToRad(handScreenShown_ > 0.5f ? 60.0f : 45.0f);
         }
         if (!in.gripValid[h]) wanted = false;
         float step = in.dt / 0.18f;  // grow or shrink in about 0.18 s
@@ -467,7 +469,10 @@ void VrApp::Frame(const XrFrameInput &in) {
         laserOnBottom_ = true;
         laserHand_ = touchHand;
         laserEnd_ = in.aim[touchHand].position + in.aim[touchHand].orientation.Forward() * dist;
-        touch.touching = buttons.trigger[touchHand] > 0.6f;
+        // The pointer hand's trigger or its first face button (A, or X on the left) touches.
+        bool &face = touchHand == 1 ? buttons.a : buttons.x;
+        touch.touching = buttons.trigger[touchHand] > 0.6f || face;
+        face = false;
         touch.touchX = static_cast<uint8_t>(Clamp(px, 0, 255));
         touch.touchY = static_cast<uint8_t>(Clamp(py, 0, 191));
         buttons.trigger[touchHand] = 0.0f;  // the trigger touches the screen instead of pressing L/R

@@ -123,7 +123,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `move_right` | Move right / left | -0.3 to 0.3 m | `0` | Moves the screen along its own width. |
 | `move_up` | Move up / down | -0.3 to 0.3 m | `0` | Moves the screen along its own height. |
 | `move_toward` | Move toward / away | -0.3 to 0.3 m | `0` | Moves the screen toward you (+) or away from you (-). |
-| `tilt` | Tilt | -90 to 90 deg | `30` | Tilts the top of the screen back (+) or forward (-). |
+| `tilt` | Tilt | -90 to 90 deg | `40` | Tilts the top of the screen toward you (+) or away (-). |
 | `turn` | Turn | -90 to 90 deg | `0` | Turns the screen left or right. |
 | `roll` | Roll | -90 to 90 deg | `0` | Rolls the screen clockwise or counterclockwise. |
 
