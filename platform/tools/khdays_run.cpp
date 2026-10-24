@@ -7,6 +7,7 @@
 // overlay table, so the boot path (OS, threads, interrupts, ARM7 handshakes, file system set-up,
 // overlays) can be exercised without the game's data. The real game needs your own ROM.
 #include <cstdio>
+#include <unistd.h>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -142,6 +143,12 @@ int main(int argc, char **argv) {
     }
     int idleFrames = 0, busy = 0;
     for (int f = 0; f < frames && p.state() == khvr::PlatformState::Running; ++f) {
+        if (f % 60 == 0) p.Heartbeat();
+        if (f == 0 && std::getenv("KHVR_TEST_SAMPLE"))
+            for (int i = 0; i < 20; ++i) {  // the watchdog's sample of a busy guest
+                usleep(500);
+                p.Heartbeat();
+            }
         if (p.VBlank(200)) ++idleFrames;
         else ++busy;
     }

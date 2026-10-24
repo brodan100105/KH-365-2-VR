@@ -158,8 +158,59 @@ std::vector<std::string> VrApp::StatusLines() const {
     return lines;
 }
 
+bool VrApp::Loading() const {
+#ifdef KHVR_HAS_GAME
+    return decomp_ && decomp_->state() == PlatformState::Running && !decomp_->hasPicture();
+#else
+    return false;
+#endif
+}
+
+void VrApp::BuildLoadingArea(float floorY) {
+    // A Station of Awakening-style disc: 24 stained-glass wedges in two rings, a gold rim.
+    loadingArea_.triangles.clear();
+    const int kWedges = 24;
+    const float kInner = 0.55f, kOuter = 1.35f, kRim = 1.45f;
+    const uint32_t kGlass[] = {Rgba(62, 92, 190), Rgba(120, 70, 170), Rgba(40, 140, 190), Rgba(90, 60, 150)};
+    const uint32_t kCenter = Rgba(230, 196, 92), kRimColor = Rgba(214, 178, 82);
+    Vec3 c{screenAnchor_.x, floorY, screenAnchor_.z};
+    auto at = [&](float r, int i) {
+        float a = 2.0f * kPi * static_cast<float>(i) / kWedges;
+        return c + Vec3{r * std::cos(a), 0.0f, r * std::sin(a)};
+    };
+    auto tri = [&](const Vec3 &a, const Vec3 &b, const Vec3 &d, uint32_t col) {
+        for (const Vec3 &v : {a, b, d}) loadingArea_.triangles.push_back({v, Vec3{0, 1, 0}, col});
+    };
+    for (int i = 0; i < kWedges; ++i) {
+        tri(c, at(kInner, i + 1), at(kInner, i), (i % 2) ? kCenter : Rgba(250, 226, 140));
+        AddQuad(&loadingArea_, at(kInner, i), at(kInner, i + 1), at(kOuter, i + 1), at(kOuter, i),
+                kGlass[i % 4]);
+        AddQuad(&loadingArea_, at(kOuter, i), at(kOuter, i + 1), at(kRim, i + 1), at(kRim, i), kRimColor);
+    }
+}
+
+void VrApp::UpdateLoading(double now) {
+    if (!Loading() || now - loadingDrawn_ < 0.25) return;
+    loadingDrawn_ = now;
+    Canvas &c = loadingCanvas_;
+    c.Clear(Rgba(16, 18, 34, 220));
+    c.StrokeRect(0, 0, c.width(), c.height(), Rgba(214, 178, 82), 3);
+    const char *title = "KINGDOM HEARTS 358/2 Days";
+    c.DrawText((c.width() - Canvas::TextWidth(title, 2)) / 2, 28, title, Rgba(236, 236, 244), 2);
+    int dots = static_cast<int>(now * 3.0) % 4;
+    std::string loading = "Loading" + std::string(static_cast<size_t>(dots), '.');
+    c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 92, loading, Rgba(214, 178, 82));
+#ifdef KHVR_HAS_GAME
+    char line[96];
+    std::snprintf(line, sizeof line, "game frames: %u", decomp_->gameFrames());
+    c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 132, line, Rgba(150, 154, 180));
+#endif
+    loadingTex_.Upload(c.width(), c.height(), c.data(), true);
+}
+
 void VrApp::UpdateStatus(double now) {
-    std::vector<std::string> lines = StatusLines();
+    UpdateLoading(now);
+    std::vector<std::string> lines = Loading() ? std::vector<std::string>() : StatusLines();
     statusVisible_ = !lines.empty();
     if (!statusVisible_ || now - statusDrawn_ < 0.5) return;
     statusDrawn_ = now;
@@ -214,7 +265,8 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     float hudDist = settings_.Get(SettingId::HudDistance);
 
     // The giant screen stays in front of where you looked when you last recentered.
-    if (!placementsInitialized_ || recenterNext_) {
+    const bool recenteredLoading = !placementsInitialized_ || recenterNext_;
+    if (recenteredLoading) {
         screenAnchor_ = head.position;
         screenYaw_ = headYaw;
         hudYaw_ = headYaw;
@@ -254,6 +306,14 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         bottomPanel_.pose = FacingFrom(at, head.position);
         bottomPanel_.pose.orientation = bottomPanel_.pose.orientation * Quat::AxisAngle({1, 0, 0}, -0.5f);
     }
+
+    if (loadingArea_.triangles.empty() || recenteredLoading) {
+        // STAGE space has its floor at 0; the LOCAL fallback has the head near 0.
+        BuildLoadingArea(screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f);
+    }
+    loadingPanel_.width = 1.0f;
+    loadingPanel_.height = loadingPanel_.width * 192.0f / 768.0f;
+    loadingPanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 1.8f, screenAnchor_);
 
     // The status panel floats just below eye level, to the left of the HUD and clear of it.
     statusPanel_.width = 0.8f;
@@ -481,12 +541,16 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     Mat4 vpTracking = proj * ViewFromPose(in.eyes[eye].pose);
 
     if (passthrough) glClearColor(0, 0, 0, 0);
+    else if (Loading()) glClearColor(0.03f, 0.04f, 0.12f, 1.0f);
     else if (mode == ViewMode::GiantScreen) glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
     else glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
 
-    if (mode == ViewMode::GiantScreen) {
+    if (Loading()) {
+        // The loading area instead of a black giant screen, until the game draws something.
+        renderer_.DrawTriangles(loadingArea_, vpTracking);
+    } else if (mode == ViewMode::GiantScreen) {
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
         if (game_->world().triangles.empty()) {
@@ -523,6 +587,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::LeftWrist ||
          in.gripValid[0]))
         renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width, bottomPanel_.height, vpTracking);
+    if (Loading() && loadingTex_.id())
+        renderer_.DrawQuad(loadingTex_.id(), loadingPanel_.pose, loadingPanel_.width, loadingPanel_.height, vpTracking);
     if (statusVisible_ && statusTex_.id())
         renderer_.DrawQuad(statusTex_.id(), statusPanel_.pose, statusPanel_.width, statusPanel_.height, vpTracking);
     if (panel_.isOpen())

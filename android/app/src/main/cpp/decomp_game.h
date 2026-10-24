@@ -35,6 +35,8 @@ public:
     const DsScreens &screens() const override { return screens_; }
 
     PlatformState state() const { return Platform::Get().state(); }
+    // The game has drawn something on either screen: the loading area can give way.
+    bool hasPicture() const { return hasPicture_; }
     uint32_t gameFrames() const { return Platform::Get().frames(); }
     // A few lines for the in-headset status panel: booting, crashed, the latest log.
     std::vector<std::string> Status(size_t lines) const;
@@ -54,6 +56,7 @@ private:
     std::unique_ptr<PlatformScreens> latest_;
     uint32_t latestRevision_ = 0, shownRevision_ = 0;
     double lastSample_ = -1.0;
+    std::atomic<bool> hasPicture_{false};
 };
 
 }  // namespace khvr

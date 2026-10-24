@@ -13,6 +13,9 @@ void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void LogOnce(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 // The calling thread's native call chain (the game's, for guest code) into the log.
 void LogBacktrace(const char *why);
+// The calling thread's return addresses (safe in a signal handler), and their log formatting.
+int CaptureBacktrace(void **pcs, int max);
+void LogFrames(const char *why, void *const *pcs, int n, int skip);
 // The game cannot go on: record why (platform.cpp).
 void PlatformReportStop(const std::string &why);
 const char *LastTrapName();  // what the calling thread's last wasm trap was

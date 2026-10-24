@@ -52,6 +52,11 @@ private:
     void RenderEye(const XrFrameInput &in, int eye);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
     void StartGame();
+    // While the game boots and has not drawn anything yet, you stand in a loading area: a
+    // stained-glass platform and a panel saying how far the boot got.
+    bool Loading() const;
+    void UpdateLoading(double now);
+    void BuildLoadingArea(float floorY);
     // The status panel: why the demo runs instead of the game, or the game's boot log.
     std::vector<std::string> StatusLines() const;
     void UpdateStatus(double now);
@@ -85,7 +90,11 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_;
+    Canvas loadingCanvas_{768, 192};
+    double loadingDrawn_ = -10.0;
+    WorldDrawList loadingArea_;
+    Placement loadingPanel_;
     Canvas statusCanvas_{768, 288};
     double statusDrawn_ = -10.0;
     bool statusVisible_ = false;

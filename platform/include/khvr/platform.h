@@ -48,6 +48,10 @@ public:
     // Input for the next frames: DS buttons active high (khvr::DsButton bits), touch in pixels.
     void SetInput(uint16_t buttons, bool touching, int x, int y);
 
+    // Every few seconds from the driver: logs how far the game got (frames, halts, display
+    // registers) and, if the guest made no progress since the last call, where it is stuck.
+    void Heartbeat();
+
     PlatformState state() const;
     uint32_t frames() const;
     std::string crashReason() const;

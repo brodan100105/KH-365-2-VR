@@ -92,7 +92,12 @@ void DecompGame::DriverLoop() {
     auto next = clock::now();
     auto scratch = std::make_unique<PlatformScreens>();
     Platform &p = Platform::Get();
+    auto nextBeat = clock::now() + std::chrono::seconds(2);
     while (!stop_ && p.state() == PlatformState::Running) {
+        if (clock::now() >= nextBeat) {
+            p.Heartbeat();
+            nextBeat = clock::now() + std::chrono::seconds(5);
+        }
         std::this_thread::sleep_until(next);
         next += frame;
         if (clock::now() > next + 10 * frame) next = clock::now();  // fell behind (loading): don't catch up
@@ -100,6 +105,11 @@ void DecompGame::DriverLoop() {
         p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
         if (!p.VBlank(100)) continue;  // still busy with the previous frame
         p.CaptureScreens(scratch.get());
+        if (!hasPicture_) {
+            const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
+            for (size_t i = 0; i < n && !hasPicture_; ++i)
+                if ((scratch->top[i] | scratch->bottom[i]) & 0x00ffffffu) hasPicture_ = true;
+        }
         std::lock_guard<std::mutex> lock(screensMu_);
         std::swap(scratch, latest_);
         ++latestRevision_;

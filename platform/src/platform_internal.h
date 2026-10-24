@@ -12,6 +12,15 @@ bool ThreadsIsIdle();
 uint64_t ThreadsWakeIdle();
 bool ThreadsWaitHaltAfter(uint64_t halts, int timeoutMs);
 void ThreadsStop();
+struct ThreadsSnapshot {
+    bool idle = false;
+    uint64_t halts = 0;
+    int threads = 0;
+    uint32_t runningContext = 0;  // 0 for the main thread
+};
+ThreadsSnapshot ThreadsSnapshotNow();
+// Logs the call chain of the guest thread that holds the baton (not while the guest is idle).
+void ThreadsLogRunning(const char *why);
 
 // platform.cpp: a guest thread hit a wasm trap (bad memory access, unreachable code).
 void PlatformReportTrap(const char *where);

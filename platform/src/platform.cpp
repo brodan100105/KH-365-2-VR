@@ -114,6 +114,27 @@ void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {
     hle::gInput.touchY = static_cast<uint16_t>(y < 0 ? 0 : (y > 191 ? 191 : y));
 }
 
+void Platform::Heartbeat() {
+    using namespace hle;
+    static uint64_t lastHalts = ~0ull;
+    static int stuckBeats = 0;
+    ThreadsSnapshot t = ThreadsSnapshotNow();
+    // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
+    // the engines on, so these tell a stuck game from an invisible one.
+    Log("heartbeat: %u frames, %llu halts, %s, %d threads | DISPCNT A %08x B %08x | BRIGHT A %04x B %04x | "
+        "POWCNT %04x | VRAMCNT %08x | IME %u IE %08x IF %08x",
+        gFrames.load(), static_cast<unsigned long long>(t.halts), t.idle ? "idle" : "busy", t.threads,
+        IoReg32(0x0000), IoReg32(0x1000), IoReg16(0x006c), IoReg16(0x106c), IoReg16(0x0304), IoReg32(0x0240),
+        RegIme(), RegIe(), RegIf());
+    if (!t.idle && t.halts == lastHalts) {
+        // No halt since the last beat: the guest is busy (a long load) or stuck in a loop.
+        if (++stuckBeats <= 4) ThreadsLogRunning("no frame finished since the last heartbeat");
+    } else {
+        stuckBeats = 0;
+    }
+    lastHalts = t.halts;
+}
+
 PlatformState Platform::state() const { return hle::gState; }
 uint32_t Platform::frames() const { return hle::gFrames; }
 

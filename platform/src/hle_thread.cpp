@@ -10,7 +10,10 @@
 //
 // Interrupts are delivered at the points the hardware could take them: when the idle thread
 // halts (the normal case, once per frame for VBlank), and when the guest re-enables interrupts.
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,6 +47,8 @@ struct GuestThread {
     uint32_t entry = 0, arg = 0, sp = 0, lr = 0;
     std::condition_variable cv;
     bool started = false;
+    pthread_t host{};
+    bool hostKnown = false;
 };
 
 // Guest code nests deeply and wasm2c's frames are large: give every guest thread a big host stack.
@@ -153,6 +158,8 @@ void RunThread(GuestThread *t) {
     {
         std::unique_lock<std::mutex> lock(gMu);
         tSelf = t;
+        t->host = pthread_self();
+        t->hostKnown = true;
         WaitForBaton(lock);
         if (gStopping) return;
     }
@@ -248,6 +255,11 @@ void ThreadsStartMain(uint32_t initialSp) {
     StartHostThread(
         [](void *p) -> void * {
             tSelf = static_cast<GuestThread *>(p);
+            {
+                std::lock_guard<std::mutex> lock(gMu);
+                tSelf->host = pthread_self();
+                tSelf->hostKnown = true;
+            }
             khvr_guest_sp = tSelf->sp;
             if (wasm_rt_impl_try() == 0) {
                 Log("boot: entering main()");
@@ -285,6 +297,53 @@ bool ThreadsWaitHaltAfter(uint64_t halts, int timeoutMs) {
     std::unique_lock<std::mutex> lock(gMu);
     return gIdleCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
                             [halts] { return (gHalts > halts && gIdle) || gStopping; });
+}
+
+namespace {
+// SIGUSR2 on the running guest thread: it records its own call chain for the watchdog.
+void *gSamplePcs[48];
+std::atomic<int> gSampleCount{-1};
+
+void OnSampleSignal(int) { gSampleCount = CaptureBacktrace(gSamplePcs, 48); }
+}  // namespace
+
+ThreadsSnapshot ThreadsSnapshotNow() {
+    std::lock_guard<std::mutex> lock(gMu);
+    ThreadsSnapshot s;
+    s.idle = gIdle;
+    s.halts = gHalts;
+    s.threads = static_cast<int>(gAll.size());
+    s.runningContext = gRunning ? gRunning->context : 0;
+    return s;
+}
+
+void ThreadsLogRunning(const char *why) {
+    static bool installed = [] {
+        struct sigaction sa {};
+        sa.sa_handler = OnSampleSignal;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        return sigaction(SIGUSR2, &sa, nullptr) == 0;
+    }();
+    pthread_t target{};
+    uint32_t context = 0;
+    {
+        std::lock_guard<std::mutex> lock(gMu);
+        if (!installed || !gRunning || !gRunning->hostKnown || gIdle) return;
+        target = gRunning->host;
+        context = gRunning->context;
+    }
+    gSampleCount = -1;
+    if (pthread_kill(target, SIGUSR2) != 0) return;
+    for (int i = 0; i < 100 && gSampleCount < 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    int n = gSampleCount;
+    if (n < 0) {
+        Log("watchdog: guest thread (context 0x%08x) did not answer the sample", context);
+        return;
+    }
+    char what[96];
+    std::snprintf(what, sizeof what, "%s, guest thread context 0x%08x", why, context);
+    LogFrames(what, gSamplePcs, n, 0);
 }
 
 void ThreadsStop() {
