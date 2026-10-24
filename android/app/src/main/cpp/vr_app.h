@@ -57,6 +57,7 @@ private:
     bool Loading() const;
     void UpdateLoading(double now);
     void BuildLoadingArea(float floorY);
+    void UpdateLoadingSparkles(double now);
     // The status panel: why the demo runs instead of the game, or the game's boot log.
     std::vector<std::string> StatusLines() const;
     void UpdateStatus(double now);
@@ -93,7 +94,8 @@ private:
     Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_;
     Canvas loadingCanvas_{768, 192};
     double loadingDrawn_ = -10.0;
-    WorldDrawList loadingArea_;
+    WorldDrawList loadingArea_, loadingBeam_, loadingSparkles_;
+    Vec3 loadingCenter_;
     Placement loadingPanel_;
     Canvas statusCanvas_{768, 288};
     double statusDrawn_ = -10.0;

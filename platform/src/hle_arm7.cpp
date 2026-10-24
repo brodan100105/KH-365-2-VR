@@ -30,6 +30,7 @@ enum Tag : uint32_t {
 };
 
 constexpr uint32_t kSpiEnd = 0x01000000;
+constexpr uint32_t kSpiStart = 0x02000000;
 constexpr uint32_t kSysWork = 0x027ffc00;
 constexpr uint32_t kSndSharedWorkCommand = 0x1d;
 
@@ -75,8 +76,14 @@ void WriteTouch() {
 }
 
 void OnSpi(uint32_t tag, uint32_t data) {
+    // A request is one or more words: the first has the start bit and the command in bits 8-14,
+    // the last the end bit (a one-word request has both). The reply names the command, so it
+    // has to come from the start word: TP_RequestAutoSamplingStartAsync sends two words, and
+    // answering the end word's bits left TP_WaitBusy spinning forever on the title screen.
+    static uint32_t startCmd[32];
+    if (data & kSpiStart) startCmd[tag & 0x1f] = (data >> 8) & 0x7f;
     if (!(data & kSpiEnd)) return;  // more parameter words follow
-    uint32_t cmd = (data >> 8) & 0x7f;
+    uint32_t cmd = startCmd[tag & 0x1f];
     if (tag == kTagTouch) {
         WriteTouch();
         if (cmd == 1) gTouchAuto = true;

@@ -15,6 +15,14 @@
 
 #include "khvr/platform.h"
 
+namespace khvr::hle {
+void Arm7Reset();
+void Arm7OnSend(uint32_t word);
+bool Arm7HasReply();
+uint32_t Arm7PopReply();
+void Arm7VBlank();
+}  // namespace khvr::hle
+
 namespace {
 
 void Put32(std::vector<uint8_t> &b, size_t o, uint32_t v) { std::memcpy(&b[o], &v, 4); }
@@ -101,10 +109,45 @@ int RenderTest(const char *ppm) {
     return ok ? 0 : 1;
 }
 
+// The ARM7 stand-in's answers to requests exactly as the SDK sends them.
+int PxiTest() {
+    using namespace khvr::hle;
+    khvr::PlatformInitForTests();
+    Arm7Reset();
+    auto reply = [](uint32_t tag) -> int64_t {
+        while (Arm7HasReply()) {
+            uint32_t w = Arm7PopReply();
+            if ((w & 0x1f) == tag) return w >> 6;
+        }
+        return -1;
+    };
+    bool ok = true;
+    // TP_RequestAutoSamplingStartAsync: two words, command 1 (AUTO_ON) in the start word. The
+    // reply must name command 1, or TP_WaitBusy(2) on the title screen never returns.
+    Arm7OnSend(6 | ((4 | 0x100 | 0x2000000) << 6));
+    Arm7OnSend(6 | ((0 | 0x10000 | 0x1000000) << 6));
+    int64_t r = reply(6);
+    ok &= r >= 0 && (r & 0x01000000) && ((r >> 8) & 0x7f) == 1 && (r & 0xff) == 0;
+    std::printf("pxi test: touch auto-sampling start -> %s (reply 0x%07llx)\n", ok ? "ok" : "WRONG",
+                static_cast<long long>(r));
+    // Once on, every frame brings an AUTO_SAMPLING (0x10) notification.
+    Arm7VBlank();
+    int64_t n = reply(6);
+    bool okAuto = n >= 0 && ((n >> 8) & 0x7f) == 0x10;
+    std::printf("pxi test: auto-sampling notification -> %s\n", okAuto ? "ok" : "WRONG");
+    // TP_RequestAutoSamplingStopAsync: one word, command 2.
+    Arm7OnSend(6 | (0x3000200u << 6));
+    int64_t s = reply(6);
+    bool okStop = s >= 0 && ((s >> 8) & 0x7f) == 2;
+    std::printf("pxi test: touch auto-sampling stop -> %s\n", okStop ? "ok" : "WRONG");
+    return ok && okAuto && okStop ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
+    if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
     khvr::PlatformConfig cfg;
     int frames = 600;
     std::string screens;
