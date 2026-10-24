@@ -24,6 +24,7 @@ extern int FS_OpenFile(void *pFile, const char *pszPath);
 extern int FS_ReadFile(void *pFile, void *pDest, int nLength);
 extern int FS_CloseFile(void *pFile);
 extern const char *Msg_BuildLangPath(const char *pszPath);
+extern int OS_SPrintf(char *pszDest, const char *pszFormat, ...);
 
 /* The DS's vertical blank rate. */
 #define KHVR_VBLANK_HZ_X1000 59826
@@ -81,6 +82,14 @@ int Ov024_MobiClip_OpenStreams(struct MobiClipOpenRequest *pRequest)
     khvr_host_print("movie (MobiClip video is not drawn yet):");
     if (pszPath) khvr_host_print(pszPath);
     ReadLength(pszPath);
+    {
+        char line[96];
+        unsigned int centiFps = (unsigned int)(((unsigned long long)sFps24 * 100) >> 24);
+        unsigned int seconds = (unsigned int)((unsigned long long)sFrameCount * 100 / (centiFps ? centiFps : 1));
+        OS_SPrintf(line, "movie: %u frames at %u.%02u fps, about %u:%02u (START skips)", sFrameCount,
+                   centiFps / 100, centiFps % 100, seconds / 60, seconds % 60);
+        khvr_host_print(line);
+    }
     sFrameReady = (void (*)(void))pRequest->pfnFrameReady;
     sVBlanks = 0;
     sOpen = 1;

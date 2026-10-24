@@ -158,10 +158,11 @@ void Platform::Heartbeat() {
     static const uint32_t openingPtr = SymbolAddress("data_ov012_0205cb20");
     if (uint32_t ctx = openingPtr ? Read32(openingPtr) : 0) {
         if (ctx > 0x02000000 && ctx < 0x02400000)
-            Log("  opening: flags %04x requests %d %d pending %u fade %d skip-keys %d timeline %d exit %d",
+            Log("  opening: flags %04x requests %d %d pending %u fade %d skip-keys %d timeline %d exit %d | movie frame %d",
                 Read16(ctx + 2), static_cast<int>(Read32(ctx + 0x8bd8)), static_cast<int>(Read32(ctx + 0x8bdc)),
                 Read8(ctx + 0x8be1), static_cast<int>(Read32(ctx + 0x8be8)), static_cast<int>(Read32(ctx + 0x8bec)),
-                static_cast<int>(Read32(ctx + 0x8dec)), static_cast<int>(Read32(ctx + 0x130)));
+                static_cast<int>(Read32(ctx + 0x8dec)), static_cast<int>(Read32(ctx + 0x130)),
+                static_cast<int>(w2c_khdays_Ov024_MobiClip_BufferedFrameCount(Guest())));
     }
     if (!t.idle && t.halts == lastHalts) {
         // No halt since the last beat: the guest is busy (a long load) or stuck in a loop.
