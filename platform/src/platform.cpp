@@ -58,6 +58,14 @@ void PlatformTestWrite(uint32_t addr, uint32_t value, uint32_t size) { hle::BusW
 
 bool Platform::Start(const PlatformConfig &config, std::string *error) {
     using namespace hle;
+    // The guest's threads and memory live for the whole process: a second start would run on
+    // the first one's leftovers. The app exits its process when its activity goes away instead.
+    static bool started = false;
+    if (started) {
+        *error = "the game already ran in this process; restart the app";
+        return false;
+    }
+    started = true;
     LogOpen(config.logPath.c_str());
     Log("platform: starting (KH 358/2 Days VR, guest built from khdays-decomp)");
     if (!RomOpen(config.romPath, error)) {

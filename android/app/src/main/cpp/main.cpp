@@ -5,6 +5,7 @@
 #include <android_native_app_glue.h>
 #include <jni.h>
 
+#include <cstdlib>
 #include <string>
 
 #include "log.h"
@@ -111,9 +112,9 @@ void HandleCmd(android_app *app, int32_t cmd) {
     }
 }
 
-}  // namespace
-
-void android_main(android_app *app) {
+// The app's whole life on one activity. Its locals (the game among them, whose destructor
+// flushes the save) are gone when this returns.
+void RunApp(android_app *app) {
     AppState state;
     app->userData = &state;
     app->onAppCmd = HandleCmd;
@@ -166,5 +167,16 @@ void android_main(android_app *app) {
     vr.SaveSettingsIfChanged(true);
     xr.Shutdown();
     egl.Shutdown();
+}
+
+}  // namespace
+
+void android_main(android_app *app) {
+    RunApp(app);
     app->activity->vm->DetachCurrentThread();
+    // Android may keep the process and start android_main again for a new activity; the game's
+    // platform can only run once per process (its guest threads live on), so end the process
+    // here (RunApp's game has flushed its save) and every launch starts fresh.
+    LOGI("activity gone: exiting the process");
+    std::exit(0);
 }

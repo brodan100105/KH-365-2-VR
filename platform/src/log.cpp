@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <ctime>
 #include <deque>
 #include <mutex>
 #include <set>
@@ -41,7 +42,24 @@ void Emit(const char *msg) {
 void LogOpen(const char *path) {
     std::lock_guard<std::mutex> lock(gLogMu);
     if (gLogFile) std::fclose(gLogFile);
-    gLogFile = path && *path ? std::fopen(path, "w") : nullptr;
+    gLogFile = nullptr;
+    if (!path || !*path) return;
+    // Keep the previous sessions (a stop is often followed by a relaunch), unless the log has
+    // grown past 1 MB.
+    long size = 0;
+    if (FILE *old = std::fopen(path, "rb")) {
+        std::fseek(old, 0, SEEK_END);
+        size = std::ftell(old);
+        std::fclose(old);
+    }
+    gLogFile = std::fopen(path, size > (1L << 20) ? "w" : "a");
+    if (gLogFile) {
+        std::time_t now = std::time(nullptr);
+        char when[32];
+        std::strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+        std::fprintf(gLogFile, "\n===== session %s =====\n", when);
+        std::fflush(gLogFile);
+    }
 }
 
 void Log(const char *fmt, ...) {
