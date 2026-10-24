@@ -112,6 +112,8 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
 | `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the HUD and the bottom screen. |
 | `touch_input` | Touch input | `laser`, `direct_touch` | `laser` | How you touch the bottom screen. |
+| `hand_height` | Hand screen height | 0 to 0.3 m | `0.1` | How far above the left controller the bottom screen floats. |
+| `hand_tilt` | Hand screen tilt | -30 to 80 deg | `30` | Tilts the bottom screen above your hand back toward your face. |
 
 ## Game
 

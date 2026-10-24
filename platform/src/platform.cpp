@@ -135,6 +135,16 @@ void Platform::Heartbeat() {
         gFrames.load(), static_cast<unsigned long long>(t.halts), t.idle ? "idle" : "busy", t.threads,
         IoReg32(0x0000), IoReg32(0x1000), IoReg16(0x006c), IoReg16(0x106c), IoReg16(0x0304), IoReg32(0x0240),
         RegIme(), RegIe(), RegIf());
+    // The background layers' control and scroll registers, both engines: what decides which part
+    // of each layer shows.
+    for (uint32_t e = 0; e < 2; ++e) {
+        uint32_t base = e * 0x1000;
+        Log("  engine %c: BGCNT %04x %04x %04x %04x | scroll %u,%u %u,%u %u,%u %u,%u", e ? 'B' : 'A',
+            IoReg16(base + 0x08), IoReg16(base + 0x0a), IoReg16(base + 0x0c), IoReg16(base + 0x0e),
+            IoReg16(base + 0x10) & 0x1ff, IoReg16(base + 0x12) & 0x1ff, IoReg16(base + 0x14) & 0x1ff,
+            IoReg16(base + 0x16) & 0x1ff, IoReg16(base + 0x18) & 0x1ff, IoReg16(base + 0x1a) & 0x1ff,
+            IoReg16(base + 0x1c) & 0x1ff, IoReg16(base + 0x1e) & 0x1ff);
+    }
     if (!t.idle && t.halts == lastHalts) {
         // No halt since the last beat: the guest is busy (a long load) or stuck in a loop.
         if (++stuckBeats <= 4) ThreadsLogRunning("no frame finished since the last heartbeat");

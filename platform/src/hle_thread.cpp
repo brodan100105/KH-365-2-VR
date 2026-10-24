@@ -101,6 +101,12 @@ void TraceSwitch(const char *what, uint32_t context) {
 
 void WaitForBaton(std::unique_lock<std::mutex> &lock) {
     tSelf->cv.wait(lock, [] { return gRunning == tSelf || gStopping; });
+    if (gStopping && gRunning != tSelf) {
+        // Shutting down: a parked thread must not run guest code alongside the others (they
+        // would all fall through their switches at once). Stay parked until the process ends.
+        lock.unlock();
+        for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
+    }
 }
 
 void RunThread(GuestThread *t);

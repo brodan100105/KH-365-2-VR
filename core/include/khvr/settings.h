@@ -92,6 +92,8 @@ enum class SettingId : int {
     HudDistance,
     HudScale,
     HudTouchInput,
+    HudHandHeight,
+    HudHandTilt,
     // Game
     GamePlay,
     GameLanguage,

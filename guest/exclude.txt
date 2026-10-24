@@ -25,3 +25,9 @@ libs/nitro/fs/calls/FS_StartOverlay.c
 
 # Replaced by guest/runtime/os.c, which reports the fatal stop to the platform first.
 libs/nitro/os/calls/OS_Terminate.c
+
+# Replaced by guest/runtime/movie.c: movies are skipped until MobiClip decoding is ported.
+src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenStreams.c
+src/overlays/system/ov024_mobiclip/Ov024_TickStreamSlots.c
+src/overlays/system/ov024_mobiclip/Ov024_MobiClip_BufferedFrameCount.c
+src/overlays/system/ov024_mobiclip/Ov024_MobiClip_StopPlayback.c

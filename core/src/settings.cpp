@@ -174,7 +174,7 @@ std::vector<SettingDef> BuildDefs() {
                   {"floating", "head_locked", "hidden"}, {"Floating panel", "Head-locked", "Hidden"},
                   "Where the health bars and command panel are shown."));
     d.push_back(E(S::HudBottomScreen, "HUD", "bottom_screen", "Bottom screen", 0,
-                  {"left_wrist", "floating", "hidden"}, {"Left wrist", "Floating panel", "Hidden"},
+                  {"left_wrist", "floating", "hidden"}, {"Above left hand", "Floating panel", "Hidden"},
                   "Where the DS touch screen (map, menus) is shown."));
     d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 1.2f, 0.5f, 3.0f, 0.1f, "m",
                   "Distance of the floating panels."));
@@ -183,6 +183,10 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HudTouchInput, "HUD", "touch_input", "Touch input", 0,
                   {"laser", "direct_touch"}, {"Laser pointer", "Touch with finger"},
                   "How you touch the bottom screen."));
+    d.push_back(F(S::HudHandHeight, "HUD", "hand_height", "Hand screen height", 0.10f, 0.0f, 0.3f,
+                  0.01f, "m", "How far above the left controller the bottom screen floats."));
+    d.push_back(F(S::HudHandTilt, "HUD", "hand_tilt", "Hand screen tilt", 30.0f, -30.0f, 80.0f, 5.0f,
+                  "deg", "Tilts the bottom screen above your hand back toward your face."));
     // ---- Game ----
     d.push_back(E(S::GamePlay, "Game", "play", "Play", 0, {"auto", "demo"},
                   {"The game (if a ROM is found)", "Demo arena"},

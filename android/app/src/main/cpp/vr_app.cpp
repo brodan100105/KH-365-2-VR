@@ -333,13 +333,18 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         hudPanel_.pose = FacingFrom(at, head.position);
     }
 
-    // Bottom screen: on the back of the left wrist, facing up toward you, or floating low left.
+    // Bottom screen: floating just above the left controller like a handheld you hold (height
+    // and tilt are settings), or floating low left.
     bottomPanel_.width = 0.2f * hudScale;
     bottomPanel_.height = bottomPanel_.width * 0.75f;
     if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) == BottomScreenPlacement::LeftWrist) {
         if (in.gripValid[0]) {
-            Pose wrist = in.grip[0] * Pose{Quat::AxisAngle({1, 0, 0}, -kPi / 2), {0.0f, 0.04f, 0.09f}};
-            bottomPanel_.pose = wrist;
+            // Grip space: -Z along the controller, +Y out of its top, +Z back toward you; the
+            // screen faces +Z, lifted above the controller and tilted back by the setting.
+            float lift = settings_.Get(SettingId::HudHandHeight);
+            float tilt = DegToRad(settings_.Get(SettingId::HudHandTilt));
+            bottomPanel_.pose = in.grip[0] * Pose{Quat::AxisAngle({1, 0, 0}, -tilt),
+                                                  {0.0f, lift + bottomPanel_.height * 0.5f, -0.02f}};
         }
     } else {
         bottomPanel_.width = 0.45f * hudScale;
