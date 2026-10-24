@@ -35,7 +35,8 @@ public:
     const DsScreens &screens() const override { return screens_; }
 
     PlatformState state() const { return Platform::Get().state(); }
-    // The game has drawn something on either screen: the loading area can give way.
+    // The game has shown an image (not a flat fade) on either screen, after the loading area's
+    // few seconds: the loading area can give way.
     bool hasPicture() const { return hasPicture_; }
     uint32_t gameFrames() const { return Platform::Get().frames(); }
     // A few lines for the in-headset status panel: booting, crashed, the latest log.

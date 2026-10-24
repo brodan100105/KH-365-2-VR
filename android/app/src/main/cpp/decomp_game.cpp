@@ -94,6 +94,7 @@ void DecompGame::DriverLoop() {
     auto scratch = std::make_unique<PlatformScreens>();
     Platform &p = Platform::Get();
     auto nextBeat = clock::now() + std::chrono::seconds(2);
+    const auto started = clock::now();
     while (!stop_ && p.state() == PlatformState::Running) {
         if (clock::now() >= nextBeat) {
             p.Heartbeat();
@@ -106,10 +107,16 @@ void DecompGame::DriverLoop() {
         p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
         if (!p.VBlank(100)) continue;  // still busy with the previous frame
         p.CaptureScreens(scratch.get());
-        if (!hasPicture_) {
-            const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
-            for (size_t i = 0; i < n && !hasPicture_; ++i)
-                if ((scratch->top[i] | scratch->bottom[i]) & 0x00ffffffu) hasPicture_ = true;
+        // The loading area stays for a few seconds at least, and until either screen shows an
+        // image: the game starts on flat white or black (a brightness fade), which is not one.
+        if (!hasPicture_ && clock::now() - started > std::chrono::seconds(3)) {
+            auto detailed = [](const uint32_t *px) {
+                const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
+                size_t differ = 0;
+                for (size_t i = 0; i < n; ++i) differ += (px[i] & 0x00ffffffu) != (px[0] & 0x00ffffffu);
+                return differ > n / 100;
+            };
+            if (detailed(scratch->top) || detailed(scratch->bottom)) hasPicture_ = true;
         }
         std::lock_guard<std::mutex> lock(screensMu_);
         std::swap(scratch, latest_);
