@@ -159,9 +159,9 @@ std::vector<SettingDef> BuildDefs() {
                   0.5f, 1.5f, 0.05f, "x", "Per-eye render resolution relative to the headset's. Applies on restart."));
     d.push_back(E(S::PicMsaa, "Picture", "msaa", "Anti-aliasing", 2, {"off", "2x", "4x"},
                   {"Off", "2x MSAA", "4x MSAA"}, "Multisample anti-aliasing. Applies on restart."));
-    d.push_back(E(S::PicTextureFilter, "Picture", "texture_filter", "Texture filtering", 1,
-                  {"nearest", "bilinear"}, {"Nearest (DS look)", "Bilinear"},
-                  "How the DS textures are sampled."));
+    d.push_back(E(S::PicTextureFilter, "Picture", "texture_filter", "Texture filtering", 2,
+                  {"nearest", "bilinear", "sharp"}, {"Nearest (DS look)", "Bilinear", "Sharp (pixel art)"},
+                  "How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges."));
     d.push_back(F(S::PicSharpen, "Picture", "sharpen", "Sharpening", 0.3f, 0.0f, 1.0f, 0.05f, "",
                   "Sharpens the final picture."));
     d.push_back(E(S::PicFoveation, "Picture", "foveation", "Fixed foveation", 2,
@@ -173,20 +173,36 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HudTopScreen, "HUD", "top_screen", "HUD (top screen)", 0,
                   {"floating", "head_locked", "hidden"}, {"Floating panel", "Head-locked", "Hidden"},
                   "Where the health bars and command panel are shown."));
-    d.push_back(E(S::HudBottomScreen, "HUD", "bottom_screen", "Bottom screen", 0,
-                  {"left_wrist", "floating", "hidden"}, {"Above left hand", "Floating panel", "Hidden"},
-                  "Where the DS touch screen (map, menus) is shown."));
     d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 1.2f, 0.5f, 3.0f, 0.1f, "m",
                   "Distance of the floating panels."));
     d.push_back(F(S::HudScale, "HUD", "scale", "Panel scale", 1.0f, 0.5f, 2.0f, 0.1f, "x",
-                  "Size of the HUD and the bottom screen."));
+                  "Size of the floating HUD panels."));
     d.push_back(E(S::HudTouchInput, "HUD", "touch_input", "Touch input", 0,
                   {"laser", "direct_touch"}, {"Laser pointer", "Touch with finger"},
                   "How you touch the bottom screen."));
-    d.push_back(F(S::HudHandHeight, "HUD", "hand_height", "Hand screen height", 0.10f, 0.0f, 0.3f,
-                  0.01f, "m", "How far above the left controller the bottom screen floats."));
-    d.push_back(F(S::HudHandTilt, "HUD", "hand_tilt", "Hand screen tilt", 30.0f, -30.0f, 80.0f, 5.0f,
-                  "deg", "Tilts the bottom screen above your hand back toward your face."));
+    // ---- Hand screen ----
+    d.push_back(E(S::HandScreenPlacement, "Hand screen", "placement", "Placement", 0,
+                  {"hand", "floating", "hidden", "wrist"},
+                  {"Above your hand", "Floating panel", "Hidden", "On your wrist"},
+                  "Where the DS touch screen (map, menus) is: held, worn like a watch, or floating."));
+    d.push_back(E(S::HandScreenSide, "Hand screen", "side", "Hand", 0, {"left", "right"},
+                  {"Left", "Right"}, "Which hand holds or wears it; the other hand's laser touches it."));
+    d.push_back(B(S::HandScreenAutoShow, "Hand screen", "auto_show", "Show when looked at", true,
+                  "Grows in when you look at your hand or wrist, shrinks away when you look elsewhere."));
+    d.push_back(F(S::HandScreenSize, "Hand screen", "size", "Size", 0.20f, 0.10f, 0.40f, 0.01f, "m",
+                  "Width of the screen in your hand or on your wrist."));
+    d.push_back(F(S::HandScreenOffsetX, "Hand screen", "move_right", "Move right / left", 0.0f, -0.3f,
+                  0.3f, 0.01f, "m", "Moves the screen along its own width."));
+    d.push_back(F(S::HandScreenOffsetY, "Hand screen", "move_up", "Move up / down", 0.0f, -0.3f, 0.3f,
+                  0.01f, "m", "Moves the screen along its own height."));
+    d.push_back(F(S::HandScreenOffsetZ, "Hand screen", "move_toward", "Move toward / away", 0.0f, -0.3f,
+                  0.3f, 0.01f, "m", "Moves the screen toward you (+) or away from you (-)."));
+    d.push_back(F(S::HandScreenTilt, "Hand screen", "tilt", "Tilt", 30.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Tilts the top of the screen back (+) or forward (-)."));
+    d.push_back(F(S::HandScreenTurn, "Hand screen", "turn", "Turn", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Turns the screen left or right."));
+    d.push_back(F(S::HandScreenRoll, "Hand screen", "roll", "Roll", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Rolls the screen clockwise or counterclockwise."));
     // ---- Game ----
     d.push_back(E(S::GamePlay, "Game", "play", "Play", 0, {"auto", "demo"},
                   {"The game (if a ROM is found)", "Demo arena"},

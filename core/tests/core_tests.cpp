@@ -139,7 +139,7 @@ TEST(SettingsStepAndFormat) {
 }
 
 TEST(SettingsEveryTabHasOptions) {
-    CHECK(SettingTabs().size() == 10);
+    CHECK(SettingTabs().size() == 11);
     for (const SettingDef &d : SettingDefs()) {
         CHECK(d.help && *d.help);
         if (d.type == SettingType::Enum) CHECK(d.optionKeys.size() == d.optionLabels.size());

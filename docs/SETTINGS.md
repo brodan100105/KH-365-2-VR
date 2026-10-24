@@ -98,7 +98,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `refresh_rate` | Refresh rate | `72`, `90`, `120` | `90` | Headset refresh rate. The game itself runs at its original frame rate. |
 | `resolution_scale` | Resolution scale | 0.5 to 1.5 x | `1` | Per-eye render resolution relative to the headset's. Applies on restart. |
 | `msaa` | Anti-aliasing | `off`, `2x`, `4x` | `4x` | Multisample anti-aliasing. Applies on restart. |
-| `texture_filter` | Texture filtering | `nearest`, `bilinear` | `bilinear` | How the DS textures are sampled. |
+| `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges. |
 | `sharpen` | Sharpening | 0 to 1 | `0.3` | Sharpens the final picture. |
 | `foveation` | Fixed foveation | `off`, `low`, `medium`, `high` | `medium` | Lowers resolution at the edges of the lenses to save GPU time. |
 | `draw_distance` | Draw distance | 1 to 4 x | `1.5` | Widens the game's culling so you can look around freely. |
@@ -108,12 +108,24 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
 | `top_screen` | HUD (top screen) | `floating`, `head_locked`, `hidden` | `floating` | Where the health bars and command panel are shown. |
-| `bottom_screen` | Bottom screen | `left_wrist`, `floating`, `hidden` | `left_wrist` | Where the DS touch screen (map, menus) is shown. |
 | `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
-| `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the HUD and the bottom screen. |
+| `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the floating HUD panels. |
 | `touch_input` | Touch input | `laser`, `direct_touch` | `laser` | How you touch the bottom screen. |
-| `hand_height` | Hand screen height | 0 to 0.3 m | `0.1` | How far above the left controller the bottom screen floats. |
-| `hand_tilt` | Hand screen tilt | -30 to 80 deg | `30` | Tilts the bottom screen above your hand back toward your face. |
+
+## Hand screen
+
+| Key | Option | Values | Default | Description |
+|---|---|---|---|---|
+| `placement` | Placement | `hand`, `floating`, `hidden`, `wrist` | `hand` | Where the DS touch screen (map, menus) is: held, worn like a watch, or floating. |
+| `side` | Hand | `left`, `right` | `left` | Which hand holds or wears it; the other hand's laser touches it. |
+| `auto_show` | Show when looked at | `true` / `false` | `true` | Grows in when you look at your hand or wrist, shrinks away when you look elsewhere. |
+| `size` | Size | 0.1 to 0.4 m | `0.2` | Width of the screen in your hand or on your wrist. |
+| `move_right` | Move right / left | -0.3 to 0.3 m | `0` | Moves the screen along its own width. |
+| `move_up` | Move up / down | -0.3 to 0.3 m | `0` | Moves the screen along its own height. |
+| `move_toward` | Move toward / away | -0.3 to 0.3 m | `0` | Moves the screen toward you (+) or away from you (-). |
+| `tilt` | Tilt | -90 to 90 deg | `30` | Tilts the top of the screen back (+) or forward (-). |
+| `turn` | Turn | -90 to 90 deg | `0` | Turns the screen left or right. |
+| `roll` | Roll | -90 to 90 deg | `0` | Rolls the screen clockwise or counterclockwise. |
 
 ## Game
 

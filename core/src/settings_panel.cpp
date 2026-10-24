@@ -6,7 +6,7 @@ namespace khvr {
 
 namespace {
 
-constexpr int kTabsPerRow = 5;
+constexpr int kTabsPerRow = 6;
 constexpr int kTabTop = 64, kTabH = 44, kTabGap = 6;
 constexpr int kRowsTop = kTabTop + 2 * (kTabH + kTabGap) + 10;
 constexpr int kRowH = 46;  // ten rows (the longest tab) end above the help line

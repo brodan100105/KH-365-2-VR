@@ -46,8 +46,8 @@ private:
     void UpdateTextures();
     void UpdatePlacements(const XrFrameInput &in);
     // Laser from the right aim pose against a placed quad: canvas pixel coordinates on a hit.
-    static bool Laser(const XrFrameInput &in, const Placement &p, int texW, int texH, float *px,
-                      float *py, float *dist);
+    static bool Laser(const XrFrameInput &in, int hand, const Placement &p, int texW, int texH,
+                      float *px, float *py, float *dist);
     void RenderGiantScreenViews(const XrFrameInput &in);
     void RenderEye(const XrFrameInput &in, int eye);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
@@ -93,6 +93,7 @@ private:
 
     Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_;
     Canvas loadingCanvas_{768, 192};
+    std::vector<uint32_t> sharpScratch_;  // the Sharp filter's enlarged screen
     double loadingDrawn_ = -10.0;
     WorldDrawList loadingArea_, loadingBeam_, loadingSparkles_;
     Vec3 loadingCenter_;
@@ -108,6 +109,9 @@ private:
     float screenYaw_ = 0.0f;
     float hudYaw_ = 0.0f;
     bool laserOnPanel_ = false, laserOnBottom_ = false;
+    int laserHand_ = 1;             // the hand the laser comes from
+    int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
+    float handScreenShown_ = 0.0f;  // 0 hidden .. 1 full size (the grow/shrink animation)
     Vec3 laserEnd_;
 };
 

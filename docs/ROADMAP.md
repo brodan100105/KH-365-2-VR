@@ -15,7 +15,7 @@ feedback from the first install decides what changes next.
 - [x] Giant screen: the game camera re-rendered per eye on a curved 4:3 screen, HUD on it
 - [x] Motion combat: swings (with kind), guard pose, point-and-trigger casting, stick-flick dodge,
       physical jump; all mapped to DS buttons through configurable bindings
-- [x] Settings: 69 options on 10 tabs, in-headset panel, `khvr.ini`, generated reference
+- [x] Settings: 76 options on 11 tabs, in-headset panel, `khvr.ini`, generated reference
 - [x] Comfort: vignette on artificial motion, blink on cuts and snap turns, seated mode
 - [x] HUD panels: top-screen HUD floating or head-locked, touch screen on the left wrist with
       laser touch

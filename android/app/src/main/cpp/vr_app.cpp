@@ -291,10 +291,28 @@ void VrApp::ApplyPlatformSettings() {
 void VrApp::UpdateTextures() {
     const DsScreens &s = game_->screens();
     if (s.revision != screensRevision_) {
-        bool linear = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter) == TextureFilter::Bilinear;
-        topTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.top.data(), linear);
-        hudTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.topHud.data(), linear);
-        bottomTex_.Upload(DsScreens::kWidth, DsScreens::kHeight, s.bottom.data(), linear);
+        const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+        auto upload = [&](Texture &tex, const std::vector<uint32_t> &px) {
+            if (filter != TextureFilter::Sharp) {
+                tex.Upload(DsScreens::kWidth, DsScreens::kHeight, px.data(), filter == TextureFilter::Bilinear);
+                return;
+            }
+            // Sharp: each DS pixel becomes a kSharp x kSharp block, then bilinear filtering only
+            // softens the block edges. Crisp pixel art without nearest-neighbour shimmer.
+            constexpr int kSharp = 3, W = DsScreens::kWidth * kSharp, H = DsScreens::kHeight * kSharp;
+            sharpScratch_.resize(static_cast<size_t>(W) * H);
+            for (int y = 0; y < DsScreens::kHeight; ++y) {
+                uint32_t *row = &sharpScratch_[static_cast<size_t>(y) * kSharp * W];
+                const uint32_t *src = &px[static_cast<size_t>(y) * DsScreens::kWidth];
+                for (int x = 0; x < DsScreens::kWidth; ++x)
+                    for (int k = 0; k < kSharp; ++k) row[x * kSharp + k] = src[x];
+                for (int k = 1; k < kSharp; ++k) std::copy(row, row + W, row + static_cast<size_t>(k) * W);
+            }
+            tex.Upload(W, H, sharpScratch_.data(), true);
+        };
+        upload(topTex_, s.top);
+        upload(hudTex_, s.topHud);
+        upload(bottomTex_, s.bottom);
         screensRevision_ = s.revision;
     }
     if (panel_.isOpen() && panel_.Redraw(settings_))
@@ -333,19 +351,40 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         hudPanel_.pose = FacingFrom(at, head.position);
     }
 
-    // Bottom screen: floating just above the left controller like a handheld you hold (height
-    // and tilt are settings), or floating low left.
-    bottomPanel_.width = 0.2f * hudScale;
-    bottomPanel_.height = bottomPanel_.width * 0.75f;
-    if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) == BottomScreenPlacement::LeftWrist) {
-        if (in.gripValid[0]) {
-            // Grip space: -Z along the controller, +Y out of its top, +Z back toward you; the
-            // screen faces +Z, lifted above the controller and tilted back by the setting.
-            float lift = settings_.Get(SettingId::HudHandHeight);
-            float tilt = DegToRad(settings_.Get(SettingId::HudHandTilt));
-            bottomPanel_.pose = in.grip[0] * Pose{Quat::AxisAngle({1, 0, 0}, -tilt),
-                                                  {0.0f, lift + bottomPanel_.height * 0.5f, -0.02f}};
+    // Bottom screen: held above a hand like a handheld, worn on the wrist like a watch, or
+    // floating low left. Held and worn screens can be moved and turned along their own axes, and
+    // grow in only while you look toward them.
+    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    handScreenSide_ = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
+    if (placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist) {
+        bottomPanel_.width = settings_.Get(SettingId::HandScreenSize);
+        bottomPanel_.height = bottomPanel_.width * 0.75f;
+        const int h = handScreenSide_;
+        if (in.gripValid[h]) {
+            // Grip space: -Z along the controller, +Y out of its top, +Z back toward your arm.
+            Pose base = placement == BottomScreenPlacement::InHand
+                            // Facing you, just above the controller.
+                            ? in.grip[h] * Pose{Quat(), {0.0f, 0.10f + bottomPanel_.height * 0.5f, -0.02f}}
+                            // Face up on top of the wrist, its top toward your fingers.
+                            : in.grip[h] * Pose{Quat::AxisAngle({1, 0, 0}, -kPi / 2), {0.0f, 0.03f, 0.12f}};
+            Quat turn = Quat::AxisAngle({0, 1, 0}, DegToRad(settings_.Get(SettingId::HandScreenTurn))) *
+                        Quat::AxisAngle({1, 0, 0}, -DegToRad(settings_.Get(SettingId::HandScreenTilt))) *
+                        Quat::AxisAngle({0, 0, 1}, -DegToRad(settings_.Get(SettingId::HandScreenRoll)));
+            Vec3 move{settings_.Get(SettingId::HandScreenOffsetX), settings_.Get(SettingId::HandScreenOffsetY),
+                      settings_.Get(SettingId::HandScreenOffsetZ)};
+            bottomPanel_.pose = base * Pose{turn, {0, 0, 0}} * Pose{Quat(), move};
         }
+        // Shown while you look toward it (wider to keep it than to bring it up), or always.
+        bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_;
+        if (!wanted && in.gripValid[h]) {
+            Vec3 to = bottomPanel_.pose.position - head.position;
+            float dist = Length(to);
+            float angle = std::acos(Clamp(Dot(to * (1.0f / std::max(dist, 1e-4f)), head.orientation.Forward()), -1.0f, 1.0f));
+            wanted = dist < 1.2f && angle < DegToRad(handScreenShown_ > 0.5f ? 45.0f : 32.0f);
+        }
+        if (!in.gripValid[h]) wanted = false;
+        float step = in.dt / 0.18f;  // grow or shrink in about 0.18 s
+        handScreenShown_ = Clamp(handScreenShown_ + (wanted ? step : -step), 0.0f, 1.0f);
     } else {
         bottomPanel_.width = 0.45f * hudScale;
         bottomPanel_.height = bottomPanel_.width * 0.75f;
@@ -353,6 +392,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         Vec3 at = head.position + fwd * (hudDist * 0.8f) + Vec3{0, -0.55f, 0};
         bottomPanel_.pose = FacingFrom(at, head.position);
         bottomPanel_.pose.orientation = bottomPanel_.pose.orientation * Quat::AxisAngle({1, 0, 0}, -0.5f);
+        handScreenShown_ = 1.0f;
     }
 
     if (loadingArea_.triangles.empty() || recenteredLoading) {
@@ -376,10 +416,10 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     settingsPanel_.height = 0.75f;
 }
 
-bool VrApp::Laser(const XrFrameInput &in, const Placement &p, int texW, int texH, float *px,
+bool VrApp::Laser(const XrFrameInput &in, int hand, const Placement &p, int texW, int texH, float *px,
                   float *py, float *dist) {
-    if (!in.aimValid[1]) return false;
-    Vec3 o = in.aim[1].position, d = in.aim[1].orientation.Forward();
+    if (!in.aimValid[hand]) return false;
+    Vec3 o = in.aim[hand].position, d = in.aim[hand].orientation.Forward();
     Vec3 n = p.pose.orientation.Rotate({0, 0, 1});
     float denom = Dot(d, n);
     if (std::fabs(denom) < 1e-5f) return false;
@@ -402,29 +442,35 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     ControllerState buttons = in.buttons;
 
-    // ---- Laser pointer: the settings panel, then the bottom (touch) screen ----
+    // ---- Laser pointer: the settings panel (right hand), then the bottom (touch) screen, which
+    // the hand that is not holding it points at ----
+    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
+    const int touchHand = held ? 1 - handScreenSide_ : 1;
     float px = 0, py = 0, dist = 0;
     bool click = buttons.trigger[1] > 0.6f && prevTrigger_[1] <= 0.6f;
     prevTrigger_[0] = buttons.trigger[0];
     prevTrigger_[1] = buttons.trigger[1];
     laserOnPanel_ = laserOnBottom_ = false;
+    laserHand_ = 1;
     GameRequests touch;
     if (panel_.isOpen()) {
-        laserOnPanel_ = Laser(in, settingsPanel_, SettingsPanel::kWidth, SettingsPanel::kHeight, &px, &py, &dist);
+        laserOnPanel_ = Laser(in, 1, settingsPanel_, SettingsPanel::kWidth, SettingsPanel::kHeight, &px, &py, &dist);
         panel_.Pointer(laserOnPanel_, px, py, click, settings_);
         laserEnd_ = in.aim[1].position + in.aim[1].orientation.Forward() * (laserOnPanel_ ? dist : 2.0f);
         // While the panel is open the game gets no input.
         buttons = ControllerState{};
         buttons.menu = in.buttons.menu;
-    } else if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::Hidden &&
+    } else if (placement != BottomScreenPlacement::Hidden && handScreenShown_ > 0.9f &&
                settings_.Enum<TouchInput>(SettingId::HudTouchInput) == TouchInput::Laser &&
-               Laser(in, bottomPanel_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)) {
+               Laser(in, touchHand, bottomPanel_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)) {
         laserOnBottom_ = true;
-        laserEnd_ = in.aim[1].position + in.aim[1].orientation.Forward() * dist;
-        touch.touching = buttons.trigger[1] > 0.6f;
+        laserHand_ = touchHand;
+        laserEnd_ = in.aim[touchHand].position + in.aim[touchHand].orientation.Forward() * dist;
+        touch.touching = buttons.trigger[touchHand] > 0.6f;
         touch.touchX = static_cast<uint8_t>(Clamp(px, 0, 255));
         touch.touchY = static_cast<uint8_t>(Clamp(py, 0, 191));
-        buttons.trigger[1] = 0.0f;  // the trigger touches the screen instead of pressing R
+        buttons.trigger[touchHand] = 0.0f;  // the trigger touches the screen instead of pressing L/R
     }
 
     // ---- Tracking for the rigs and gestures ----
@@ -639,10 +685,17 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     if (mode != ViewMode::GiantScreen &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
         renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
-    if (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::Hidden &&
-        (settings_.Enum<BottomScreenPlacement>(SettingId::HudBottomScreen) != BottomScreenPlacement::LeftWrist ||
-         in.gripValid[0]))
-        renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width, bottomPanel_.height, vpTracking);
+    {
+        const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+        const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
+        if (placement != BottomScreenPlacement::Hidden && handScreenShown_ > 0.01f &&
+            (!held || in.gripValid[handScreenSide_])) {
+            // Grows from its middle with a smooth ease as it appears.
+            float t = handScreenShown_, s = t * t * (3.0f - 2.0f * t);
+            renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * s,
+                               bottomPanel_.height * s, vpTracking);
+        }
+    }
     if (Loading() && loadingTex_.id())
         renderer_.DrawQuad(loadingTex_.id(), loadingPanel_.pose, loadingPanel_.width, loadingPanel_.height, vpTracking);
     if (statusVisible_ && statusTex_.id())
@@ -651,7 +704,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         renderer_.DrawQuad(panelTex_.id(), settingsPanel_.pose, settingsPanel_.width,
                            settingsPanel_.height, vpTracking);
     if (laserOnPanel_ || laserOnBottom_ || panel_.isOpen())
-        renderer_.DrawLine(in.aim[1].position, laserEnd_, Rgba(214, 178, 82, 220), vpTracking);
+        renderer_.DrawLine(in.aim[laserHand_].position, laserEnd_, Rgba(214, 178, 82, 220), vpTracking);
 
     float blink = 0.0f;
     if (blinkTime_ >= 0.0f) {

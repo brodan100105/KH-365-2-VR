@@ -88,12 +88,20 @@ enum class SettingId : int {
     PicDrawDistance,
     // HUD
     HudTopScreen,
-    HudBottomScreen,
     HudDistance,
     HudScale,
     HudTouchInput,
-    HudHandHeight,
-    HudHandTilt,
+    // Hand screen (the DS touch screen held in or worn on a hand)
+    HandScreenPlacement,
+    HandScreenSide,
+    HandScreenAutoShow,
+    HandScreenSize,
+    HandScreenOffsetX,
+    HandScreenOffsetY,
+    HandScreenOffsetZ,
+    HandScreenTilt,
+    HandScreenTurn,
+    HandScreenRoll,
     // Game
     GamePlay,
     GameLanguage,
@@ -115,9 +123,9 @@ enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
-enum class BottomScreenPlacement : int { LeftWrist = 0, Floating = 1, Hidden = 2 };
+enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
-enum class TextureFilter : int { Nearest = 0, Bilinear = 1 };
+enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2 };
 enum class GamePlay : int { Auto = 0, Demo = 1 };
 // Buttons a gesture can press, in the order the Controls tab lists them.
 enum class DsBinding : int { A = 0, B = 1, X = 2, Y = 3, L = 4, R = 5, None = 6 };
