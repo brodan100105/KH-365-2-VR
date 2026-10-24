@@ -2,7 +2,7 @@
 
 Each iteration ends with something you can try on the headset and give feedback on.
 
-## Iteration 1 (this one): the VR shell
+## Iteration 1: the VR shell
 
 Implemented; the core logic is unit-tested, but none of it has run on a headset yet. Your
 feedback from the first install decides what changes next.
@@ -33,11 +33,22 @@ feedback from the first install decides what changes next.
 - [x] 2D engines rendered to the giant screen and the wrist screen; pad and touch input
 - [x] Boot log with backtraces (`tools/symbolize.py`), desktop runner, fake-ROM boot test in CI:
       the title scene loads
-- [ ] First boot with a real ROM on the headset (needs you: send `KHDaysVR/khvr_boot.log`)
-- [ ] Sound (the ARM7's sound driver is acknowledged, not played)
-- [ ] MobiClip videos (the decoder's assembly parts are stubbed)
+- [x] First boot with a real ROM on the headset: title screen, new game, the opening (movie
+      timed without a picture, START skips), "Day 1"
+- [ ] Into the field: the action-script stall after "Day 1"
+- [x] Loading area, hand screen (in hand / on wrist, follows your view), Sharp upscaling
 
-## Iteration 3: the world in VR
+## Iteration 3: movies and sound
+
+Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
+
+- [ ] Movies with picture: the game's own MobiClip player (its C++ parts and the decomp's
+      portable frame decoder compiled into the port, the row blitter written in C)
+- [ ] Audio output (AAudio), the DS's 16-channel mixer, the ARM7 sound driver's commands
+- [ ] The sequence player (SSEQ/SBNK/SWAR from `sound_data.sdat`), streams, alarms
+- [ ] Sound settings (master, music, effects, movie volume)
+
+## Iteration 4: the world in VR
 
 - [ ] GX geometry capture into world-space draw lists (textures, polygon attributes, toon/edge
       marking approximations)
@@ -45,11 +56,11 @@ feedback from the first install decides what changes next.
 - [ ] Calibrate **Game > World units per meter** from Roxas's model height
 - [ ] Panoramic and first person in Twilight Town
 
-## Iteration 4 and later
+## Iteration 5 and later
 
 - [ ] Physical hits: Keyblade-vs-hitbox tests against the enemy framework's collision spheres
 - [ ] Swing kinds driving combo animations, aim assist toward `GameFrame::nearestEnemy`
 - [ ] First-person body: the character model drawn without its head
 - [ ] Wall fade in panoramic mode, cutscenes from where you stand
-- [ ] Sound (SDAT sequences), MobiClip videos
+- [ ] Positional (VR) sound for the game's 3D sound sources
 - [ ] Frame interpolation above the game's 30 Hz
