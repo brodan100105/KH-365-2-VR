@@ -65,6 +65,7 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
         return false;
     }
     SaveOpen(config.savePath);
+    RomWriteFileList(config.fileListPath);
 
     wasm_rt_init();
     wasm2c_khdays_instantiate(Guest(), nullptr);

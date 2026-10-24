@@ -66,6 +66,44 @@ bool RomOpen(const std::string &path, std::string *error) {
 
 uint32_t RomSize() { return static_cast<uint32_t>(gRomSize); }
 
+namespace {
+uint32_t RomU32(size_t off) { return off + 4 <= gRomSize ? gRom[off] | gRom[off + 1] << 8 | gRom[off + 2] << 16 | static_cast<uint32_t>(gRom[off + 3]) << 24 : 0; }
+uint16_t RomU16(size_t off) { return off + 2 <= gRomSize ? static_cast<uint16_t>(gRom[off] | gRom[off + 1] << 8) : 0; }
+
+// One NitroFS directory of the file name table, recursively: "path size" per file.
+void ListDir(FILE *out, uint32_t fnt, uint32_t fat, uint16_t dir, const std::string &prefix, int depth) {
+    if (depth > 16) return;
+    size_t entry = fnt + (dir & 0x0fff) * 8u;
+    size_t p = fnt + RomU32(entry);
+    uint16_t fileId = RomU16(entry + 4);
+    while (p < gRomSize) {
+        uint8_t len = gRom[p++];
+        if (len == 0) break;
+        std::string name(reinterpret_cast<const char *>(gRom + p), std::min<size_t>(len & 0x7f, gRomSize - p));
+        p += len & 0x7f;
+        if (len & 0x80) {
+            uint16_t sub = RomU16(p);
+            p += 2;
+            ListDir(out, fnt, fat, sub, prefix + name + "/", depth + 1);
+        } else {
+            uint32_t start = RomU32(fat + fileId * 8u), end = RomU32(fat + fileId * 8u + 4);
+            std::fprintf(out, "%s%s %u\n", prefix.c_str(), name.c_str(), end > start ? end - start : 0);
+            ++fileId;
+        }
+    }
+}
+}  // namespace
+
+void RomWriteFileList(const std::string &path) {
+    if (!gRom || path.empty()) return;
+    FILE *out = std::fopen(path.c_str(), "w");
+    if (!out) return;
+    // Names and sizes only, from the file name table (header 0x40) and allocation table (0x48).
+    ListDir(out, RomU32(0x40), RomU32(0x48), 0xf000, "/", 0);
+    std::fclose(out);
+    Log("rom: file list written to %s", path.c_str());
+}
+
 void RomRead(uint32_t offset, void *dst, uint32_t len) {
     if (offset >= gRomSize) {
         std::memset(dst, 0xff, len);

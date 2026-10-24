@@ -12,6 +12,7 @@ struct PlatformConfig {
     std::string romPath;   // the user's own EU (YKGP) ROM
     std::string savePath;  // the game's save (card backup), created on first save
     std::string logPath;   // boot log, written as the game runs
+    std::string fileListPath;  // if set, the ROM's file names and sizes are written there
     int language = 1;      // firmware language: 1 English .. 5 Spanish
 };
 

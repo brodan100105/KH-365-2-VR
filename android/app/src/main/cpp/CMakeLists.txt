@@ -29,6 +29,7 @@ find_package(OpenXR REQUIRED CONFIG)
 add_library(khdaysvr SHARED
     main.cpp
     renderer.cpp
+    station_art.cpp
     vr_app.cpp
     xr_platform.cpp
 )

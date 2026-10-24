@@ -165,6 +165,7 @@ int main(int argc, char **argv) {
         else if (a == "--frames") frames = std::atoi(next().c_str());
         else if (a == "--save") cfg.savePath = next();
         else if (a == "--log") cfg.logPath = next();
+        else if (a == "--file-list") cfg.fileListPath = next();
         else if (a == "--language") cfg.language = std::atoi(next().c_str());
         else if (a == "--screens") screens = next();
         else {

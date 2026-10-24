@@ -69,6 +69,7 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     cfg.romPath = rom;
     cfg.savePath = dataDir + "/khdays.sav";
     cfg.logPath = dataDir + "/khvr_boot.log";
+    cfg.fileListPath = dataDir + "/khvr_files.txt";
     cfg.language = language;
     if (!Platform::Get().Start(cfg, message)) return false;
     *message = "Booting " + rom.substr(rom.find_last_of('/') + 1);

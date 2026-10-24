@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 
 #include "khvr/canvas.h"
+#include "station_art.h"
 #include "log.h"
 
 namespace khvr {
@@ -166,119 +167,18 @@ bool VrApp::Loading() const {
 #endif
 }
 
-namespace {
-
-uint32_t Shade(uint32_t c, float k) {
-    auto ch = [&](int shift) {
-        float v = static_cast<float>((c >> shift) & 0xff) * k;
-        return static_cast<uint32_t>(v > 255.0f ? 255.0f : v) << shift;
-    };
-    return ch(0) | ch(8) | ch(16) | (c & 0xff000000u);
-}
-
-// The heart curve, |t| in [0, 2 pi): a unit-ish heart, point toward -y.
-Vec3 HeartPoint(float t) {
-    float s = std::sin(t);
-    float x = 16.0f * s * s * s;
-    float y = 13.0f * std::cos(t) - 5.0f * std::cos(2 * t) - 2.0f * std::cos(3 * t) - std::cos(4 * t);
-    return {x / 17.0f, 0.0f, -y / 17.0f};
-}
-
-}  // namespace
-
 void VrApp::BuildLoadingArea(float floorY) {
     // An original take on the series' Station of Awakening: a stained-glass pillar top floating in
-    // darkness, lit from above. Leaded rings and spokes, a ring of medallion windows, a heart in
-    // the middle where you stand, and a column of light around you.
+    // darkness, lit from above, with a column of light around you.
     loadingArea_.triangles.clear();
     loadingBeam_.triangles.clear();
     const Vec3 up{0, 1, 0};
     const Vec3 c{screenAnchor_.x, floorY, screenAnchor_.z};
-    const float kRadius = 3.2f;
-    const uint32_t kLead = Rgba(18, 16, 28);
-    const uint32_t kGold = Rgba(226, 186, 84);
-    auto tri = [&](WorldDrawList &l, const Vec3 &a, const Vec3 &b, const Vec3 &d, uint32_t ca,
-                   uint32_t cb, uint32_t cd) {
-        l.triangles.push_back({a, up, ca});
-        l.triangles.push_back({b, up, cb});
-        l.triangles.push_back({d, up, cd});
-    };
-    // Light from above: glass toward the middle glows brighter.
-    auto lit = [&](uint32_t col, float r) { return Shade(col, 1.25f - 0.45f * (r / kRadius)); };
+    const float kRadius = 3.2f;  // the painted window is 6.4 m across
     auto ringPoint = [&](float r, float a, float y = 0.0f) {
         return c + Vec3{r * std::cos(a), y, r * std::sin(a)};
     };
-    // A flat ring segment between radii r0..r1 and angles a0..a1, slightly above y.
-    auto band = [&](float r0, float r1, float a0, float a1, uint32_t col, float y) {
-        const int steps = 4;
-        for (int i = 0; i < steps; ++i) {
-            float b0 = a0 + (a1 - a0) * i / steps, b1 = a0 + (a1 - a0) * (i + 1) / steps;
-            Vec3 p00 = ringPoint(r0, b0, y), p01 = ringPoint(r0, b1, y);
-            Vec3 p10 = ringPoint(r1, b0, y), p11 = ringPoint(r1, b1, y);
-            uint32_t i0 = lit(col, r0), o0 = lit(col, r1);
-            tri(loadingArea_, p00, p01, p11, i0, i0, o0);
-            tri(loadingArea_, p00, p11, p10, i0, o0, o0);
-        }
-    };
-    auto disc = [&](const Vec3 &at, float r, uint32_t col, float y) {
-        const int n = 24;
-        for (int i = 0; i < n; ++i) {
-            float a0 = 2 * kPi * i / n, a1 = 2 * kPi * (i + 1) / n;
-            Vec3 o = at + Vec3{0, y, 0};
-            uint32_t k = lit(col, Length(at - c));
-            tri(loadingArea_, o, o + Vec3{r * std::cos(a1), 0, r * std::sin(a1)},
-                o + Vec3{r * std::cos(a0), 0, r * std::sin(a0)}, k, k, k);
-        }
-    };
-
-    // Background glass: lead first, then 36 panes in four blues and violets with lead between.
-    disc(c, kRadius, kLead, 0.0f);
-    const uint32_t kField[] = {Rgba(44, 78, 168), Rgba(78, 58, 150), Rgba(36, 112, 170), Rgba(60, 90, 190),
-                               Rgba(96, 70, 168), Rgba(40, 96, 150)};
-    const int kSpokes = 36;
-    const float kGap = 0.012f;
-    const float rings[] = {1.05f, 1.75f, 2.5f, 2.95f};
-    for (int ring = 0; ring + 1 < 4; ++ring) {
-        for (int i = 0; i < kSpokes; ++i) {
-            float a0 = 2 * kPi * i / kSpokes + kGap, a1 = 2 * kPi * (i + 1) / kSpokes - kGap;
-            uint32_t col = kField[(i * 7 + ring * 3) % 6];
-            band(rings[ring] + 0.02f, rings[ring + 1] - 0.02f, a0, a1, col, 0.002f);
-        }
-    }
-    // Gold border with dark notches, the outer lip of the pillar.
-    for (int i = 0; i < 72; ++i) {
-        float a0 = 2 * kPi * i / 72 + 0.004f, a1 = 2 * kPi * (i + 1) / 72 - 0.004f;
-        band(2.97f, kRadius - 0.03f, a0, a1, (i % 2) ? kGold : Shade(kGold, 0.75f), 0.002f);
-    }
-    // Inner field around the heart: pale gold glass.
-    disc(c, 1.03f, Rgba(250, 226, 150), 0.002f);
-    // Eight medallion windows on the middle ring, each a gold frame around lighter glass.
-    for (int m = 0; m < 8; ++m) {
-        float a = 2 * kPi * (m + 0.5f) / 8;
-        Vec3 at = ringPoint((rings[1] + rings[2]) * 0.5f, a);
-        disc(at, 0.36f, kGold, 0.004f);
-        disc(at, 0.31f, kLead, 0.005f);
-        const uint32_t kMedal[] = {Rgba(150, 196, 240), Rgba(200, 170, 236), Rgba(160, 220, 210), Rgba(236, 200, 160)};
-        disc(at, 0.29f, kMedal[m % 4], 0.006f);
-    }
-    // The heart, point toward where you face first, in a lead outline.
-    float yaw = screenYaw_;
-    Quat q = Quat::Yaw(yaw);
-    auto heart = [&](float scale, uint32_t col, float y) {
-        const int n = 64;
-        Vec3 mid = c + q.Rotate(Vec3{0, 0, -0.05f} * scale) + Vec3{0, y, 0};
-        for (int i = 0; i < n; ++i) {
-            Vec3 p0 = c + q.Rotate(HeartPoint(2 * kPi * i / n) * scale) + Vec3{0, y, 0};
-            Vec3 p1 = c + q.Rotate(HeartPoint(2 * kPi * (i + 1) / n) * scale) + Vec3{0, y, 0};
-            uint32_t k = lit(col, 0.0f);
-            // Wind so the face points up whichever way the curve runs.
-            if (Cross(p1 - mid, p0 - mid).y > 0) tri(loadingArea_, mid, p1, p0, k, k, k);
-            else tri(loadingArea_, mid, p0, p1, k, k, k);
-        }
-    };
-    heart(0.82f, kLead, 0.008f);
-    heart(0.76f, Rgba(196, 40, 70), 0.009f);
-    heart(0.52f, Rgba(236, 84, 110), 0.010f);
+    // The glass itself is a painted texture (station_art.cpp), drawn as a disc in RenderEye.
 
     // The pillar below, fading into the dark.
     const int kSides = 48;
@@ -287,7 +187,7 @@ void VrApp::BuildLoadingArea(float floorY) {
         Vec3 t0 = ringPoint(kRadius, a0), t1 = ringPoint(kRadius, a1);
         Vec3 b0 = ringPoint(kRadius * 0.92f, a0, -24.0f), b1 = ringPoint(kRadius * 0.92f, a1, -24.0f);
         Vec3 n = Normalize(Vec3{std::cos((a0 + a1) / 2), 0, std::sin((a0 + a1) / 2)});
-        uint32_t top = Rgba(70, 64, 96), bottom = Rgba(6, 6, 12);
+        uint32_t top = Rgba(96, 52, 28), bottom = Rgba(8, 5, 4);
         loadingArea_.triangles.push_back({t0, n, top});
         loadingArea_.triangles.push_back({t1, n, top});
         loadingArea_.triangles.push_back({b1, n, bottom});
@@ -301,7 +201,7 @@ void VrApp::BuildLoadingArea(float floorY) {
         Vec3 l0 = ringPoint(2.2f, a0), l1 = ringPoint(2.2f, a1);
         Vec3 h0 = ringPoint(1.4f, a0, 9.0f), h1 = ringPoint(1.4f, a1, 9.0f);
         Vec3 n = up;
-        uint32_t lo = Rgba(255, 244, 210), hi = Rgba(120, 130, 200);
+        uint32_t lo = Rgba(255, 236, 196), hi = Rgba(200, 120, 90);
         loadingBeam_.triangles.push_back({l0, n, lo});
         loadingBeam_.triangles.push_back({l1, n, lo});
         loadingBeam_.triangles.push_back({h1, n, hi});
@@ -310,6 +210,10 @@ void VrApp::BuildLoadingArea(float floorY) {
         loadingBeam_.triangles.push_back({h0, n, hi});
     }
     loadingCenter_ = c;
+    if (!stationTex_.id()) {
+        std::vector<uint32_t> art = PaintStationArt(1024);
+        stationTex_.Upload(1024, 1024, art.data(), true);
+    }
 }
 
 void VrApp::UpdateLoadingSparkles(double now) {
@@ -689,6 +593,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     if (Loading()) {
         // The loading area instead of a black giant screen, until the game draws something.
         renderer_.DrawTriangles(loadingArea_, vpTracking);
+        if (stationTex_.id()) {
+            // The window lies face up on the pillar, its top toward where you first looked.
+            Pose floor{Quat::Yaw(screenYaw_) * Quat::AxisAngle({1, 0, 0}, -kPi / 2),
+                       loadingCenter_ + Vec3{0, 0.002f, 0}};
+            renderer_.DrawQuad(stationTex_.id(), floor, 6.4f, 6.4f, vpTracking);
+        }
         renderer_.DrawTriangles(loadingSparkles_, vpTracking);
         renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
     } else if (mode == ViewMode::GiantScreen) {

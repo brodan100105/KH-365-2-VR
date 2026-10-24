@@ -73,6 +73,7 @@ void Arm7VBlank();                       // per-frame work (touch sampling, soun
 // ---- ROM, save and boot environment (hle_rom.cpp) ----
 bool RomOpen(const std::string &path, std::string *error);
 uint32_t RomSize();
+void RomWriteFileList(const std::string &path);  // the ROM's file names and sizes, no data
 void RomRead(uint32_t offset, void *dst, uint32_t len);
 void SetupSharedArea(int language);    // header copies, owner info, system work
 bool SaveOpen(const std::string &path);

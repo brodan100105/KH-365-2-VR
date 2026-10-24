@@ -91,7 +91,7 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_;
     Canvas loadingCanvas_{768, 192};
     double loadingDrawn_ = -10.0;
     WorldDrawList loadingArea_, loadingBeam_, loadingSparkles_;
