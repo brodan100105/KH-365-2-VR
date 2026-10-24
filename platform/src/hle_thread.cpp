@@ -185,14 +185,34 @@ extern "C" {
 u32 w2c_env_khvr_host_save_context(struct w2c_env *, u32 context) {
     TraceSwitch("save", context);
     std::lock_guard<std::mutex> lock(gMu);
-    gByContext[context] = tSelf;
-    tSelf->context = context;
+    // Each host thread runs one guest thread for life: its OSThread (context) is bound at its
+    // first save (the main thread) or at its start. A save of another context means the SDK's
+    // current thread and the running host thread disagree; never remap on it, or a later load of
+    // that context would land on this thread and do nothing.
+    if (tSelf->context == 0) {
+        tSelf->context = context;
+        gByContext[context] = tSelf;
+    } else if (tSelf->context != context) {
+        static int reported = 0;
+        if (reported++ < 5) {
+            Log("thread: save of 0x%08x on the host thread of 0x%08x (SDK and host disagree)", context,
+                tSelf->context);
+            LogBacktrace("thread mismatch");
+        }
+    }
     return 0;
 }
 
 void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
     TraceSwitch("load", context);
     std::unique_lock<std::mutex> lock(gMu);
+    // Leaving a thread that has exited (OSi_ExitThread_Destroy marked it TERMINATED and skipped
+    // its save): it never runs again, and its OSThread memory may become a new thread later.
+    if (tSelf->context && tSelf->context != context && Read32(tSelf->context + 0x64) == 2) {
+        auto own = gByContext.find(tSelf->context);
+        if (own != gByContext.end() && own->second == tSelf) gByContext.erase(own);
+        tSelf->context = 0xffffffffu;  // bound to nothing from now on
+    }
     GuestThread *next;
     auto it = gByContext.find(context);
     if (it != gByContext.end()) {
@@ -209,7 +229,10 @@ void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
         gAll.push_back(next);
         Log("thread: start context 0x%08x entry %u sp 0x%08x", context, next->entry, next->sp);
     }
-    if (next == tSelf) return;
+    if (next == tSelf) {
+        if (tSelf->context != context) Log("thread: load of 0x%08x maps to the running host thread", context);
+        return;
+    }
     HandTo(next, lock);
     WaitForBaton(lock);
 }
