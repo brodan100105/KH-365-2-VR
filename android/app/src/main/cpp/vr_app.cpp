@@ -380,8 +380,19 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                         Quat::AxisAngle({0, 0, 1}, -DegToRad(settings_.Get(SettingId::HandScreenRoll)));
             Vec3 move{settings_.Get(SettingId::HandScreenOffsetX), settings_.Get(SettingId::HandScreenOffsetY),
                       settings_.Get(SettingId::HandScreenOffsetZ)};
-            Pose face = FacingEye(anchor, head.position);
-            bottomPanel_.pose = Pose{face.orientation * turn, anchor} * Pose{Quat(), move};
+            Quat face = FacingEye(anchor, head.position).orientation;
+            if (settings_.Bool(SettingId::HandScreenFollowView)) {
+                handScreenLockValid_ = false;
+            } else {
+                // Fixed to the hand: keep the angle relative to the controller that it had when
+                // it last faced you (switching this off, or a recenter).
+                if (!handScreenLockValid_ || recenterNext_) {
+                    handScreenLock_ = in.grip[h].orientation.Conjugate() * face;
+                    handScreenLockValid_ = true;
+                }
+                face = in.grip[h].orientation * handScreenLock_;
+            }
+            bottomPanel_.pose = Pose{face * turn, anchor} * Pose{Quat(), move};
         }
         // Shown while you look toward it (wider to keep it than to bring it up), or always.
         bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_;

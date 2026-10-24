@@ -119,6 +119,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `placement` | Placement | `hand`, `floating`, `hidden`, `wrist` | `hand` | Where the DS touch screen (map, menus) is: held, worn like a watch, or floating. |
 | `side` | Hand | `left`, `right` | `left` | Which hand holds or wears it; the other hand's laser touches it. |
 | `auto_show` | Show when looked at | `true` / `false` | `true` | Full size when you look at your hand or wrist; small and see-through otherwise. |
+| `follow_view` | Face your view | `true` / `false` | `true` | On: turns to face your eyes. Off: fixed to your hand like a held object, at the angle it had when you switched this off or last recentered. |
 | `size` | Size | 0.1 to 0.4 m | `0.2` | Width of the screen in your hand or on your wrist. |
 | `move_right` | Move right / left | -0.3 to 0.3 m | `0` | Moves the screen along its own width. |
 | `move_up` | Move up / down | -0.3 to 0.3 m | `0` | Moves the screen along its own height. |

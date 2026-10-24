@@ -95,6 +95,7 @@ enum class SettingId : int {
     HandScreenPlacement,
     HandScreenSide,
     HandScreenAutoShow,
+    HandScreenFollowView,
     HandScreenSize,
     HandScreenOffsetX,
     HandScreenOffsetY,

@@ -111,7 +111,9 @@ private:
     bool laserOnPanel_ = false, laserOnBottom_ = false;
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
-    float handScreenShown_ = 0.0f;  // 0 hidden .. 1 full size (the grow/shrink animation)
+    float handScreenShown_ = 0.0f;  // 0 small .. 1 full size (the grow/shrink animation)
+    Quat handScreenLock_;           // with Face your view off: its angle relative to the controller
+    bool handScreenLockValid_ = false;
     Vec3 laserEnd_;
 };
 

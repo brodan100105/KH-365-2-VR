@@ -189,6 +189,9 @@ std::vector<SettingDef> BuildDefs() {
                   {"Left", "Right"}, "Which hand holds or wears it; the other hand's laser touches it."));
     d.push_back(B(S::HandScreenAutoShow, "Hand screen", "auto_show", "Show when looked at", true,
                   "Full size when you look at your hand or wrist; small and see-through otherwise."));
+    d.push_back(B(S::HandScreenFollowView, "Hand screen", "follow_view", "Face your view", true,
+                  "On: turns to face your eyes. Off: fixed to your hand like a held object, at the "
+                  "angle it had when you switched this off or last recentered."));
     d.push_back(F(S::HandScreenSize, "Hand screen", "size", "Size", 0.20f, 0.10f, 0.40f, 0.01f, "m",
                   "Width of the screen in your hand or on your wrist."));
     d.push_back(F(S::HandScreenOffsetX, "Hand screen", "move_right", "Move right / left", 0.0f, -0.3f,
