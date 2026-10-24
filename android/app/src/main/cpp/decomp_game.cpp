@@ -107,9 +107,9 @@ void DecompGame::DriverLoop() {
         p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
         if (!p.VBlank(100)) continue;  // still busy with the previous frame
         p.CaptureScreens(scratch.get());
-        // The loading area stays for a few seconds at least, and until either screen shows an
+        // The loading area stays for 5 seconds at least, and until either screen shows an
         // image: the game starts on flat white or black (a brightness fade), which is not one.
-        if (!hasPicture_ && clock::now() - started > std::chrono::seconds(3)) {
+        if (!hasPicture_ && clock::now() - started > std::chrono::seconds(5)) {
             auto detailed = [](const uint32_t *px) {
                 const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
                 size_t differ = 0;
