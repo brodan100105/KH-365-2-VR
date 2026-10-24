@@ -346,6 +346,43 @@ void ThreadsLogRunning(const char *why) {
     LogFrames(what, gSamplePcs, n, 0);
 }
 
+bool ThreadsFinishExit() {
+    // OSi_RescheduleThread's view of the scheduler (decomp: libs/nitro/os/calls/OSi_RescheduleThread.c).
+    static const uint32_t g = SymbolAddress("data_0204430c");
+    if (!g) return false;
+    const uint32_t cur = Read32(g + 0x28);
+    if (!cur || Read32(cur + 0x64) != 2) return false;  // not a thread on its way out (TERMINATED)
+
+    Log("thread: exit of 0x%08x did not switch threads | rescheduleCount %u irqDepth %u needResched %u",
+        cur, Read32(g + 0x04), Read16(g + 0x26), Read16(g + 0x24));
+    uint32_t idle = 0, idlePrio = 0;
+    std::string list;
+    uint32_t t = Read32(g + 0x2c);
+    for (int i = 0; t && i < 32; ++i, t = Read32(t + 0x68)) {
+        char item[64];
+        uint32_t state = Read32(t + 0x64), prio = Read32(t + 0x70);
+        std::snprintf(item, sizeof item, " 0x%08x(id %u prio %u state %u)", t, Read32(t + 0x6c), prio, state);
+        list += item;
+        if (prio >= idlePrio) {
+            idle = t;
+            idlePrio = prio;
+        }
+    }
+    Log("thread: list:%s", list.c_str());
+
+    // On the DS the exiting thread can never run again: finish its switch by hand. The next
+    // thread is the SDK's own choice, or the lowest-priority one (the idle thread) if none is ready.
+    uint32_t next = w2c_khdays_OSi_SelectThread(Guest());
+    if (!next) next = idle;
+    if (!next || next == cur) return false;
+    Log("thread: switching to 0x%08x by hand", next);
+    if (uint32_t cb = Read32(g + 0x00)) CallGuest(cb, cur, next);  // systemCallback
+    if (uint32_t cb = Read32(g + 0x30)) CallGuest(cb, cur, next);  // switchCallback
+    Write32(g + 0x28, next);
+    w2c_env_khvr_host_load_context(nullptr, next);  // parks this host thread for good
+    return false;
+}
+
 void ThreadsStop() {
     {
         std::lock_guard<std::mutex> lock(gMu);

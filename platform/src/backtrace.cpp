@@ -9,6 +9,7 @@
 #include <string>
 
 #include "hle.h"
+#include "platform_internal.h"
 
 namespace khvr::hle {
 
@@ -82,6 +83,7 @@ extern "C" void khvr_on_trap(int code) {
 }
 
 extern "C" void w2c_env_khvr_host_terminate(struct w2c_env *) {
+    if (khvr::hle::ThreadsFinishExit()) return;
     khvr::hle::Log("game: OS_Terminate - the game stopped on a fatal error");
     khvr::hle::LogBacktrace("OS_Terminate");
     khvr::hle::PlatformReportStop("the game stopped on a fatal error (OS_Terminate)");

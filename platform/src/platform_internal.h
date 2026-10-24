@@ -21,6 +21,9 @@ struct ThreadsSnapshot {
 ThreadsSnapshot ThreadsSnapshotNow();
 // Logs the call chain of the guest thread that holds the baton (not while the guest is idle).
 void ThreadsLogRunning(const char *why);
+// OS_Terminate reached from a thread's exit path (its last switch did not happen): finish the
+// switch the way the DS would. Does not return if it could; false if this was a real stop.
+bool ThreadsFinishExit();
 
 // platform.cpp: a guest thread hit a wasm trap (bad memory access, unreachable code).
 void PlatformReportTrap(const char *where);
