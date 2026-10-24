@@ -1,6 +1,7 @@
 #include "khvr/platform.h"
 
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 
 #include "guest.h"
@@ -123,6 +124,35 @@ void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {
     hle::gInput.touchY = static_cast<uint16_t>(y < 0 ? 0 : (y > 191 ? 191 : y));
 }
 
+namespace {
+// The field's action-script interpreter (Game_RunActionScript, state at root heap + 8): its depth,
+// the current entry's command and the bytes around it, for a script that loops within a frame.
+void LogActionScript() {
+    using namespace hle;
+    uint32_t heap = w2c_khdays_NNSi_FndGetCurrentRootHeap(Guest());
+    if (heap < 0x02000000 || heap >= 0x02400000) return;
+    uint32_t st = heap + 8;
+    uint32_t depth = Read32(st + 0x124);
+    if (depth > 8) return;
+    uint32_t e = st + 4 + depth * 0x48;
+    uint32_t cmd = Read32(e + 0x10);
+    if (cmd < 0x02000000 || cmd >= 0x02400000) {
+        Log("  action script: depth %u, command pointer 0x%08x (not in RAM)", depth, cmd);
+        return;
+    }
+    static const uint32_t table = SymbolAddress("data_020425ec");
+    uint32_t op = Read8(cmd), sub = Read8(cmd + 1), word = Read16(cmd + 2);
+    uint32_t handlers = table ? Read32(table + 4 * op) : 0;
+    uint32_t fn = handlers ? Read32(handlers + 8 * sub) : 0;
+    char bytes[3 * 32 + 1] = {0};
+    for (int i = 0; i < 32; ++i) std::snprintf(bytes + 3 * i, 4, "%02x ", Read8(cmd + i));
+    Log("  action script: depth %u, command at 0x%08x: op %u sub %u length %u slot %u, handler fn %u, "
+        "action slot %u",
+        depth, cmd, op, sub, word & 0x7ff, (word >> 11) & 0x1f, fn, Read32(e + 0x18));
+    Log("    bytes: %s", bytes);
+}
+}  // namespace
+
 void Platform::Heartbeat() {
     using namespace hle;
     static uint64_t lastHalts = ~0ull;
@@ -166,7 +196,10 @@ void Platform::Heartbeat() {
     }
     if (!t.idle && t.halts == lastHalts) {
         // No halt since the last beat: the guest is busy (a long load) or stuck in a loop.
-        if (++stuckBeats <= 4) ThreadsLogRunning("no frame finished since the last heartbeat");
+        if (++stuckBeats <= 4) {
+            ThreadsLogRunning("no frame finished since the last heartbeat");
+            LogActionScript();
+        }
     } else {
         stuckBeats = 0;
     }
