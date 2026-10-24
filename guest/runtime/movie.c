@@ -21,8 +21,11 @@ extern void VBlank_UnregisterCallback(int nSlot, const char *pszName);
 
 static void (*sFrameReady)(void);
 
+static int sPresented;
+
 static void PresentNothingOnVBlank(void)
 {
+    if (sPresented++ == 0) khvr_host_print("movie: frame callback running");
     if (sFrameReady) sFrameReady();
 }
 
@@ -40,6 +43,7 @@ int Ov024_MobiClip_OpenStreams(struct MobiClipOpenRequest *pRequest)
     Name(pRequest->pszStream1);
     Name(pRequest->pszStream2);
     sFrameReady = (void (*)(void))pRequest->pfnFrameReady;
+    sPresented = 0;
     RegisterNamedTask(1, gOv024MobiclipIntrName, (void *)&PresentNothingOnVBlank);
     return 1;
 }
@@ -52,4 +56,5 @@ void Ov024_MobiClip_StopPlayback(void)
 {
     VBlank_UnregisterCallback(1, gOv024MobiclipIntrName);
     sFrameReady = 0;
+    khvr_host_print("movie: stopped");
 }

@@ -188,7 +188,7 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HandScreenSide, "Hand screen", "side", "Hand", 0, {"left", "right"},
                   {"Left", "Right"}, "Which hand holds or wears it; the other hand's laser touches it."));
     d.push_back(B(S::HandScreenAutoShow, "Hand screen", "auto_show", "Show when looked at", true,
-                  "Grows in when you look at your hand or wrist, shrinks away when you look elsewhere."));
+                  "Full size when you look at your hand or wrist; small and see-through otherwise."));
     d.push_back(F(S::HandScreenSize, "Hand screen", "size", "Size", 0.20f, 0.10f, 0.40f, 0.01f, "m",
                   "Width of the screen in your hand or on your wrist."));
     d.push_back(F(S::HandScreenOffsetX, "Hand screen", "move_right", "Move right / left", 0.0f, -0.3f,
@@ -197,8 +197,8 @@ std::vector<SettingDef> BuildDefs() {
                   0.01f, "m", "Moves the screen along its own height."));
     d.push_back(F(S::HandScreenOffsetZ, "Hand screen", "move_toward", "Move toward / away", 0.0f, -0.3f,
                   0.3f, 0.01f, "m", "Moves the screen toward you (+) or away from you (-)."));
-    d.push_back(F(S::HandScreenTilt, "Hand screen", "tilt", "Tilt", 40.0f, -90.0f, 90.0f, 5.0f, "deg",
-                  "Tilts the top of the screen toward you (+) or away (-)."));
+    d.push_back(F(S::HandScreenTilt, "Hand screen", "tilt", "Tilt", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "The screen faces your eyes; this tilts its top toward you (+) or away (-)."));
     d.push_back(F(S::HandScreenTurn, "Hand screen", "turn", "Turn", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
                   "Turns the screen left or right."));
     d.push_back(F(S::HandScreenRoll, "Hand screen", "roll", "Roll", 0.0f, -90.0f, 90.0f, 5.0f, "deg",

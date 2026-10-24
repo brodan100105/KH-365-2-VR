@@ -145,6 +145,24 @@ void Platform::Heartbeat() {
             IoReg16(base + 0x16) & 0x1ff, IoReg16(base + 0x18) & 0x1ff, IoReg16(base + 0x1a) & 0x1ff,
             IoReg16(base + 0x1c) & 0x1ff, IoReg16(base + 0x1e) & 0x1ff);
     }
+    // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
+    static const uint32_t vblankWork = SymbolAddress("data_027e0088");
+    if (vblankWork) {
+        std::string chain;
+        uint32_t node = Read32(vblankWork + 4);
+        for (int i = 0; node && i < 8; ++i, node = Read32(node + 0x18)) chain += " " + ReadString(node + 4);
+        Log("  vblank tasks:%s", chain.empty() ? " (none)" : chain.c_str());
+    }
+    // The opening scene (ov012), while it runs: its flags, movie request states, pending-frame
+    // byte, fade counter and timeline position.
+    static const uint32_t openingPtr = SymbolAddress("data_ov012_0205cb20");
+    if (uint32_t ctx = openingPtr ? Read32(openingPtr) : 0) {
+        if (ctx > 0x02000000 && ctx < 0x02400000)
+            Log("  opening: flags %04x requests %d %d pending %u fade %d skip-keys %d timeline %d exit %d",
+                Read16(ctx + 2), static_cast<int>(Read32(ctx + 0x8bd8)), static_cast<int>(Read32(ctx + 0x8bdc)),
+                Read8(ctx + 0x8be1), static_cast<int>(Read32(ctx + 0x8be8)), static_cast<int>(Read32(ctx + 0x8bec)),
+                static_cast<int>(Read32(ctx + 0x8dec)), static_cast<int>(Read32(ctx + 0x130)));
+    }
     if (!t.idle && t.halts == lastHalts) {
         // No halt since the last beat: the guest is busy (a long load) or stuck in a loop.
         if (++stuckBeats <= 4) ThreadsLogRunning("no frame finished since the last heartbeat");

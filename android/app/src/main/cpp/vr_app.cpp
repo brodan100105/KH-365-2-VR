@@ -48,6 +48,14 @@ Pose FacingFrom(const Vec3 &at, const Vec3 &from) {
     return {Quat::Yaw(std::atan2(d.x, d.z)), at};
 }
 
+// A pose at `at` whose +Z (a quad's face) points at `eye`, kept upright.
+Pose FacingEye(const Vec3 &at, const Vec3 &eye) {
+    Vec3 d = eye - at;
+    float yaw = std::atan2(d.x, d.z);
+    float pitch = std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z));
+    return {Quat::Yaw(yaw) * Quat::AxisAngle({1, 0, 0}, -pitch), at};
+}
+
 uint16_t SampleThunk(void *ctx) { return static_cast<InputMapper *>(ctx)->SampleForGameFrame(); }
 
 }  // namespace
@@ -361,18 +369,19 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         bottomPanel_.height = bottomPanel_.width * 0.75f;
         const int h = handScreenSide_;
         if (in.gripValid[h]) {
-            // Grip space: -Z along the controller, +Y out of its top, +Z back toward your arm.
-            Pose base = placement == BottomScreenPlacement::InHand
-                            // Facing you, just above the controller.
-                            ? in.grip[h] * Pose{Quat(), {0.0f, 0.10f + bottomPanel_.height * 0.5f, -0.02f}}
-                            // Face up on top of the wrist, its top toward your fingers.
-                            : in.grip[h] * Pose{Quat::AxisAngle({1, 0, 0}, -kPi / 2), {0.0f, 0.03f, 0.12f}};
+            // Anchored to the hand (just above the controller) or to the wrist (where a watch
+            // sits, behind the controller along the forearm), always facing your eyes upright:
+            // the controller's own axes vary too much with how it is held to orient a screen.
+            Vec3 anchor = placement == BottomScreenPlacement::InHand
+                              ? in.grip[h].position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
+                              : in.grip[h].Transform({0.0f, -0.02f, 0.13f});
             Quat turn = Quat::AxisAngle({0, 1, 0}, DegToRad(settings_.Get(SettingId::HandScreenTurn))) *
                         Quat::AxisAngle({1, 0, 0}, DegToRad(settings_.Get(SettingId::HandScreenTilt))) *
                         Quat::AxisAngle({0, 0, 1}, -DegToRad(settings_.Get(SettingId::HandScreenRoll)));
             Vec3 move{settings_.Get(SettingId::HandScreenOffsetX), settings_.Get(SettingId::HandScreenOffsetY),
                       settings_.Get(SettingId::HandScreenOffsetZ)};
-            bottomPanel_.pose = base * Pose{turn, {0, 0, 0}} * Pose{Quat(), move};
+            Pose face = FacingEye(anchor, head.position);
+            bottomPanel_.pose = Pose{face.orientation * turn, anchor} * Pose{Quat(), move};
         }
         // Shown while you look toward it (wider to keep it than to bring it up), or always.
         bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_;
@@ -693,12 +702,13 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     {
         const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
         const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
-        if (placement != BottomScreenPlacement::Hidden && handScreenShown_ > 0.01f &&
-            (!held || in.gripValid[handScreenSide_])) {
-            // Grows from its middle with a smooth ease as it appears.
-            float t = handScreenShown_, s = t * t * (3.0f - 2.0f * t);
-            renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * s,
-                               bottomPanel_.height * s, vpTracking);
+        if (placement != BottomScreenPlacement::Hidden && (!held || in.gripValid[handScreenSide_])) {
+            // Not looked at: small and see-through, so it is easy to find; looked at: grows to
+            // full size and opacity with a smooth ease.
+            float t = handScreenShown_, e = t * t * (3.0f - 2.0f * t);
+            float scale = 0.45f + 0.55f * e, alpha = 0.55f + 0.45f * e;
+            renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * scale,
+                               bottomPanel_.height * scale, vpTracking, alpha);
         }
     }
     if (Loading() && loadingTex_.id())

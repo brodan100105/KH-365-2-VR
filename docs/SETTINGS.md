@@ -118,12 +118,12 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 |---|---|---|---|---|
 | `placement` | Placement | `hand`, `floating`, `hidden`, `wrist` | `hand` | Where the DS touch screen (map, menus) is: held, worn like a watch, or floating. |
 | `side` | Hand | `left`, `right` | `left` | Which hand holds or wears it; the other hand's laser touches it. |
-| `auto_show` | Show when looked at | `true` / `false` | `true` | Grows in when you look at your hand or wrist, shrinks away when you look elsewhere. |
+| `auto_show` | Show when looked at | `true` / `false` | `true` | Full size when you look at your hand or wrist; small and see-through otherwise. |
 | `size` | Size | 0.1 to 0.4 m | `0.2` | Width of the screen in your hand or on your wrist. |
 | `move_right` | Move right / left | -0.3 to 0.3 m | `0` | Moves the screen along its own width. |
 | `move_up` | Move up / down | -0.3 to 0.3 m | `0` | Moves the screen along its own height. |
 | `move_toward` | Move toward / away | -0.3 to 0.3 m | `0` | Moves the screen toward you (+) or away from you (-). |
-| `tilt` | Tilt | -90 to 90 deg | `40` | Tilts the top of the screen toward you (+) or away (-). |
+| `tilt` | Tilt | -90 to 90 deg | `0` | The screen faces your eyes; this tilts its top toward you (+) or away (-). |
 | `turn` | Turn | -90 to 90 deg | `0` | Turns the screen left or right. |
 | `roll` | Roll | -90 to 90 deg | `0` | Rolls the screen clockwise or counterclockwise. |
 
