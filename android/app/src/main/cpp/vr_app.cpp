@@ -489,10 +489,9 @@ void VrApp::Frame(const XrFrameInput &in) {
         laserOnBottom_ = true;
         laserHand_ = touchHand;
         laserEnd_ = in.aim[touchHand].position + in.aim[touchHand].orientation.Forward() * dist;
-        // The pointer hand's trigger or its first face button (A, or X on the left) touches.
-        bool &face = touchHand == 1 ? buttons.a : buttons.x;
-        touch.touching = buttons.trigger[touchHand] > 0.6f || face;
-        face = false;
+        // The pointer hand's trigger touches; its face buttons stay the DS's (A confirms the
+        // highlighted choice as usual).
+        touch.touching = buttons.trigger[touchHand] > 0.6f;
         touch.touchX = static_cast<uint8_t>(Clamp(px, 0, 255));
         touch.touchY = static_cast<uint8_t>(Clamp(py, 0, 191));
         buttons.trigger[touchHand] = 0.0f;  // the trigger touches the screen instead of pressing L/R
