@@ -34,6 +34,10 @@ struct GameCamera {
     Vec3 up{0, 1, 0};
     float fovYRad = 0.0f;  // 0 when unknown
     float nearZ = 0.0f, farZ = 0.0f;  // the game's clip planes, game units; 0 when unknown
+    // The game's own projection and view (world to camera) matrices, OpenGL column-major, when
+    // the port has them: drawing with these shows exactly what the game framed.
+    bool hasMatrices = false;
+    float proj[16] = {}, view[16] = {};
 };
 
 struct GameFrame {

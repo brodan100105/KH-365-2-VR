@@ -3,6 +3,8 @@
 #include <dirent.h>
 
 #include <aaudio/AAudio.h>
+
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -261,6 +263,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             frame_.camera.fovYRad = w.fovY;
             frame_.camera.nearZ = w.nearZ;
             frame_.camera.farZ = w.farZ;
+            frame_.camera.hasMatrices = true;
+            std::copy(w.lens, w.lens + 16, frame_.camera.proj);
+            std::copy(w.view, w.view + 16, frame_.camera.view);
         }
     }
 }

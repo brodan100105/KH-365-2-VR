@@ -686,6 +686,16 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
         float offset = stereo ? (eye == 0 ? -0.5f : 0.5f) * sep : 0.0f;
         Vec3 shift = right * offset;
         Mat4 view = LookAt(g.camera.eye + shift, g.camera.target + shift, g.camera.up);
+        Mat4 eyeProj = proj;
+        if (world3d && g.camera.hasMatrices) {
+            // The game's own lens and camera, with the eye moved sideways in its view space.
+            std::copy(g.camera.proj, g.camera.proj + 16, eyeProj.m);
+            Mat4 cam;
+            std::copy(g.camera.view, g.camera.view + 16, cam.m);
+            Mat4 side = Mat4::Identity();
+            side.at(0, 3) = -offset;
+            view = side * cam;
+        }
         giantViews_[eye].Ensure(kGiantViewW, kGiantViewH);
         giantViews_[eye].Bind();
         glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
@@ -694,7 +704,7 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
             // The DS's 2D behind the 3D (a painted sky, a backdrop) fills the view first.
             renderer_.DrawQuad(backTex_.id(), Pose{}, 2.0f, 2.0f, Mat4::Identity());
             glClear(GL_DEPTH_BUFFER_BIT);
-            renderer_.DrawTexturedWorld(game_->texturedWorld(), proj * view);
+            renderer_.DrawTexturedWorld(game_->texturedWorld(), eyeProj * view);
         } else {
             renderer_.DrawTriangles(game_->world(), proj * view);
             renderer_.DrawTriangles(game_->player(), proj * view);

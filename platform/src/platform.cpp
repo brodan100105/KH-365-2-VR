@@ -328,6 +328,11 @@ void Platform::Heartbeat() {
         gCaptureMsSum = 0.0f;
         gCaptureMsMax = 0.0f;
     }
+    if (GxWorldStats &w = gWorldStats; w.captures) {
+        Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture",
+            w.captures, w.triangles, w.textures, w.leftOut);
+        w.captures = 0;
+    }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
     // the engines on, so these tell a stuck game from an invisible one.

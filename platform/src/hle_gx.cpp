@@ -1234,6 +1234,8 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
     }
 }
 
+GxWorldStats gWorldStats;
+
 void GxCaptureWorld(PlatformWorld *out) {
     out->vertices.clear();
     out->triangleTexture.clear();
@@ -1249,6 +1251,10 @@ void GxCaptureWorld(PlatformWorld *out) {
     for (size_t i = 0; i < g.projShown.size(); ++i) inScene[i] = InScene(g.projShown[i], lensInv, cameraInv, &toWorld[i]);
 
     out->hasCamera = true;
+    for (int i = 0; i < 16; ++i) {
+        out->lens[i] = static_cast<float>(lensD[i]);
+        out->view[i] = static_cast<float>(cameraD[i]);
+    }
     for (int k = 0; k < 3; ++k) {
         out->eye[k] = static_cast<float>(cameraInv[12 + k]);
         out->up[k] = static_cast<float>(cameraInv[4 + k]);
@@ -1337,6 +1343,10 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->triangleFlags.push_back(flags);
         }
     }
+    gWorldStats.triangles = static_cast<uint32_t>(out->triangleTexture.size());
+    gWorldStats.textures = static_cast<uint32_t>(out->textures.size());
+    gWorldStats.leftOut = out->polygonsLeftOut;
+    ++gWorldStats.captures;
 }
 
 }  // namespace khvr::hle

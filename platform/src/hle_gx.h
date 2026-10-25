@@ -30,6 +30,11 @@ constexpr int kMax3dScale = 4;
 void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1, bool hudOnly = false);
 // The polygons of the last SWAP_BUFFERS drawn with the game's main camera, in world space.
 void GxCaptureWorld(PlatformWorld *out);
+// What the last capture found, for the heartbeat.
+struct GxWorldStats {
+    uint32_t captures = 0, triangles = 0, textures = 0, leftOut = 0;
+};
+extern GxWorldStats gWorldStats;
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

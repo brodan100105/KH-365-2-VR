@@ -69,6 +69,9 @@ struct PlatformWorld {
     bool hasCamera = false;
     float eye[3] = {0, 0, 0}, target[3] = {0, 0, -1}, up[3] = {0, 1, 0};
     float fovY = 0, nearZ = 0, farZ = 0;  // radians, game units
+    // The game's own lens and camera (world to view) matrices, exactly as the DS used them. The
+    // DS multiplies row vectors, so its row-major arrays are OpenGL's column-major ones as is.
+    float lens[16] = {}, view[16] = {};
     uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
 };
 

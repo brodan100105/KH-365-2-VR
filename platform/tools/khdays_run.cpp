@@ -299,7 +299,18 @@ int WorldTest() {
                  near(c.v, 1) && near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
                  near(w.fovY, 3.14159265 / 3) && near(w.nearZ, 1) && std::fabs(w.farZ - 100) < 0.5 &&
                  (w.textures[0].rgba[0] & 0xffffff) == 0xffffff && (w.textures[0].rgba[7] & 0xffffff) == 0x00ff00 &&
-                 w.triangleFlags[0] == (khvr::kWorldFront | khvr::kWorldBack);
+                 w.triangleFlags[0] == (khvr::kWorldFront | khvr::kWorldBack) && near(w.lens[5], cot) &&
+                 near(w.lens[11], -1) && near(w.view[13], -2) && near(w.view[14], -10);
+            // The world corner through the captured view and lens (OpenGL column-major) lands where
+            // the DS drew it: through the original camera and lens.
+            auto clip = [](const float *m, const float *v, float *out) {
+                for (int r = 0; r < 4; ++r) out[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+            };
+            float p[4] = {a.x, a.y, a.z, 1}, viewSpace[4], c1[4];
+            clip(w.view, p, viewSpace);
+            clip(w.lens, viewSpace, c1);
+            const double ex = cot / (4.0 / 3.0) * 4 / 10, ey = cot * (-3) / 10;  // (4, -3, -10) in view space
+            ok = ok && near(c1[0] / c1[3], ex) && near(c1[1] / c1[3], ey);
             std::printf("  %s: corner (%.2f %.2f %.2f), eye (%.2f %.2f %.2f), fov %.3f, near %.2f, far %.1f\n",
                         cameraInProjection ? "camera in projection" : "camera in position", a.x, a.y, a.z, w.eye[0],
                         w.eye[1], w.eye[2], w.fovY, w.nearZ, w.farZ);
