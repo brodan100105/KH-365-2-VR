@@ -34,6 +34,9 @@ struct DsScreens {
     std::vector<uint32_t> bottom;  // touch screen
     uint32_t revision = 0;         // bumped whenever any of them changes
     bool movie = false;            // the top screen shows a movie
+    // The top screen with its 3D at topScale times the resolution, when topScale > 1.
+    int topScale = 1;
+    std::vector<uint32_t> topHi;
 };
 
 class GameSource {

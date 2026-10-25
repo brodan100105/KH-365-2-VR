@@ -201,11 +201,20 @@ bool Platform::VBlank(int timeoutMs) {
 
 size_t Platform::ReadAudio(int16_t *stereo, size_t frames) { return hle::SoundRead(stereo, frames); }
 
+namespace {
+std::atomic<int> g3dScale{1};
+}
+
+void Platform::Set3dScale(int scale) { g3dScale = scale; }
+
 void Platform::CaptureScreens(PlatformScreens *out) {
-    hle::Render2D(out);
+    hle::Render2D(out, g3dScale.load());
     // A movie's picture (movie.cpp) replaces the top screen while it plays.
     out->movie = hle::MovieCopyPicture(out->top);
-    if (out->movie) std::memcpy(out->topHud, out->top, sizeof out->top);
+    if (out->movie) {
+        std::memcpy(out->topHud, out->top, sizeof out->top);
+        out->topScale = 1;
+    }
 }
 
 void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {

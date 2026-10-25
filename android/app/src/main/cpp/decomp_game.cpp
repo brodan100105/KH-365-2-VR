@@ -192,6 +192,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         screens_.topHud.assign(latest_->topHud, latest_->topHud + n);
         screens_.bottom.assign(latest_->bottom, latest_->bottom + n);
         screens_.movie = latest_->movie;
+        screens_.topScale = latest_->topScale;
+        if (latest_->topScale > 1) screens_.topHi = latest_->topHi;
         ++screens_.revision;
         ++frame_.frameCounter;
     }

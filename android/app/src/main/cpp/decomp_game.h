@@ -38,6 +38,8 @@ public:
     // The game has shown an image (not a flat fade) on either screen, after the loading area's
     // few seconds: the loading area can give way.
     bool hasPicture() const { return hasPicture_; }
+    // Picture > 3D resolution: 1 to 4 times the DS's.
+    void Set3dScale(int scale) { Platform::Get().Set3dScale(scale); }
     uint32_t gameFrames() const { return Platform::Get().frames(); }
     // A few lines for the in-headset status panel: booting, crashed, the latest log.
     std::vector<std::string> Status(size_t lines) const;

@@ -193,6 +193,16 @@ int GxTest() {
     frame(0x001f0080, true);
     khvr::Platform::Get().CaptureScreens(&s);
     bool tex = px(90, 96) == 0xffffff && px(166, 96) == 0x00ff00;
+    // The same quad with the 3D layer at three times the resolution: the large picture has it,
+    // the DS-size one is unchanged.
+    khvr::Platform::Get().Set3dScale(3);
+    frame(0x001f0080, true);
+    khvr::Platform::Get().CaptureScreens(&s);
+    auto hpx = [&](int x, int y) { return s.topHi[static_cast<size_t>(y) * 768 + x] & 0xffffff; };
+    bool hi = s.topScale == 3 && s.topHi.size() == 768u * 576u && hpx(270, 288) == 0xffffff &&
+              hpx(498, 288) == 0x00ff00 && hpx(30, 30) == 0 && px(90, 96) == 0xffffff;
+    tex = tex && hi;
+    if (std::getenv("KHVR_GX_BENCH") == nullptr) khvr::Platform::Get().Set3dScale(1);
     if (std::getenv("KHVR_GX_BENCH")) {
         // 1500 textured quads of about 40 x 40 pixels, as a busy field frame might have.
         cmd(0x10, 0); cmd(0x15, 0); cmd(0x10, 2); cmd(0x15, 0);
@@ -212,7 +222,7 @@ int GxTest() {
         double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / iters;
         std::printf("gx bench: %.2f ms a frame for 1500 quads\n", ms);
     }
-    std::printf("gx test: %s (triangle %d, culling %d, texture %d; pixels %06x %06x)\n",
+    std::printf("gx test: %s (triangle %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
                 tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
     return tri && culled && tex ? 0 : 1;
 }

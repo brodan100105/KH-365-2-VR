@@ -28,6 +28,10 @@ struct PlatformScreens {
     uint32_t bottom[kWidth * kHeight];
     bool top3d = false;                 // the top screen's BG0 shows the 3D engine
     bool movie = false;                 // the top screen shows a movie's picture
+    // The top screen with its 3D layer at topScale times the resolution (Set3dScale), when it
+    // has one: (256 x topScale) x (192 x topScale). topScale 1: use `top`.
+    int topScale = 1;
+    std::vector<uint32_t> topHi;
 };
 
 // Instantiates the guest and resets the hardware stand-ins without running the game, so tests
@@ -58,6 +62,8 @@ public:
 
     // Renders both screens. Call after VBlank() returned true, while the game is idle.
     void CaptureScreens(PlatformScreens *out);
+    // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
+    void Set3dScale(int scale);
     // The game's sound, 48 kHz stereo (interleaved L, R): fills `frames` frames, silence where
     // nothing has been mixed yet; returns how many were real. For the audio thread.
     size_t ReadAudio(int16_t *stereo, size_t frames);

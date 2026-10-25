@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 #include "hle.h"
@@ -650,10 +651,19 @@ void PortWord(uint8_t cmd, uint32_t w) {
 // Rendering engine
 // ---------------------------------------------------------------------------------------------
 
+// The rendering engine's buffers, at `scale` times the DS's 256 x 192.
 struct Frame {
-    uint8_t r[kW * kH], gch[kW * kH], b[kW * kH], a[kW * kH];  // 6-bit colour, 5-bit alpha
-    uint32_t depth[kW * kH];
-    uint8_t fog[kW * kH];
+    int w = 0, h = 0;
+    std::vector<uint8_t> r, gch, b, a;  // 6-bit colour, 5-bit alpha
+    std::vector<uint32_t> depth;
+    std::vector<uint8_t> fog;
+    void Resize(int scale) {
+        w = kW * scale;
+        h = kH * scale;
+        const size_t n = static_cast<size_t>(w) * h;
+        for (auto *v : {&r, &gch, &b, &a, &fog}) v->resize(n);
+        depth.resize(n);
+    }
 };
 
 struct TexMem {
@@ -770,6 +780,7 @@ struct ScreenVertex {
 };
 
 struct RenderParams {
+    int scale;  // the picture's size in DS pixels: 1 is the DS's own resolution
     uint16_t disp3d;
     int alphaRef;
     bool wbuffer;
@@ -845,8 +856,9 @@ void DrawPixel(Frame &f, const RenderParams &rp, const Polygon &p, int i, uint32
     f.fog[i] = f.fog[i] && fog;
 }
 
+// Draws the rows [rowMin, rowMax] of a triangle (a band of the picture: bands render in parallel).
 void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const ScreenVertex &v0, const ScreenVertex &v1,
-                  const ScreenVertex &v2) {
+                  const ScreenVertex &v2, int rowMin, int rowMax) {
     const float area = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
     if (std::fabs(area) < 1e-6f) return;
     const float inv = 1.0f / area;
@@ -863,10 +875,10 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
         d1[k] = k1[k] - k2[k];
         dx[k] = a0 * d0[k] + a1 * d1[k];
     }
-    const int minY = std::max(0, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
-    const int maxY = std::min(kH - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+    const int minY = std::max(rowMin, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
+    const int maxY = std::min(rowMax, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
     const int boxMinX = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
-    const int boxMaxX = std::min(kW - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
+    const int boxMaxX = std::min(f.w - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
     constexpr float kEps = 1e-5f;  // shared edges leave no gaps
     for (int y = minY; y <= maxY; ++y) {
         const float py = y + 0.5f;
@@ -891,7 +903,7 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
         const float w0 = a0 * px + b0, w1 = a1 * px + b1;
         float v[kN];
         for (int k = 0; k < kN; ++k) v[k] = k2[k] + w0 * d0[k] + w1 * d1[k];
-        uint32_t *depthRow = f.depth + y * kW;
+        uint32_t *depthRow = f.depth.data() + static_cast<size_t>(y) * f.w;
         for (int x = x0; x <= x1; ++x) {
             const float invW = v[kInvW];
             if (invW > 0) {
@@ -904,7 +916,7 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
                 if (equal ? !(depth > old + 0x200 || depth + 0x200 < old) : depth < old) {
                     int r = static_cast<int>(v[kR] * wv), gg = static_cast<int>(v[kG] * wv),
                         b = static_cast<int>(v[kB] * wv);
-                    DrawPixel(f, rp, p, y * kW + x, depth, std::clamp(r, 0, 63), std::clamp(gg, 0, 63),
+                    DrawPixel(f, rp, p, y * f.w + x, depth, std::clamp(r, 0, 63), std::clamp(gg, 0, 63),
                               std::clamp(b, 0, 63), v[kS] * wv, v[kT] * wv);
                 }
             }
@@ -913,13 +925,15 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
     }
 }
 
-ScreenVertex ToScreen(const Vertex &v, bool wbuffer) {
+ScreenVertex ToScreen(const Vertex &v, bool wbuffer, int scale) {
     ScreenVertex o;
     const float w = v.w != 0 ? v.w : 1.0f;
     const float vpW = static_cast<float>(g.vpX2 - g.vpX1 + 1), vpH = static_cast<float>(g.vpY2 - g.vpY1 + 1);
     o.x = (v.x / w + 1.0f) * vpW * 0.5f + g.vpX1;
     const float yUp = (v.y / w + 1.0f) * vpH * 0.5f + g.vpY1;
     o.y = 192.0f - yUp;
+    o.x *= scale;
+    o.y *= scale;
     o.depth = wbuffer ? w : ((v.z / w) * 0x4000 + 0x3fff) * 0x200;
     o.invW = 1.0f / w;
     o.r = v.r * o.invW;
@@ -930,11 +944,11 @@ ScreenVertex ToScreen(const Vertex &v, bool wbuffer) {
     return o;
 }
 
-void DrawPolygon(Frame &f, const RenderParams &rp, const Polygon &p) {
+void DrawPolygon(Frame &f, const RenderParams &rp, const Polygon &p, int rowMin, int rowMax) {
     if (((p.attr >> 16) & 31) == 0) return;  // wireframe: edges only, not drawn yet
     ScreenVertex sv[kMaxPolyVerts];
-    for (int i = 0; i < p.n; ++i) sv[i] = ToScreen(p.v[i], rp.wbuffer);
-    for (int i = 1; i + 1 < p.n; ++i) DrawTriangle(f, rp, p, sv[0], sv[i], sv[i + 1]);
+    for (int i = 0; i < p.n; ++i) sv[i] = ToScreen(p.v[i], rp.wbuffer, rp.scale);
+    for (int i = 1; i + 1 < p.n; ++i) DrawTriangle(f, rp, p, sv[0], sv[i], sv[i + 1], rowMin, rowMax);
 }
 
 void ApplyFog(Frame &f, uint16_t disp3d) {
@@ -947,7 +961,7 @@ void ApplyFog(Frame &f, uint16_t disp3d) {
     const bool alphaOnly = disp3d & 0x40;
     const int fr = (fogColor & 31) * 2, fg = ((fogColor >> 5) & 31) * 2, fb = ((fogColor >> 10) & 31) * 2;
     const int fa = (fogColor >> 16) & 31;
-    for (int i = 0; i < kW * kH; ++i) {
+    for (size_t i = 0; i < f.fog.size(); ++i) {
         if (!f.fog[i]) continue;
         uint32_t z = f.depth[i];
         int density;
@@ -1022,7 +1036,7 @@ void GxVBlank() {
     gCommands = 0;
 }
 
-void GxRender(uint16_t *color, uint8_t *alpha) {
+void GxRender(uint16_t *color, uint8_t *alpha, int scale) {
     static Frame f;
     static TexMem mem;
     mem.tex.resize(kTexVramSize);
@@ -1030,6 +1044,7 @@ void GxRender(uint16_t *color, uint8_t *alpha) {
     VramTexture(mem.tex.data(), mem.pal.data());
 
     RenderParams rp;
+    rp.scale = std::clamp(scale, 1, kMax3dScale);
     rp.disp3d = IoReg16(0x060);
     rp.alphaRef = IoReg8(0x340) & 31;
     rp.wbuffer = g.shownWBuffer;
@@ -1041,12 +1056,13 @@ void GxRender(uint16_t *color, uint8_t *alpha) {
     const uint16_t clearDepth = IoReg16(0x354) & 0x7fff;
     const uint32_t depth24 = clearDepth * 0x200u + ((clearDepth + 1u) / 0x8000u) * 0x1ffu;
     Texel cc = FromRgb15(static_cast<uint16_t>(clear & 0x7fff), static_cast<int>((clear >> 16) & 31));
-    std::fill(std::begin(f.r), std::end(f.r), static_cast<uint8_t>(cc.r));
-    std::fill(std::begin(f.gch), std::end(f.gch), static_cast<uint8_t>(cc.g));
-    std::fill(std::begin(f.b), std::end(f.b), static_cast<uint8_t>(cc.b));
-    std::fill(std::begin(f.a), std::end(f.a), static_cast<uint8_t>(cc.a));
-    std::fill(std::begin(f.depth), std::end(f.depth), depth24);
-    std::fill(std::begin(f.fog), std::end(f.fog), static_cast<uint8_t>((clear >> 15) & 1));
+    f.Resize(rp.scale);
+    std::fill(f.r.begin(), f.r.end(), static_cast<uint8_t>(cc.r));
+    std::fill(f.gch.begin(), f.gch.end(), static_cast<uint8_t>(cc.g));
+    std::fill(f.b.begin(), f.b.end(), static_cast<uint8_t>(cc.b));
+    std::fill(f.a.begin(), f.a.end(), static_cast<uint8_t>(cc.a));
+    std::fill(f.depth.begin(), f.depth.end(), depth24);
+    std::fill(f.fog.begin(), f.fog.end(), static_cast<uint8_t>((clear >> 15) & 1));
 
     // Opaque polygons first, then translucent ones (sorted by their top, then bottom, row unless
     // the game sorts them itself).
@@ -1054,15 +1070,16 @@ void GxRender(uint16_t *color, uint8_t *alpha) {
         const Polygon *p;
         float top, bottom;
     };
+    std::vector<const Polygon *> opaque;
     std::vector<Sorted> translucent;
     for (const Polygon &p : g.shown) {
         if (!p.translucent) {
-            DrawPolygon(f, rp, p);
+            opaque.push_back(&p);
             continue;
         }
         Sorted s{&p, 1e9f, -1e9f};
         for (int i = 0; i < p.n; ++i) {
-            float y = ToScreen(p.v[i], false).y;
+            float y = ToScreen(p.v[i], false, 1).y;
             s.top = std::min(s.top, y);
             s.bottom = std::max(s.bottom, y);
         }
@@ -1072,10 +1089,23 @@ void GxRender(uint16_t *color, uint8_t *alpha) {
         std::stable_sort(translucent.begin(), translucent.end(), [](const Sorted &a, const Sorted &b) {
             return a.bottom != b.bottom ? a.bottom < b.bottom : a.top < b.top;
         });
-    for (const Sorted &s : translucent) DrawPolygon(f, rp, *s.p);
+    // Every band draws all polygons in order, so the picture is the same as drawn in one go.
+    auto band = [&](int rowMin, int rowMax) {
+        for (const Polygon *p : opaque) DrawPolygon(f, rp, *p, rowMin, rowMax);
+        for (const Sorted &s : translucent) DrawPolygon(f, rp, *s.p, rowMin, rowMax);
+    };
+    const int bands = rp.scale > 1 && !g.shown.empty() ? std::min(4, rp.scale * 2) : 1;
+    if (bands == 1) {
+        band(0, f.h - 1);
+    } else {
+        std::vector<std::thread> workers;
+        for (int b = 1; b < bands; ++b) workers.emplace_back(band, f.h * b / bands, f.h * (b + 1) / bands - 1);
+        band(0, f.h / bands - 1);
+        for (std::thread &t : workers) t.join();
+    }
     if (rp.disp3d & 0x80) ApplyFog(f, rp.disp3d);
 
-    for (int i = 0; i < kW * kH; ++i) {
+    for (size_t i = 0; i < f.a.size(); ++i) {
         color[i] = static_cast<uint16_t>((f.r[i] >> 1) | ((f.gch[i] >> 1) << 5) | ((f.b[i] >> 1) << 10));
         alpha[i] = f.a[i];
     }

@@ -328,7 +328,13 @@ void VrApp::UpdateTextures() {
             }
             tex.Upload(W, H, sharpScratch_.data(), true);
         };
-        upload(topTex_, s.top);
+        if (s.topScale > 1 && !s.topHi.empty()) {
+            // The 3D was drawn large: no upscaler needed, only filtering.
+            topTex_.Upload(DsScreens::kWidth * s.topScale, DsScreens::kHeight * s.topScale, s.topHi.data(),
+                           filter != TextureFilter::Nearest);
+        } else {
+            upload(topTex_, s.top);
+        }
         upload(hudTex_, s.topHud);
         upload(bottomTex_, s.bottom);
         screensRevision_ = s.revision;
@@ -473,6 +479,9 @@ bool VrApp::Laser(const XrFrameInput &in, int hand, const Placement &p, int texW
 
 void VrApp::Frame(const XrFrameInput &in) {
     const float dt = in.dt;
+#ifdef KHVR_HAS_GAME
+    if (decomp_) decomp_->Set3dScale(settings_.Int(SettingId::Pic3dResolution) + 1);
+#endif
     ViewMode mode = EffectiveMode();
     UpdatePlacements(in);
     recenterNext_ = false;

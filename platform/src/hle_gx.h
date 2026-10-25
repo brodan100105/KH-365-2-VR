@@ -18,8 +18,10 @@ uint16_t GxReadRegister(uint32_t off);  // 0x600-0x6ff, offset from 0x04000000
 uint32_t GxCommandsThisFrame();
 void GxVBlank();
 
-// The 3D layer, 256 x 192: BGR555 colour and 5-bit alpha per pixel (alpha 0: nothing there).
-void GxRender(uint16_t *color, uint8_t *alpha);
+// The 3D layer at `scale` times the DS's 256 x 192 (1 to kMax3dScale): BGR555 colour and 5-bit
+// alpha per pixel (alpha 0: nothing there).
+constexpr int kMax3dScale = 4;
+void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

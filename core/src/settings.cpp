@@ -169,6 +169,10 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::PicScreenSmoothing, "Picture", "screen_smoothing", "Screen smoothing", 0.4f, 0.0f, 1.0f, 0.05f, "",
                   "Blends neighbouring DS pixels of similar colour (gradients, dithering, jagged edges) "
                   "while leaving sharp contrast like text untouched. 0 is off."));
+    d.push_back(E(S::Pic3dResolution, "Picture", "resolution_3d", "3D resolution", 1, {"1x", "2x", "3x", "4x"},
+                  {"1x (the DS's)", "2x", "3x", "4x"},
+                  "Draws the game's 3D at a multiple of the DS's 256 x 192; menus and text stay as the DS "
+                  "draws them. Higher is sharper and costs more of the headset's processor."));
     d.push_back(E(S::PicFoveation, "Picture", "foveation", "Fixed foveation", 2,
                   {"off", "low", "medium", "high"}, {"Off", "Low", "Medium", "High"},
                   "Lowers resolution at the edges of the lenses to save GPU time."));

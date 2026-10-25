@@ -101,6 +101,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp`, `smooth` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth also rounds diagonal edges (Scale4x) instead of showing them as steps. |
 | `sharpen` | Sharpening | 0 to 1 | `0.3` | Sharpens the final picture. |
 | `screen_smoothing` | Screen smoothing | 0 to 1 | `0.4` | Blends neighbouring DS pixels of similar colour (gradients, dithering, jagged edges) while leaving sharp contrast like text untouched. 0 is off. |
+| `resolution_3d` | 3D resolution | `1x`, `2x`, `3x`, `4x` | `2x` | Draws the game's 3D at a multiple of the DS's 256 x 192; menus and text stay as the DS draws them. Higher is sharper and costs more of the headset's processor. |
 | `foveation` | Fixed foveation | `off`, `low`, `medium`, `high` | `medium` | Lowers resolution at the edges of the lenses to save GPU time. |
 | `draw_distance` | Draw distance | 1 to 4 x | `1.5` | Widens the game's culling so you can look around freely. |
 

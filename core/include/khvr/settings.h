@@ -85,6 +85,7 @@ enum class SettingId : int {
     PicTextureFilter,
     PicSharpen,
     PicScreenSmoothing,
+    Pic3dResolution,
     PicFoveation,
     PicDrawDistance,
     // HUD
