@@ -12,6 +12,9 @@ void khvr_host_load_context(void *context);  /* switch to the thread that owns `
 void khvr_host_halt(void);
 /* Interrupts were just re-enabled: deliver any that are pending. */
 void khvr_host_irq_window(void);
+/* One turn of a busy-wait loop (guest/build_guest.py adds it to the SDK's): pending interrupts
+ * are delivered if the guest has them enabled, as the hardware would mid-loop. */
+void khvr_host_spin(void);
 void khvr_host_reset(void);
 /* The game stopped on a fatal error (OS_Terminate). */
 void khvr_host_terminate(void);

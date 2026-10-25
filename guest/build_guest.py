@@ -232,6 +232,34 @@ RE_STATIC_LOCAL = re.compile(r"\bstatic(\s+[^;=(){}]*?\b(data_[0-9a-f]{8})\b[^;=
 # mwcc accepts post-incrementing through a cast, `*((T *)p)++` (read a T and step p past it);
 # clang rejects the lvalue cast, so it is spelled out.
 RE_LVALUE_CAST_INC = re.compile(r"\*\(\((\w+)\s*\*\)\s*(\w+)\)\+\+")
+# A busy-wait loop with an empty body: `while (cond) {}` or `while (cond);` (not the tail of a
+# do-while). The port takes interrupts only where the guest re-enables them, so a loop that
+# spins with them already enabled would never see the reply it waits for.
+RE_SPIN = re.compile(r"(?<![}\w])(\s)while\s*\(((?:[^;{}()]|\((?:[^;{}()]|\([^;{}()]*\))*\))*)\)\s*(?:\{\s*\}|;)")
+
+
+def is_spin_wait(cond):
+    """A poll of state another context changes: a volatile read or a status call, and nothing the
+    loop itself changes. The hardware units the port answers at once (divider, square root,
+    geometry engine) are left alone; they sit in hot code."""
+    if re.search(r"\+\+|--|[^=!<>]=[^=]|<<=|>>=", cond):
+        return False
+    if re.search(r"0x0400|G3X_|CP_IsDivBusy", cond):
+        return False
+    return "volatile" in cond or re.search(r"\b(?!sizeof\b)[A-Za-z_]\w*\s*\(", cond) is not None
+
+
+def spin_waits(text):
+    def fix(m):
+        if not is_spin_wait(m.group(2)):
+            return m.group(0)
+        return "%swhile (%s) { khvr_host_spin(); }" % (m.group(1), m.group(2))
+    out = RE_SPIN.sub(fix, text)
+    if out != text:
+        out = "void khvr_host_spin(void);\n" + out
+    return out
+
+
 RE_VA_START_MACRO = re.compile(r"#define\s+va_start\(ap,\s*last\)\s*\(\(ap\)\s*=\s*\(char \*\)\(\(\(int\)&\(last\)\s*&\s*~3\)\s*\+\s*4\)\)")
 RE_VA_INLINE = re.compile(r"\(void \*\)\(\(\(unsigned int\)&(\w+)\s*&\s*~3u\)\s*\+\s*4\)")
 
@@ -259,6 +287,7 @@ def patch_source(rel, text, fx):
         t = RE_OVL_ADDR.sub(lambda m: "((unsigned long *)%s)" % (m.group(1) or m.group(2)), t)
         t = RE_OVL.sub(r"((unsigned long *)\1)", t)
     t = ds_layout(t, strip_const=is_data_file(rel))
+    t = spin_waits(t)
     for name in fx["unstatic"].get(rel, []):
         # A static helper that the same file (or a header) also declares extern, which mwcc
         # allows: it becomes an ordinary weak definition, and the linker keeps one copy.

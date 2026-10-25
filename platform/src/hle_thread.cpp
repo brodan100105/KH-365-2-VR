@@ -266,6 +266,10 @@ void w2c_env_khvr_host_irq_window(struct w2c_env *) {
     if (RegIf() & RegIe()) DispatchIrqs();
 }
 
+void w2c_env_khvr_host_spin(struct w2c_env *) {
+    if ((RegIf() & RegIe()) && !GuestIrqsDisabled()) DispatchIrqs();
+}
+
 void w2c_env_khvr_host_reset(struct w2c_env *) { PlatformReportTrap("OS_ResetSystem"); }
 
 void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
