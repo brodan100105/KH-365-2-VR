@@ -34,6 +34,38 @@ struct PlatformScreens {
     std::vector<uint32_t> topHi;
 };
 
+// The game's 3D as geometry (Platform::CaptureWorld): every polygon of the last finished 3D
+// frame drawn with the game's main camera, in world space, game units (fx32 1.0 = 1.0), with the
+// game's Y up. Triangles; the DS has already lit their vertex colours.
+struct PlatformWorldVertex {
+    float x, y, z;
+    float u, v;      // across the texture: 0..1 is its width/height (repeats beyond, as it asks)
+    uint32_t color;  // 0xAABBGGRR: vertex colour, polygon alpha
+};
+enum PlatformWorldFlags : uint8_t {
+    kWorldFront = 1,        // draw front faces (counterclockwise seen from the front)
+    kWorldBack = 2,         // draw back faces
+    kWorldTranslucent = 4,  // blended: the polygon's alpha below 31, or alpha in its texture
+    kWorldDecal = 8,        // texture over the colour rather than multiplied with it
+};
+struct PlatformWorldTexture {
+    uint64_t key = 0;  // its parameters, texels and palette: equal keys are the same image
+    int width = 0, height = 0;
+    bool repeatS = false, repeatT = false, flipS = false, flipT = false;
+    std::vector<uint32_t> rgba;  // 0xAABBGGRR, row 0 at t = 0
+};
+struct PlatformWorld {
+    std::vector<PlatformWorldVertex> vertices;  // three per triangle
+    std::vector<int32_t> triangleTexture;       // per triangle: index into textures, -1 none
+    std::vector<uint8_t> triangleFlags;         // per triangle: PlatformWorldFlags
+    std::vector<PlatformWorldTexture> textures;
+    // The game's camera for this frame, in the same space.
+    bool hasCamera = false;
+    float eye[3] = {0, 0, 0}, target[3] = {0, 0, -1}, up[3] = {0, 1, 0};
+    float fovY = 0, nearZ = 0, farZ = 0;  // radians, game units
+    uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
+};
+
 // Instantiates the guest and resets the hardware stand-ins without running the game, so tests
 // can poke registers and memory (PlatformTestPoke) and render (Platform::CaptureScreens).
 void PlatformInitForTests();
@@ -62,6 +94,8 @@ public:
 
     // Renders both screens. Call after VBlank() returned true, while the game is idle.
     void CaptureScreens(PlatformScreens *out);
+    // The game's 3D world (PlatformWorld). Call when CaptureScreens may be called.
+    void CaptureWorld(PlatformWorld *out);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or

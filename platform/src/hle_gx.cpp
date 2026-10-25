@@ -5,8 +5,10 @@
 #include <cmath>
 #include <cstring>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
+#include "guest.h"
 #include "hle.h"
 
 namespace khvr::hle {
@@ -44,6 +46,7 @@ struct Vertex {
     float x, y, z, w;
     float r, g, b;
     float s, t;
+    float px, py, pz;  // through the position matrix only (the world capture's starting point)
 };
 
 constexpr int kMaxPolyVerts = 10;  // a quad clipped by six planes
@@ -55,6 +58,13 @@ struct Polygon {
 };
 
 constexpr size_t kMaxPolygons = 2048;
+
+struct WorldPoly {
+    Vertex v[4];
+    int n = 0;
+    uint32_t attr = 0, texParam = 0, palBase = 0;
+    uint16_t proj = 0;  // index into the frame's projection matrices
+};
 constexpr int kW = 256, kH = 192;
 
 struct Gx {
@@ -84,6 +94,11 @@ struct Gx {
     int stripCount = 0;
     bool stripOdd = false;
     std::vector<Polygon> list, shown;
+    // The world capture: every polygon as submitted (before the DS's culling and clipping), and
+    // the projection matrices they were drawn with.
+    std::vector<WorldPoly> worldList, worldShown;
+    std::vector<Mtx> projList, projShown;
+    uint32_t projSerial = 1, projRecorded = 0;
     bool shownWBuffer = false, shownManualSort = false;
     uint32_t vertexCount = 0;
 
@@ -137,7 +152,7 @@ void UpdateClip() {
 // The current matrix (or matrices) of the mode: a load, or N * M.
 void Load(const Mtx &m) {
     switch (g.mtxMode) {
-    case 0: g.proj = m; break;
+    case 0: g.proj = m; ++g.projSerial; break;
     case 1: g.pos = m; break;
     case 2: g.pos = m; g.vec = m; break;
     default: g.tex = m; break;
@@ -147,7 +162,7 @@ void Load(const Mtx &m) {
 
 void Apply(const Mtx &m, bool vecToo) {
     switch (g.mtxMode) {
-    case 0: g.proj = Mul(m, g.proj); break;
+    case 0: g.proj = Mul(m, g.proj); ++g.projSerial; break;
     case 1: g.pos = Mul(m, g.pos); break;
     case 2:
         g.pos = Mul(m, g.pos);
@@ -165,7 +180,8 @@ void Apply(const Mtx &m, bool vecToo) {
 Vertex Lerp(const Vertex &a, const Vertex &b, float t) {
     return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t,
             a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t,
-            a.s + (b.s - a.s) * t, a.t + (b.t - a.t) * t};
+            a.s + (b.s - a.s) * t, a.t + (b.t - a.t) * t,
+            a.px + (b.px - a.px) * t, a.py + (b.py - a.py) * t, a.pz + (b.pz - a.pz) * t};
 }
 
 // Keeps the part of the polygon where dist >= 0 (Sutherland-Hodgman).
@@ -188,6 +204,20 @@ int ClipPlane(const Vertex *in, int n, Vertex *out, Dist dist) {
 void EmitPolygon(const Vertex *verts, int n) {
     const uint32_t attr = g.polyAttr;
     if (((attr >> 4) & 3) == 3) return;  // shadow volumes: not drawn yet
+    if (g.worldList.size() < 2 * kMaxPolygons && n <= 4) {
+        if (g.projRecorded != g.projSerial || g.projList.empty()) {
+            g.projList.push_back(g.proj);
+            g.projRecorded = g.projSerial;
+        }
+        WorldPoly w;
+        std::copy(verts, verts + n, w.v);
+        w.n = n;
+        w.attr = attr;
+        w.texParam = g.texParam;
+        w.palBase = g.palBase;
+        w.proj = static_cast<uint16_t>(g.projList.size() - 1);
+        g.worldList.push_back(w);
+    }
     if (g.list.size() >= kMaxPolygons) return;
 
     // Facing: the sign of the homogeneous determinant of the first three vertices (CCW with y up
@@ -255,6 +285,10 @@ void SubmitVertex() {
     v.b = six(g.cb);
     v.s = static_cast<float>(g.s) / 16.0f;
     v.t = static_cast<float>(g.t) / 16.0f;
+    const Mtx &pm = g.pos;
+    v.px = static_cast<float>((x * pm[0] + y * pm[4] + z * pm[8] + 0x1000ll * pm[12]) >> 12);
+    v.py = static_cast<float>((x * pm[1] + y * pm[5] + z * pm[9] + 0x1000ll * pm[13]) >> 12);
+    v.pz = static_cast<float>((x * pm[2] + y * pm[6] + z * pm[10] + 0x1000ll * pm[14]) >> 12);
 
     Vertex *st = g.strip;
     st[g.stripCount++] = v;
@@ -380,6 +414,7 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         if (g.mtxMode == 0) {
             g.projSp = 0;
             g.proj = g.projStack;
+            ++g.projSerial;
         } else if (g.mtxMode == 3) {
             g.tex = g.texStack;
         } else {
@@ -403,9 +438,12 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         }
         break;
     case 0x14:  // MTX_RESTORE
-        if (g.mtxMode == 0) g.proj = g.projStack;
-        else if (g.mtxMode == 3) g.tex = g.texStack;
-        else {
+        if (g.mtxMode == 0) {
+            g.proj = g.projStack;
+            ++g.projSerial;
+        } else if (g.mtxMode == 3) {
+            g.tex = g.texStack;
+        } else {
             uint32_t n = p[0] & 31;
             if (n == 31) g.stackError = true;
             g.pos = g.posStack[n];
@@ -566,6 +604,11 @@ void Exec(uint8_t cmd, const uint32_t *p) {
     case 0x50:
         g.shown.swap(g.list);
         g.list.clear();
+        g.worldShown.swap(g.worldList);
+        g.worldList.clear();
+        g.projShown.swap(g.projList);
+        g.projList.clear();
+        g.projRecorded = 0;
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
@@ -1108,6 +1151,178 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale) {
     for (size_t i = 0; i < f.a.size(); ++i) {
         color[i] = static_cast<uint16_t>((f.r[i] >> 1) | ((f.gch[i] >> 1) << 5) | ((f.b[i] >> 1) << 10));
         alpha[i] = f.a[i];
+    }
+}
+
+namespace {
+
+using Mat4d = std::array<double, 16>;
+
+Mat4d ToDouble(const Mtx &m) {
+    Mat4d d;
+    for (int i = 0; i < 16; ++i) d[i] = m[i] / 4096.0;
+    return d;
+}
+
+Mat4d MulD(const Mat4d &a, const Mat4d &b) {
+    Mat4d r{};
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            for (int k = 0; k < 4; ++k) r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+    return r;
+}
+
+bool Invert(const Mat4d &m, Mat4d *out) {
+    double a[4][8];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 8; ++j) a[i][j] = j < 4 ? m[i * 4 + j] : (j - 4 == i ? 1.0 : 0.0);
+    for (int c = 0; c < 4; ++c) {
+        int piv = c;
+        for (int r = c + 1; r < 4; ++r)
+            if (std::fabs(a[r][c]) > std::fabs(a[piv][c])) piv = r;
+        if (std::fabs(a[piv][c]) < 1e-12) return false;
+        if (piv != c)
+            for (int j = 0; j < 8; ++j) std::swap(a[c][j], a[piv][j]);
+        double inv = 1.0 / a[c][c];
+        for (int j = 0; j < 8; ++j) a[c][j] *= inv;
+        for (int r = 0; r < 4; ++r) {
+            if (r == c) continue;
+            double f = a[r][c];
+            for (int j = 0; j < 8; ++j) a[r][j] -= f * a[c][j];
+        }
+    }
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) (*out)[i * 4 + j] = a[i][j + 4];
+    return true;
+}
+
+uint64_t Fnv(const void *data, size_t n, uint64_t h = 1469598103934665603ull) {
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    return h;
+}
+
+}  // namespace
+
+void GxCaptureWorld(PlatformWorld *out) {
+    out->vertices.clear();
+    out->triangleTexture.clear();
+    out->triangleFlags.clear();
+    out->textures.clear();
+    out->hasCamera = false;
+    out->polygonsLeftOut = 0;
+    // NNSG3dGlb (decomp: include/nnsys/g3d.h): the lens at +0x08 (4x4), the camera at +0x4c (4x3).
+    static const uint32_t glb = SymbolAddress("NNS_G3dGlb");
+    if (!glb || g.worldShown.empty()) return;
+    Mtx lens, camera = Identity();
+    for (int i = 0; i < 16; ++i) lens[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 3; ++c) camera[r * 4 + c] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + c)));
+    const Mat4d lensD = ToDouble(lens), cameraD = ToDouble(camera);
+    Mat4d lensInv, cameraInv;
+    if (!Invert(lensD, &lensInv) || !Invert(cameraD, &cameraInv)) return;
+
+    // Each projection the frame used: what it holds beyond the lens (the camera, when the game
+    // flushed it into the projection; nothing otherwise) must be an affine transform, or the
+    // polygons drawn with it are not in the scene (an orthographic HUD piece).
+    std::vector<Mat4d> toWorld(g.projShown.size());
+    std::vector<bool> inScene(g.projShown.size(), false);
+    for (size_t i = 0; i < g.projShown.size(); ++i) {
+        Mat4d q = MulD(ToDouble(g.projShown[i]), lensInv);
+        const double tol = 1e-3;
+        inScene[i] = std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol &&
+                     std::fabs(q[15] - 1.0) < tol;
+        toWorld[i] = MulD(q, cameraInv);
+    }
+
+    out->hasCamera = true;
+    for (int k = 0; k < 3; ++k) {
+        out->eye[k] = static_cast<float>(cameraInv[12 + k]);
+        out->up[k] = static_cast<float>(cameraInv[4 + k]);
+        out->target[k] = static_cast<float>(cameraInv[12 + k] - cameraInv[8 + k]);
+    }
+    if (lensD[5] > 0 && std::fabs(lensD[11] + 1.0) < 1e-3) {  // a perspective lens
+        out->fovY = static_cast<float>(2.0 * std::atan(1.0 / lensD[5]));
+        const double m22 = lensD[10], m32 = lensD[14];
+        if (std::fabs(m22 - 1.0) > 1e-9 && std::fabs(m22 + 1.0) > 1e-9) {
+            out->nearZ = static_cast<float>(std::fabs(m32 / (m22 - 1.0)));
+            out->farZ = static_cast<float>(std::fabs(m32 / (m22 + 1.0)));
+        }
+    }
+
+    static TexMem mem;
+    mem.tex.resize(kTexVramSize);
+    mem.pal.resize(kTexPalSize);
+    VramTexture(mem.tex.data(), mem.pal.data());
+    const bool texturesOn = IoReg16(0x060) & 1;
+    std::unordered_map<uint64_t, int32_t> byParams;
+    auto texture = [&](uint32_t param, uint32_t palBase) -> int32_t {
+        const uint32_t format = (param >> 26) & 7;
+        if (!texturesOn || format == 0) return -1;
+        param &= 0x3fffffffu;  // the coordinate transform mode is not part of the image
+        const uint64_t id = (static_cast<uint64_t>(param) << 13) | palBase;
+        auto it = byParams.find(id);
+        if (it != byParams.end()) return it->second;
+        PlatformWorldTexture t;
+        t.width = 8 << ((param >> 20) & 7);
+        t.height = 8 << ((param >> 23) & 7);
+        t.repeatS = param & (1u << 16);
+        t.repeatT = param & (1u << 17);
+        t.flipS = param & (1u << 18);
+        t.flipT = param & (1u << 19);
+        t.rgba.resize(static_cast<size_t>(t.width) * t.height);
+        for (int y = 0; y < t.height; ++y)
+            for (int x = 0; x < t.width; ++x) {
+                Texel tx = Sample(mem, param, palBase, x + 0.5f, y + 0.5f);
+                uint32_t r = static_cast<uint32_t>(tx.r * 255 / 63), gg = static_cast<uint32_t>(tx.g * 255 / 63);
+                uint32_t b = static_cast<uint32_t>(tx.b * 255 / 63), a = static_cast<uint32_t>(tx.a * 255 / 31);
+                t.rgba[static_cast<size_t>(y) * t.width + x] = r | (gg << 8) | (b << 16) | (a << 24);
+            }
+        t.key = Fnv(t.rgba.data(), t.rgba.size() * 4, Fnv(&id, sizeof id));
+        out->textures.push_back(std::move(t));
+        int32_t index = static_cast<int32_t>(out->textures.size() - 1);
+        byParams[id] = index;
+        return index;
+    };
+
+    for (const WorldPoly &w : g.worldShown) {
+        if (w.proj >= inScene.size() || !inScene[w.proj]) {
+            ++out->polygonsLeftOut;
+            continue;
+        }
+        const uint32_t alpha = (w.attr >> 16) & 31;
+        if (alpha == 0) continue;  // wireframe
+        const Mat4d &m = toWorld[w.proj];
+        const int32_t tex = texture(w.texParam, w.palBase);
+        const uint32_t format = (w.texParam >> 26) & 7;
+        uint8_t flags = 0;
+        if (w.attr & 0x80) flags |= kWorldFront;
+        if (w.attr & 0x40) flags |= kWorldBack;
+        if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+        if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+        PlatformWorldVertex pv[4];
+        for (int i = 0; i < w.n; ++i) {
+            const Vertex &v = w.v[i];
+            const double x = v.px / 4096.0, y = v.py / 4096.0, z = v.pz / 4096.0;
+            pv[i].x = static_cast<float>(x * m[0] + y * m[4] + z * m[8] + m[12]);
+            pv[i].y = static_cast<float>(x * m[1] + y * m[5] + z * m[9] + m[13]);
+            pv[i].z = static_cast<float>(x * m[2] + y * m[6] + z * m[10] + m[14]);
+            if (tex >= 0) {
+                pv[i].u = v.s / out->textures[tex].width;
+                pv[i].v = v.t / out->textures[tex].height;
+            } else {
+                pv[i].u = pv[i].v = 0;
+            }
+            auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
+            pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((alpha * 255 / 31) << 24);
+        }
+        for (int i = 1; i + 1 < w.n; ++i) {
+            out->vertices.push_back(pv[0]);
+            out->vertices.push_back(pv[i]);
+            out->vertices.push_back(pv[i + 1]);
+            out->triangleTexture.push_back(tex);
+            out->triangleFlags.push_back(flags);
+        }
     }
 }
 

@@ -207,6 +207,8 @@ std::atomic<int> g3dScale{1};
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
 
+void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
+
 namespace {
 std::atomic<uint32_t> gSkippedCaptures{0}, gCaptures{0};
 std::atomic<float> gCaptureMsMax{0.0f}, gCaptureMsSum{0.0f};

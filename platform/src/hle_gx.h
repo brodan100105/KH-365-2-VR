@@ -10,7 +10,11 @@
 
 #include <cstdint>
 
+#include "khvr/platform.h"
+
 namespace khvr::hle {
+
+using khvr::PlatformWorld;
 
 void GxReset();
 void GxWrite(uint32_t addr, uint32_t value, uint32_t size);  // 0x04000400-0x040005ff
@@ -22,6 +26,8 @@ void GxVBlank();
 // alpha per pixel (alpha 0: nothing there).
 constexpr int kMax3dScale = 4;
 void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1);
+// The polygons of the last SWAP_BUFFERS drawn with the game's main camera, in world space.
+void GxCaptureWorld(PlatformWorld *out);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

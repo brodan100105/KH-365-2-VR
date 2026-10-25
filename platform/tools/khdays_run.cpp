@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "khvr/platform.h"
+#include "../src/guest.h"
 #include "../src/hle.h"
 #include "../src/sound.h"
 
@@ -225,6 +226,90 @@ int GxTest() {
     std::printf("gx test: %s (triangle %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
                 tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
     return tri && culled && tex ? 0 : 1;
+}
+
+// The world capture without a ROM: a camera and lens in NNS_G3dGlb, loaded the way
+// NNS_G3dGlbFlush (camera in the position matrix) and NNS_G3dGlbFlushP (camera in the projection)
+// load them, a textured quad moved by a model matrix, and an orthographic HUD quad. The capture
+// must give the quad's corners in world space, the camera, the texture, and leave the HUD out.
+int WorldTest() {
+    khvr::PlatformInitForTests();
+    auto w32 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 4); };
+    auto fx = [](double v) { return static_cast<uint32_t>(static_cast<int32_t>(std::lround(v * 4096))); };
+    w32(0x04000304, 0x8203);
+    w32(0x04000000, 0x00010108);
+    w32(0x04000060, 0x0001);
+    khvr::PlatformTestWrite(0x04000240, 0x80, 1);
+    for (int t = 0; t < 8; ++t)
+        for (int x = 0; x < 8; ++x) khvr::PlatformTestWrite(0x06800000 + 2 * (t * 8 + x), x < 4 ? 0xffff : 0x83e0, 2);
+    khvr::PlatformTestWrite(0x04000240, 0x83, 1);
+    // Camera at (0, 2, 10) looking down -Z; a 60 degree lens, 4:3, near 1, far 100.
+    const double n = 1, f = 100, cot = 1.0 / std::tan(30.0 * 3.14159265358979 / 180.0);
+    double lens[16] = {cot / (4.0 / 3.0), 0, 0, 0, 0, cot, 0, 0, 0, 0, (n + f) / (n - f), -1, 0, 0, 2 * n * f / (n - f), 0};
+    double cam[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2, -10};
+    const uint32_t glb = khvr::hle::SymbolAddress("NNS_G3dGlb");
+    for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(lens[i]));
+    for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+    auto cmd = [&](uint32_t c, uint32_t v) { w32(0x04000400 + 4 * c, v); };
+    auto vtx = [&](double x, double y) {
+        cmd(0x23, (fx(x) & 0xffff) | (fx(y) << 16));
+        cmd(0x23, 0);
+    };
+    auto quad = [&] {
+        cmd(0x29, 0x001f00c0);
+        cmd(0x2a, 7u << 26);
+        cmd(0x20, 0x7fff);
+        cmd(0x40, 1);
+        cmd(0x22, 0); vtx(-1, -1);
+        cmd(0x22, 8 * 16); vtx(1, -1);
+        cmd(0x22, 8 * 16 | (8 * 16) << 16); vtx(1, 1);
+        cmd(0x22, (8 * 16) << 16); vtx(-1, 1);
+        cmd(0x41, 0);
+    };
+    auto check = [&](bool cameraInProjection) {
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        if (cameraInProjection) {
+            for (int i = 0; i < 12; ++i) cmd(0x19, fx(cam[i]));
+            cmd(0x10, 2);
+            cmd(0x15, 0);
+        } else {
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        }
+        cmd(0x1c, fx(5)); cmd(0x1c, 0); cmd(0x1c, 0);  // the model at x = 5
+        quad();
+        // A HUD quad with an orthographic projection.
+        cmd(0x10, 0);
+        double ortho[16] = {0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, -0.1, 0, 0, 0, 0, 1};
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(ortho[i]));
+        cmd(0x10, 2);
+        cmd(0x15, 0);
+        quad();
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w;
+        khvr::Platform::Get().CaptureWorld(&w);
+        auto near = [](double a, double b) { return std::fabs(a - b) < 0.02; };
+        bool ok = w.vertices.size() == 6 && w.textures.size() == 1 && w.polygonsLeftOut == 1 && w.hasCamera;
+        if (ok) {
+            const khvr::PlatformWorldVertex &a = w.vertices[0], &c = w.vertices[2];
+            ok = near(a.x, 4) && near(a.y, -1) && near(a.z, 0) && near(c.x, 6) && near(c.y, 1) && near(c.u, 1) &&
+                 near(c.v, 1) && near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
+                 near(w.fovY, 3.14159265 / 3) && near(w.nearZ, 1) && std::fabs(w.farZ - 100) < 0.5 &&
+                 (w.textures[0].rgba[0] & 0xffffff) == 0xffffff && (w.textures[0].rgba[7] & 0xffffff) == 0x00ff00 &&
+                 w.triangleFlags[0] == (khvr::kWorldFront | khvr::kWorldBack);
+            std::printf("  %s: corner (%.2f %.2f %.2f), eye (%.2f %.2f %.2f), fov %.3f, near %.2f, far %.1f\n",
+                        cameraInProjection ? "camera in projection" : "camera in position", a.x, a.y, a.z, w.eye[0],
+                        w.eye[1], w.eye[2], w.fovY, w.nearZ, w.farZ);
+        } else {
+            std::printf("  %zu vertices, %zu textures, %u left out\n", w.vertices.size(), w.textures.size(),
+                        w.polygonsLeftOut);
+        }
+        return ok;
+    };
+    bool a = check(false), b = check(true);
+    std::printf("world test: %s\n", a && b ? "ok" : "FAILED");
+    return a && b ? 0 : 1;
 }
 
 int PxiTest() {
@@ -454,6 +539,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
     if (argc >= 2 && std::string(argv[1]) == "--gx-test") return GxTest();
+    if (argc >= 2 && std::string(argv[1]) == "--world-test") return WorldTest();
     if (argc >= 2 && std::string(argv[1]) == "--sound-test") return SoundTest();
     if (argc >= 2 && std::string(argv[1]) == "--seq-test") return SeqTest();
     if (argc >= 2 && std::string(argv[1]) == "--stream-test") return StreamTest();
