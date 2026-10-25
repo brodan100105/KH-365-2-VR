@@ -41,6 +41,9 @@ IO_LOAD = """/* khvr: I/O (0x04xxxxxx) and VRAM (0x06xxxxxx) accesses go to the 
 #define KHVR_IS_IO(addr) ((((u32)((addr) >> 24)) | 2u) == 6u)
 u64 khvr_io_read(u32 addr, u32 size);
 void khvr_io_write(u32 addr, u64 value, u32 size);
+/* A write watch for the boot log (platform/src/hle_io.cpp): stores into [lo, lo + len). */
+extern u32 khvr_watch_lo, khvr_watch_len;
+void khvr_watch_hit(u32 addr, u64 value, u32 size);
 #define DEFINE_LOAD(name, t1, t2, t3, force_read)                         \\
   static inline t3 name(wasm_rt_memory_t* mem, u64 addr) {                \\
     if (UNLIKELY(KHVR_IS_IO(addr)))                                       \\
@@ -60,6 +63,11 @@ IO_STORE = """#define DEFINE_STORE(name, t1, t2)                                
       wasm_rt_memcpy(&bits, &wrapped, sizeof(t1));                        \\
       khvr_io_write((u32)addr, bits, sizeof(t1));                         \\
       return;                                                             \\
+    }                                                                     \\
+    if (UNLIKELY((u32)addr - khvr_watch_lo < khvr_watch_len)) {           \\
+      u64 bits = 0;                                                       \\
+      wasm_rt_memcpy(&bits, &wrapped, sizeof(t1));                        \\
+      khvr_watch_hit((u32)addr, bits, sizeof(t1));                        \\
     }                                                                     \\
     MEMCHECK(mem, addr, t1);                                              \\
     wasm_rt_memcpy(&mem->data[addr], &wrapped, sizeof(t1));               \\

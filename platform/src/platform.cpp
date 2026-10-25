@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <mutex>
 
 #include "guest.h"
@@ -83,6 +84,14 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     Arm7Reset();
     SetupSharedArea(config.language);
     OverlaysInit();
+    // The field's script names ("_s", "_i") are found overwritten when it starts: catch the writer.
+    // KHVR_WATCH=<symbol or 0xaddress> watches 4 bytes there instead (desktop runs).
+    if (const char *sym = std::getenv("KHVR_WATCH")) {
+        uint32_t a = sym[0] == '0' ? static_cast<uint32_t>(std::strtoul(sym, nullptr, 16)) : SymbolAddress(sym);
+        if (a) WatchSet(a, 4, sym);
+    } else if (uint32_t names = SymbolAddress("gOv002SName")) {
+        WatchSet(names, 8, "the field's script names");
+    }
     gState = PlatformState::Running;
     // wasm2c's instantiate set the (thread-local) stack pointer on this thread: hand its initial
     // value to the main guest thread.

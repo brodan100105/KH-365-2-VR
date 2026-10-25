@@ -134,6 +134,7 @@ void RunDma(int ch) {
     if (timing == 5) {
         LogOnce("dma-card", "dma: card-timed DMA (ROM reads go through CARDi_ReadRom instead)");
     }
+    WatchHostWrite(dstStep < 0 ? dst - (count - 1) * unit : dst, count * unit, "DMA");
     // A DMA "fill" reads its source from the channel's fill register.
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t v = BusRead(src, unit);
@@ -487,3 +488,45 @@ uint32_t IoReg32(uint32_t off) { return R32(off); }
 // Guest imports for the trapped accesses (guest/postprocess.py).
 extern "C" uint64_t khvr_io_read(uint32_t addr, uint32_t size) { return khvr::hle::IoRead(addr, size); }
 extern "C" void khvr_io_write(uint32_t addr, uint64_t value, uint32_t size) { khvr::hle::IoWrite(addr, value, size); }
+
+// ---------------------------------------------------------------------------------------------
+// Write watch: logs the first stores into a few bytes of guest data, with the host call stack
+// (guest functions show as w2c_khdays_<name>), to find what overwrites them. The guest's stores
+// check the range (guest/postprocess.py); the platform's own writes call WatchHostWrite.
+// ---------------------------------------------------------------------------------------------
+extern "C" {
+uint32_t khvr_watch_lo = 0, khvr_watch_len = 0;
+}
+
+namespace khvr::hle {
+namespace {
+uint32_t gWatchStart = 0, gWatchSize = 0;
+int gWatchHits = 0;
+constexpr int kMaxWatchHits = 6;
+}  // namespace
+
+void WatchSet(uint32_t addr, uint32_t size, const char *what) {
+    gWatchStart = addr;
+    gWatchSize = size;
+    // A store of up to 8 bytes that starts just before the range still overlaps it.
+    khvr_watch_lo = addr - 7;
+    khvr_watch_len = size + 7;
+    Log("watch: %u bytes at 0x%08x (%s)", size, addr, what);
+}
+
+void WatchHostWrite(uint32_t addr, uint32_t len, const char *what) {
+    if (!gWatchSize || gWatchHits >= kMaxWatchHits) return;
+    if (addr >= gWatchStart + gWatchSize || addr + len <= gWatchStart) return;
+    ++gWatchHits;
+    Log("watch: %s wrote 0x%x bytes at 0x%08x, over the watched bytes", what, len, addr);
+    LogBacktrace("watch");
+}
+}  // namespace khvr::hle
+
+extern "C" void khvr_watch_hit(uint32_t addr, uint64_t value, uint32_t size) {
+    using namespace khvr::hle;
+    if (addr >= gWatchStart + gWatchSize || addr + size <= gWatchStart || gWatchHits >= kMaxWatchHits) return;
+    ++gWatchHits;
+    Log("watch: guest stored 0x%llx (%u bytes) at 0x%08x", static_cast<unsigned long long>(value), size, addr);
+    LogBacktrace("watch");
+}

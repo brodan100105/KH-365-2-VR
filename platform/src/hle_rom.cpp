@@ -247,6 +247,7 @@ void w2c_env_khvr_host_read_rom(struct w2c_env *, u32 offset, u32 dst, u32 len) 
         Log("rom: read 0x%x bytes to bad address 0x%08x", len, dst);
         return;
     }
+    WatchHostWrite(dst, len, "ROM read");
     RomRead(offset, GuestMem() + dst, len);
 }
 

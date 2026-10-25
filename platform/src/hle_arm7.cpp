@@ -140,7 +140,7 @@ void OnCardRequest(uint32_t data, bool err) {
         case 1: break;  // ACK
         case 2: break;  // IDENTIFY: any backup type is fine, the save file grows as needed
         case 3: Write32(gCardCmd + 8, 0x00c2ff01); break;  // READ_ID
-        case 6: SaveRead(src, GuestMem() + dst, len); break;                 // READ_BACKUP
+        case 6: WatchHostWrite(dst, len, "save read"); SaveRead(src, GuestMem() + dst, len); break;                 // READ_BACKUP
         case 7: case 8: SaveWrite(dst, GuestMem() + src, len); SaveFlush(); break;  // WRITE/PROGRAM
         case 9: result = SaveVerify(dst, GuestMem() + src, len) ? 0 : 1; break;  // VERIFY
         case 10: case 11: case 15: SaveErase(dst, len); SaveFlush(); break;  // ERASE page/sector/sub
