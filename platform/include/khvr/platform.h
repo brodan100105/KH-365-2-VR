@@ -2,6 +2,7 @@
 // steps it one VBlank at a time. Used by the Quest app (DecompGame) and the desktop runner.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -31,6 +32,7 @@ struct PlatformScreens {
 // can poke registers and memory (PlatformTestPoke) and render (Platform::CaptureScreens).
 void PlatformInitForTests();
 void PlatformTestWrite(uint32_t addr, uint32_t value, uint32_t size);
+uint32_t PlatformTestRead(uint32_t addr, uint32_t size);
 // After PlatformInitForTests: load a screen snapshot (khvr_snap_N.bin) for CaptureScreens.
 bool PlatformLoadSnapshotForTests(const std::string &path);
 bool PlatformSaveSnapshotForTests(const std::string &path);
@@ -48,6 +50,10 @@ public:
 
     // Renders both screens. Call after VBlank() returned true, while the game is idle.
     void CaptureScreens(PlatformScreens *out);
+    // The game's sound, 48 kHz stereo (interleaved L, R): fills `frames` frames, silence where
+    // nothing has been mixed yet; returns how many were real. For the audio thread.
+    size_t ReadAudio(int16_t *stereo, size_t frames);
+    static constexpr int kAudioRate = 48000;
 
     // Input for the next frames: DS buttons active high (khvr::DsButton bits), touch in pixels.
     void SetInput(uint16_t buttons, bool touching, int x, int y);

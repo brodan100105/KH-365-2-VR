@@ -13,6 +13,7 @@
 #include "guest.h"
 #include "hle.h"
 #include "mobiclip_reference.hpp"
+#include "sound.h"
 
 extern "C" const void *khvr_mobiclip_vlc0(void);
 extern "C" const void *khvr_mobiclip_vlc1(void);
@@ -45,6 +46,12 @@ struct Movie {
     unsigned quantizer = 12;
     bool formatVariant = false;
     uint32_t failures = 0, total = 0;
+    // Sound: IMA-ADPCM (codec 3) after each packet's video, per channel.
+    int audioCodec = 0, audioChannels = 0, audioRate = 0;
+    bool n3 = false;
+    int adpcmSample[2] = {0, 0}, adpcmIndex[2] = {0, 0};
+    std::vector<int16_t> audio;  // scratch: one packet's samples, interleaved
+    uint64_t audioFrames = 0;
     // The latest picture, RGBA (0xAABBGGRR), 256 x 192, letterboxed.
     std::vector<uint32_t> rgba;
     bool havePicture = false;
@@ -59,6 +66,58 @@ void ResetDecoder(Movie &m, uint32_t frame, uint32_t offset) {
     m.decoded = 0;
     m.quantizer = 12;
     m.formatVariant = false;
+}
+
+// One IMA-ADPCM nibble (ov024's Ov024_MobiClip_DecodeAdpcm: predictor clamped to 16 bits).
+int16_t AdpcmNibble(int &sample, int &index, int code) {
+    static const int8_t kIndex[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
+    static const int16_t kStep[89] = {
+        7,     8,     9,     10,    11,    12,    13,    14,    16,    17,    19,    21,    23,    25,    28,
+        31,    34,    37,    41,    45,    50,    55,    60,    66,    73,    80,    88,    97,    107,   118,
+        130,   143,   157,   173,   190,   209,   230,   253,   279,   307,   337,   371,   408,   449,   494,
+        544,   598,   658,   724,   796,   876,   963,   1060,  1166,  1282,  1411,  1552,  1707,  1878,  2066,
+        2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,  7132,  7845,  8630,
+        9493,  10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
+    int step = kStep[index];
+    index = std::clamp(index + kIndex[code & 7], 0, 88);
+    int diff = step >> 3;
+    if (code & 4) diff += step;
+    if (code & 2) diff += step >> 1;
+    if (code & 1) diff += step >> 2;
+    sample = std::clamp(code & 8 ? sample - diff : sample + diff, -0x8000, 0x7fff);
+    return static_cast<int16_t>(sample);
+}
+
+// A packet's sound (ov024's Ov024_MobiClip_StepAudio, kind 3): after the video's bytes, for each
+// block and each channel 0x80 bytes of ADPCM (256 samples); a keyframe's packet (bit 15 of its
+// first bitstream word) starts each channel's first block with a 4-byte header (index, then the
+// sample at +2), and N3 streams put 4 more bytes after the video then.
+void DecodeAudio(Movie &m, uint32_t payload, uint32_t payloadSize, uint32_t blocks, uint32_t videoBytes) {
+    if (m.audioCodec != 3 || m.audioChannels < 1 || m.audioChannels > 2 || blocks == 0) return;
+    const uint8_t *p = m.data + payload, *end = p + payloadSize;
+    bool header = (Le16(p) & 0x8000) != 0;
+    p += videoBytes + (header && m.n3 ? 4 : 0);
+    const int chs = m.audioChannels;
+    m.audio.assign(static_cast<size_t>(blocks) * 256 * chs, 0);
+    for (uint32_t b = 0; b < blocks; ++b) {
+        for (int ch = 0; ch < chs; ++ch) {
+            if (b == 0 && header) {
+                if (p + 4 > end) return;
+                m.adpcmIndex[ch] = std::min<int>(p[0], 88);
+                m.adpcmSample[ch] = static_cast<int16_t>(Le16(p + 2));
+                p += 4;
+            }
+            if (p + 0x80 > end) return;
+            int16_t *out = m.audio.data() + static_cast<size_t>(b) * 256 * chs + ch;
+            for (int i = 0; i < 0x80; ++i) {
+                out[(2 * i) * chs] = AdpcmNibble(m.adpcmSample[ch], m.adpcmIndex[ch], p[i] & 0xf);
+                out[(2 * i + 1) * chs] = AdpcmNibble(m.adpcmSample[ch], m.adpcmIndex[ch], p[i] >> 4);
+            }
+            p += 0x80;
+        }
+    }
+    SoundQueueMovie(m.audio.data(), static_cast<size_t>(blocks) * 256, chs, m.audioRate);
+    m.audioFrames += static_cast<uint64_t>(blocks) * 256;
 }
 
 bool DecodeNext(Movie &m) {
@@ -98,6 +157,7 @@ bool DecodeNext(Movie &m) {
     m.formatVariant = result.header.formatVariant;
     m.newest = slot;
     m.decoded = std::min<unsigned>(m.decoded + 1, kHistory);
+    DecodeAudio(m, payload, payloadSize, packed & 0x3fff, (result.bitsConsumed + 15) / 16 * 2);
     return true;
 }
 
@@ -143,6 +203,10 @@ bool MovieOpen(const std::string &path) {
     m->frames = Le32(data + 8);
     m->width = Le32(data + 0x0c);
     m->height = Le32(data + 0x10);
+    m->audioCodec = Le16(data + 0x18);
+    m->audioChannels = Le16(data + 0x1a);
+    m->audioRate = static_cast<int>(Le32(data + 0x1c));
+    m->n3 = data[4] == 'N' && data[5] == '3';
     uint32_t audioInfo = Le32(data + 0x24), keyTable = Le32(data + 0x28), keyCount = Le32(data + 0x2c);
     uint32_t start = kHeaderSize;
     if (data[4] == 'N' && data[5] == '3') {  // N3: a parameter list ending with "HE"
@@ -172,8 +236,8 @@ bool MovieOpen(const std::string &path) {
     m->rgba.assign(256 * 192, 0xff000000u);
     ResetDecoder(*m, 0, start);
     gMovie = m;
-    Log("movie: picture %ux%u, %u frames, %zu keyframes (%s)", m->width, m->height, m->frames, m->keyframes.size(),
-        path.c_str());
+    Log("movie: picture %ux%u, %u frames, %zu keyframes, sound codec %d x%d at %d Hz (%s)", m->width, m->height,
+        m->frames, m->keyframes.size(), m->audioCodec, m->audioChannels, m->audioRate, path.c_str());
     return true;
 }
 
@@ -200,7 +264,9 @@ void MovieShowFrame(uint32_t frame) {
 void MovieClose() {
     std::lock_guard<std::mutex> lock(gMu);
     if (gMovie) {
-        Log("movie: picture closed after %u frames decoded (%u failed)", gMovie->total, gMovie->failures);
+        Log("movie: picture closed after %u frames decoded (%u failed), %llu sound samples", gMovie->total,
+            gMovie->failures, static_cast<unsigned long long>(gMovie->audioFrames));
+        SoundStopMovie();
         delete gMovie;
         gMovie = nullptr;
     }

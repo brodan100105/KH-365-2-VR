@@ -724,6 +724,11 @@
    "sDecodeBuffer",
    "sPrepareThread"
   ],
+  "libs/nns/snd/calls/NNSi_SndArcStrm_MakeWaveData.c": [
+   "data_0204ad8c",
+   "sDecodeBuffer",
+   "sPrepareThread"
+  ],
   "libs/nns/snd/calls/NNSi_SndCaptureInit.c": [
    "data_0204acb0"
   ],

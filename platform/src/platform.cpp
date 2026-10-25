@@ -10,6 +10,7 @@
 #include "hle.h"
 #include "hle_gx.h"
 #include "movie.h"
+#include "sound.h"
 #include "platform_internal.h"
 #include "render2d.h"
 
@@ -83,6 +84,10 @@ void PlatformInitForTests() {
 bool PlatformLoadSnapshotForTests(const std::string &path) { return hle::SnapshotRead(path); }
 bool PlatformSaveSnapshotForTests(const std::string &path) { return hle::SnapshotWrite(path); }
 
+uint32_t PlatformTestRead(uint32_t addr, uint32_t size) {
+    return static_cast<uint32_t>(hle::BusRead(addr, size));
+}
+
 void PlatformTestWrite(uint32_t addr, uint32_t value, uint32_t size) { hle::BusWrite(addr, value, size); }
 
 bool Platform::Start(const PlatformConfig &config, std::string *error) {
@@ -150,11 +155,14 @@ bool Platform::VBlank(int timeoutMs) {
     if (gFrames == gSnapAt1 || gFrames == gSnapAt2) SnapshotTake();
     IoVBlank(kFrameCycles);
     GxVBlank();
+    SoundFrame();
     ++gFrames;
     // The idle thread leaves halt, the game runs its frame and halts again.
     uint64_t halts = ThreadsWakeIdle();
     return ThreadsWaitHaltAfter(halts, timeoutMs);
 }
+
+size_t Platform::ReadAudio(int16_t *stereo, size_t frames) { return hle::SoundRead(stereo, frames); }
 
 void Platform::CaptureScreens(PlatformScreens *out) {
     hle::Render2D(out);

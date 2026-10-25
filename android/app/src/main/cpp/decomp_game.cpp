@@ -2,6 +2,7 @@
 
 #include <dirent.h>
 
+#include <aaudio/AAudio.h>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -34,7 +35,47 @@ bool EndsWithNds(const char *name) {
 DecompGame::~DecompGame() {
     stop_ = true;
     if (driver_.joinable()) driver_.join();
+    CloseAudio();
     Platform::Get().Stop();
+}
+
+namespace {
+// AAudio's data callback: whatever the platform has mixed (silence while it has nothing).
+aaudio_data_callback_result_t AudioCallback(AAudioStream *, void *, void *data, int32_t frames) {
+    Platform::Get().ReadAudio(static_cast<int16_t *>(data), static_cast<size_t>(frames));
+    return AAUDIO_CALLBACK_RESULT_CONTINUE;
+}
+}  // namespace
+
+void DecompGame::OpenAudio() {
+    AAudioStreamBuilder *b = nullptr;
+    if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return;
+    AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
+    AAudioStreamBuilder_setChannelCount(b, 2);
+    AAudioStreamBuilder_setSampleRate(b, Platform::kAudioRate);
+    AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    AAudioStreamBuilder_setDataCallback(b, AudioCallback, nullptr);
+    AAudioStream *stream = nullptr;
+    aaudio_result_t r = AAudioStreamBuilder_openStream(b, &stream);
+    AAudioStreamBuilder_delete(b);
+    if (r != AAUDIO_OK || !stream) {
+        LOGI("audio: cannot open an output stream (%s)", AAudio_convertResultToText(r));
+        return;
+    }
+    if (AAudioStream_requestStart(stream) != AAUDIO_OK) {
+        AAudioStream_close(stream);
+        return;
+    }
+    audio_ = reinterpret_cast<AAudioStreamStruct *>(stream);
+    LOGI("audio: playing at %d Hz", AAudioStream_getSampleRate(stream));
+}
+
+void DecompGame::CloseAudio() {
+    if (!audio_) return;
+    AAudioStream *stream = reinterpret_cast<AAudioStream *>(audio_);
+    AAudioStream_requestStop(stream);
+    AAudioStream_close(stream);
+    audio_ = nullptr;
 }
 
 bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::string &dataDir,
@@ -83,6 +124,7 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     screens_.topHud.assign(DsScreens::kWidth * DsScreens::kHeight, 0);
     screens_.bottom.assign(DsScreens::kWidth * DsScreens::kHeight, 0xff000000u);
     latest_ = std::make_unique<PlatformScreens>();
+    OpenAudio();
     driver_ = std::thread([this] { DriverLoop(); });
     return true;
 }

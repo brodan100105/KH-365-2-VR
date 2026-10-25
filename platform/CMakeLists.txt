@@ -39,6 +39,7 @@ add_library(khvr_platform STATIC
     src/movie.cpp
     src/platform.cpp
     src/render2d.cpp
+    src/sound.cpp
 )
 target_include_directories(khvr_platform PUBLIC include PRIVATE src)
 # Movie pictures: the decomp's portable MobiClip decoder and its tables (movie.cpp).

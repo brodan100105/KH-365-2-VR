@@ -6,6 +6,7 @@
 // --fake-rom builds a minimal image with the right game code, an empty file system and an
 // overlay table, so the boot path (OS, threads, interrupts, ARM7 handshakes, file system set-up,
 // overlays) can be exercised without the game's data. The real game needs your own ROM.
+#include <cmath>
 #include <cstdio>
 #include <unistd.h>
 #include <cstdlib>
@@ -14,6 +15,8 @@
 #include <vector>
 
 #include "khvr/platform.h"
+#include "../src/hle.h"
+#include "../src/sound.h"
 
 namespace khvr::hle {
 void Arm7Reset();
@@ -171,11 +174,68 @@ int PxiTest() {
     return ok && okAuto && okStop ? 0 : 1;
 }
 
+// The sound driver stand-in without a ROM: a 16-bit PCM square wave on channel 0 and a periodic
+// alarm, set up through SNDCommand lists as the SDK sends them, then a second of frames.
+int SoundTest() {
+    using namespace khvr::hle;
+    khvr::PlatformInitForTests();
+    Arm7Reset();
+    const uint32_t wave = 0x02100000, cmds = 0x02101000, shared = 0x02102000;
+    // 400 Hz at 32768 Hz: 82 samples per period (41 high, 41 low), looped.
+    const int period = 82, samples = period * 8;
+    for (int i = 0; i < samples; ++i)
+        khvr::PlatformTestWrite(wave + 2 * i, (i % period) < period / 2 ? 0x4000 : 0xc000, 2);
+    auto cmd = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+        uint32_t at = cmds + 0x18 * n;
+        khvr::PlatformTestWrite(at, next, 4);
+        khvr::PlatformTestWrite(at + 4, id, 4);
+        khvr::PlatformTestWrite(at + 8, a0, 4);
+        khvr::PlatformTestWrite(at + 12, a1, 4);
+        khvr::PlatformTestWrite(at + 16, a2, 4);
+        khvr::PlatformTestWrite(at + 20, a3, 4);
+        return at;
+    };
+    const uint32_t timer = 0x10000 - 512;  // 16756991 / 512 = 32728 Hz
+    cmd(0, cmds + 0x18, 0x1d, shared, 0, 0, 0);                                    // SHARED_WORK
+    cmd(1, cmds + 0x30, 0x0e, 0 | timer << 16, wave, (samples / 2) | 127u << 24,   // SETUP_CHANNEL_PCM
+        0 | 64u << 16 | 1u << 24 | 1u << 26);                                      //  PCM16, loop, pan 64
+    cmd(2, cmds + 0x48, 0x12, 3, 0, 52366, 7);                                     // SETUP_ALARM 3, 0.1 s
+    cmd(3, 0, 0x0c, 1, 0, 1u << 3, 0);                                             // START_TIMER ch 0, alarm 3
+    Arm7OnSend(7 | (cmds << 6));
+    std::vector<int16_t> out;
+    int alarms = 0;
+    for (int f = 0; f < 60; ++f) {
+        SoundFrame();
+        while (Arm7HasReply()) {
+            uint32_t w = Arm7PopReply();
+            if ((w & 0x1f) == 7 && (w >> 6) == (3u | 7u << 8)) ++alarms;
+        }
+        int16_t buf[2 * 1024];
+        size_t n = SoundRead(buf, 802);
+        out.insert(out.end(), buf, buf + 2 * n);
+    }
+    // Zero crossings of the left channel over the second: about 800 for 400 Hz.
+    int crossings = 0;
+    double sum = 0;
+    for (size_t i = 2; i < out.size(); i += 2) {
+        if ((out[i] >= 0) != (out[i - 2] >= 0)) ++crossings;
+        sum += static_cast<double>(out[i]) * out[i];
+    }
+    double rms = out.empty() ? 0 : std::sqrt(sum / (out.size() / 2));
+    bool status = khvr::PlatformTestRead(shared + 8, 2) & 1;
+    bool ok = out.size() / 2 > 40000 && crossings > 760 && crossings < 840 && rms > 1000 && alarms >= 9 &&
+              alarms <= 11 && status && khvr::PlatformTestRead(shared, 4) == 1;
+    std::printf("sound test: %s (%zu frames, %d zero crossings, rms %.0f, %d alarms, channel status %d)\n",
+                ok ? "ok" : "FAILED", out.size() / 2, crossings, rms, alarms, status);
+    return ok ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
+    if (argc >= 2 && std::string(argv[1]) == "--sound-test") return SoundTest();
     if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);
     khvr::PlatformConfig cfg;
     int frames = 600;

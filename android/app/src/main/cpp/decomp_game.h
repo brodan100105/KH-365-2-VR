@@ -44,6 +44,8 @@ public:
 
 private:
     void DriverLoop();
+    void OpenAudio();
+    void CloseAudio();
 
     GameFrame frame_;
     WorldDrawList world_;
@@ -58,6 +60,7 @@ private:
     uint32_t latestRevision_ = 0, shownRevision_ = 0;
     double lastSample_ = -1.0;
     std::atomic<bool> hasPicture_{false};
+    struct AAudioStreamStruct *audio_ = nullptr;  // the game's sound out (AAudio), while running
 };
 
 }  // namespace khvr

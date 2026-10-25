@@ -61,6 +61,15 @@ log lists frames decoded per second against the movie's rate.
 
 ## Part B: sound
 
+**Status (started):** `platform/src/sound.cpp` is the ARM7 driver's stand-in for the
+channel-level commands: the 16 channels (PCM8, PCM16, IMA-ADPCM, square and noise; volume,
+divider, pan, timer pitch, loop modes), START/STOP_TIMER, alarms (sent back as the real driver
+sends them), the shared work's command tag and channel status. It mixes one frame of 48 kHz
+stereo per emulated frame, so streamed music stays in step with the game's refill alarms, and
+the headset plays it through AAudio. Movie sound is decoded with the picture (`movie.cpp`).
+`NNSi_SndArcStrm_MakeWaveData`, which fills the stream ring, now compiles. Sequences (SSEQ,
+step 4) are next: until then the game's sequence commands are acknowledged and logged once.
+
 1. **Audio output on the headset.** AAudio (Android's low-latency audio) through a small mixer
    thread: 48 kHz stereo, resampled from the DS's 32,768 Hz. Check: a test tone setting.
 2. **The ARM7 sound driver's commands** (`hle_arm7.cpp` OnSound): decode every command list the

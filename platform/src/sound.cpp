@@ -1,0 +1,432 @@
+// The ARM7 sound driver stand-in (see sound.h). What the ARM9's NitroSDK sound library sends is a
+// list of commands (snd_command.h ids 0x00..0x21) that the real driver runs on the ARM7 against
+// the sound hardware; here the channel-level ones drive a model of the 16 channels (SOUNDxCNT and
+// friends), which is what streamed music (NitroSystem's strm player refilling a ring buffer on
+// alarms) and plain sound effects need. Sequence commands are acknowledged and logged once.
+#include "sound.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "guest.h"
+#include "hle.h"
+
+namespace khvr::hle {
+
+void Arm7PushReply(uint32_t tag, uint32_t data);  // hle_arm7.cpp
+
+namespace {
+
+constexpr uint32_t kTagSound = 7;
+constexpr double kArm7Clock = 33513982.0;              // bus clock
+constexpr double kChannelClock = kArm7Clock / 2.0;     // channel timers count at half of it
+constexpr double kOsTickRate = kArm7Clock / 64.0;      // OS_GetTick units (alarm times)
+constexpr double kFrameRate = 59.8261;
+
+enum Format { kPcm8 = 0, kPcm16 = 1, kAdpcm = 2, kPsg = 3 };
+enum Repeat { kManual = 0, kLoop = 1, kOneShot = 2 };
+
+const int kAdpcmIndex[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
+const int kAdpcmStep[89] = {
+    7,     8,     9,     10,    11,    12,    13,    14,    16,    17,    19,    21,    23,    25,    28,
+    31,    34,    37,    41,    45,    50,    55,    60,    66,    73,    80,    88,    97,    107,   118,
+    130,   143,   157,   173,   190,   209,   230,   253,   279,   307,   337,   371,   408,   449,   494,
+    544,   598,   658,   724,   796,   876,   963,   1060,  1166,  1282,  1411,  1552,  1707,  1878,  2066,
+    2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,  7132,  7845,  8630,
+    9493,  10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
+
+struct Channel {
+    bool active = false;
+    int format = kPcm8, repeat = kOneShot, duty = 0;
+    uint32_t source = 0;       // SOUNDxSAD
+    uint32_t loopStart = 0;    // SOUNDxPNT, in words
+    uint32_t loopLength = 0;   // SOUNDxLEN, in words
+    uint16_t timer = 0;        // SOUNDxTMR
+    int volume = 0, shift = 0, pan = 64;
+    bool locked = false;
+    // Playback.
+    double pos = 0.0;          // in samples from the start of the data (past an ADPCM header)
+    int32_t sample = 0;        // the current sample
+    uint32_t decodedUpTo = 0;  // ADPCM: samples decoded so far (the next one is this index)
+    int adpcmValue = 0, adpcmIndex = 0;
+    bool loopSaved = false;
+    int loopValue = 0, loopIndex = 0;
+    uint16_t lfsr = 0x7fff;    // noise
+};
+
+struct Alarm {
+    bool set = false, running = false;
+    uint32_t id = 0;
+    double at = 0.0, period = 0.0;  // in OS ticks of emulated time
+};
+
+std::mutex gMu;
+std::array<Channel, 16> gCh;
+std::array<Alarm, 8> gAlarms;
+double gTicks = 0.0;          // emulated OS ticks since reset
+double gSamplesDue = 0.0;     // output samples owed (fractional)
+int gMasterVolume = 127;
+uint32_t gShared = 0;          // SNDSharedWork
+
+// The output ring: interleaved stereo.
+std::mutex gRingMu;
+std::vector<int16_t> gRing(2 * kSoundOutputRate / 2);  // half a second
+size_t gRingRead = 0, gRingWrite = 0, gRingFill = 0;
+
+// Movie sound, resampled to the output rate as it is mixed.
+std::vector<int16_t> gMovie;   // interleaved stereo at gMovieRate
+double gMoviePos = 0.0;
+int gMovieRate = 32768;
+
+uint32_t SamplesPerWord(int format) { return format == kPcm8 ? 4 : format == kPcm16 ? 2 : 8; }
+
+// ADPCM: one step, the DS's way (clamped to +-0x7fff).
+void AdpcmStep(Channel &c, int nibble) {
+    int step = kAdpcmStep[c.adpcmIndex];
+    int diff = step >> 3;
+    if (nibble & 1) diff += step >> 2;
+    if (nibble & 2) diff += step >> 1;
+    if (nibble & 4) diff += step;
+    c.adpcmValue = (nibble & 8) ? std::max(c.adpcmValue - diff, -0x7fff) : std::min(c.adpcmValue + diff, 0x7fff);
+    c.adpcmIndex = std::clamp(c.adpcmIndex + kAdpcmIndex[nibble & 7], 0, 88);
+}
+
+void StartChannel(Channel &c) {
+    c.active = true;
+    c.pos = 0.0;
+    c.sample = 0;
+    c.decodedUpTo = 0;
+    c.loopSaved = false;
+    c.lfsr = 0x7fff;
+    if (c.format == kAdpcm) {
+        uint32_t header = Read32(c.source);
+        c.adpcmValue = static_cast<int16_t>(header & 0xffff);
+        c.adpcmIndex = std::min<int>((header >> 16) & 0x7f, 88);
+    }
+}
+
+// The sample at `index` (in samples from the data's start), stepping ADPCM forward as needed.
+int32_t SampleAt(Channel &c, uint32_t index) {
+    switch (c.format) {
+    case kPcm8: return static_cast<int8_t>(Read8(c.source + index)) << 8;
+    case kPcm16: return static_cast<int16_t>(Read16(c.source + 2 * index));
+    case kAdpcm: {
+        const uint32_t loopSample = c.loopStart ? (c.loopStart - 1) * 8 : 0;  // PNT counts the header
+        while (c.decodedUpTo <= index) {
+            if (!c.loopSaved && c.decodedUpTo == loopSample) {
+                c.loopSaved = true;
+                c.loopValue = c.adpcmValue;
+                c.loopIndex = c.adpcmIndex;
+            }
+            uint8_t byte = Read8(c.source + 4 + c.decodedUpTo / 2);
+            AdpcmStep(c, (c.decodedUpTo & 1) ? byte >> 4 : byte & 0xf);
+            ++c.decodedUpTo;
+        }
+        return c.adpcmValue;
+    }
+    default: return 0;
+    }
+}
+
+// One output sample of a channel at the output rate, advancing it.
+int32_t NextSample(Channel &c, int index) {
+    const double rate = c.timer ? kChannelClock / (0x10000 - c.timer) : 0.0;
+    const double step = rate / kSoundOutputRate;
+    if (c.format == kPsg) {
+        int32_t s;
+        if (index >= 14) {  // noise
+            double before = c.pos;
+            c.pos += step;
+            for (int n = static_cast<int>(c.pos) - static_cast<int>(before); n > 0; --n) {
+                bool carry = c.lfsr & 1;
+                c.lfsr >>= 1;
+                if (carry) c.lfsr ^= 0x6000;
+            }
+            s = (c.lfsr & 1) ? -0x7fff : 0x7fff;
+        } else if (index >= 8) {  // square: duty is (d + 1) / 8 high
+            int phase = static_cast<int>(c.pos) & 7;
+            s = phase <= c.duty ? 0x7fff : -0x7fff;
+            c.pos += step;
+        } else {
+            s = 0;
+        }
+        return s;
+    }
+    const uint32_t perWord = SamplesPerWord(c.format);
+    const uint32_t header = c.format == kAdpcm ? 1 : 0;
+    const uint32_t total = (c.loopStart + c.loopLength - header) * perWord;   // samples
+    const uint32_t loopAt = (c.loopStart - (c.loopStart ? header : 0)) * perWord;
+    uint32_t i = static_cast<uint32_t>(c.pos);
+    if (i >= total) {
+        if (c.repeat == kLoop && total > loopAt) {
+            c.pos = loopAt + std::fmod(c.pos - loopAt, static_cast<double>(total - loopAt));
+            i = static_cast<uint32_t>(c.pos);
+            if (c.format == kAdpcm) {
+                // The hardware restores the state it saved at the loop point.
+                if (c.loopSaved) {
+                    c.adpcmValue = c.loopValue;
+                    c.adpcmIndex = c.loopIndex;
+                }
+                c.decodedUpTo = loopAt;
+            }
+        } else {
+            c.active = false;
+            return 0;
+        }
+    }
+    int32_t s = SampleAt(c, i);
+    c.pos += step;
+    return s;
+}
+
+void MixFrame(int frames) {
+    std::vector<int16_t> out(static_cast<size_t>(frames) * 2);
+    for (int f = 0; f < frames; ++f) {
+        int64_t left = 0, right = 0;
+        for (int i = 0; i < 16; ++i) {
+            Channel &c = gCh[i];
+            if (!c.active) continue;
+            int64_t s = NextSample(c, i);
+            static const int kShift[4] = {0, 1, 2, 4};
+            s = (s * c.volume / 127) >> kShift[c.shift & 3];
+            left += s * (127 - c.pan) / 127;
+            right += s * c.pan / 127;
+        }
+        if (!gMovie.empty()) {
+            size_t idx = static_cast<size_t>(gMoviePos) * 2;
+            if (idx + 1 < gMovie.size()) {
+                left += gMovie[idx] * 2;   // the movie at the level of two full channels
+                right += gMovie[idx + 1] * 2;
+            }
+            gMoviePos += static_cast<double>(gMovieRate) / kSoundOutputRate;
+        }
+        // 16 channels at full volume can reach 16x; the DS's mixer scales them down the same way.
+        left = left * gMasterVolume / 127 / 4;
+        right = right * gMasterVolume / 127 / 4;
+        out[2 * f] = static_cast<int16_t>(std::clamp<int64_t>(left, -32768, 32767));
+        out[2 * f + 1] = static_cast<int16_t>(std::clamp<int64_t>(right, -32768, 32767));
+    }
+    // Drop movie samples already played.
+    size_t played = static_cast<size_t>(gMoviePos);
+    if (played > 0 && !gMovie.empty()) {
+        size_t n = std::min(played * 2, gMovie.size());
+        gMovie.erase(gMovie.begin(), gMovie.begin() + static_cast<long>(n));
+        gMoviePos -= static_cast<double>(n / 2);
+    }
+    std::lock_guard<std::mutex> lock(gRingMu);
+    const size_t cap = gRing.size() / 2;
+    for (int f = 0; f < frames; ++f) {
+        if (gRingFill == cap) {  // the listener fell behind: drop the oldest
+            gRingRead = (gRingRead + 1) % cap;
+            --gRingFill;
+        }
+        gRing[2 * gRingWrite] = out[2 * f];
+        gRing[2 * gRingWrite + 1] = out[2 * f + 1];
+        gRingWrite = (gRingWrite + 1) % cap;
+        ++gRingFill;
+    }
+}
+
+void UpdateSharedWork() {
+    if (!gShared) return;
+    uint16_t status = 0;
+    for (int i = 0; i < 16; ++i)
+        if (gCh[i].active) status |= static_cast<uint16_t>(1u << i);
+    Write16(gShared + 8, status);
+}
+
+void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+    switch (id) {
+    case 0x0c:  // START_TIMER: channels, captures, alarms
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) StartChannel(gCh[i]);
+        for (int i = 0; i < 8; ++i)
+            if ((a2 & (1u << i)) && gAlarms[i].set) {
+                gAlarms[i].running = true;
+            }
+        break;
+    case 0x0d:  // STOP_TIMER
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) gCh[i].active = false;
+        for (int i = 0; i < 8; ++i)
+            if (a2 & (1u << i)) gAlarms[i].running = false;
+        break;
+    case 0x0e: {  // SETUP_CHANNEL_PCM
+        Channel &c = gCh[a0 & 0xf];
+        c.active = false;
+        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.source = a1;
+        c.loopLength = a2 & 0x3fffff;
+        c.volume = (a2 >> 24) & 0x7f;
+        c.shift = (a2 >> 22) & 3;
+        c.loopStart = a3 & 0xffff;
+        c.pan = (a3 >> 16) & 0x7f;
+        c.format = (a3 >> 24) & 3;
+        c.repeat = (a3 >> 26) & 3;
+        break;
+    }
+    case 0x0f: {  // SETUP_CHANNEL_PSG: chNo | timer << 16, duty, volume | shift << 8, pan
+        Channel &c = gCh[a0 & 0xf];
+        c.active = false;
+        c.format = kPsg;
+        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.duty = a1 & 7;
+        c.volume = a2 & 0x7f;
+        c.shift = (a2 >> 8) & 3;
+        c.pan = a3 & 0x7f;
+        break;
+    }
+    case 0x10: {  // SETUP_CHANNEL_NOISE
+        Channel &c = gCh[a0 & 0xf];
+        c.active = false;
+        c.format = kPsg;
+        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.volume = a1 & 0x7f;
+        c.shift = (a1 >> 8) & 3;
+        c.pan = a2 & 0x7f;
+        break;
+    }
+    case 0x12: {  // SETUP_ALARM: id, first tick, period, generation
+        Alarm &al = gAlarms[a0 & 7];
+        al.set = true;
+        al.running = false;
+        al.id = a3 & 0xff;
+        al.at = gTicks + a1;
+        al.period = a2;
+        break;
+    }
+    case 0x13:  // CHANNEL_TIMER: mask, timer
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) gCh[i].timer = static_cast<uint16_t>(a1);
+        break;
+    case 0x14:  // CHANNEL_VOLUME: mask, volume, shift
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) {
+                gCh[i].volume = a1 & 0x7f;
+                gCh[i].shift = a2 & 3;
+            }
+        break;
+    case 0x15:  // CHANNEL_PAN: mask, pan
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) gCh[i].pan = a1 & 0x7f;
+        break;
+    case 0x17:  // MASTER_VOLUME
+        gMasterVolume = a0 & 0x7f;
+        break;
+    case 0x1a:  // LOCK_CHANNEL
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) gCh[i].locked = true;
+        break;
+    case 0x1b:  // UNLOCK_CHANNEL
+        for (int i = 0; i < 16; ++i)
+            if (a0 & (1u << i)) gCh[i].locked = false;
+        break;
+    case 0x1c:  // STOP_UNLOCKED_CHANNEL
+        for (int i = 0; i < 16; ++i)
+            if ((a0 & (1u << i)) && !gCh[i].locked) gCh[i].active = false;
+        break;
+    case 0x1d:  // SHARED_WORK
+        gShared = a0;
+        Log("sound: shared work at 0x%08x", gShared);
+        break;
+    case 0x16: case 0x18: case 0x19: case 0x1e: case 0x1f: case 0x20:
+        break;  // surround, master pan, output selector, cache invalidation: nothing to do
+    default:
+        LogOnce(("snd-cmd-" + std::to_string(id)).c_str(), "sound: command 0x%02x not played yet (sequences come later)", id);
+        break;
+    }
+}
+
+}  // namespace
+
+void SoundReset() {
+    std::lock_guard<std::mutex> lock(gMu);
+    gCh = {};
+    gAlarms = {};
+    gTicks = 0.0;
+    gSamplesDue = 0.0;
+    gMasterVolume = 127;
+    gShared = 0;
+    gMovie.clear();
+    gMoviePos = 0.0;
+    std::lock_guard<std::mutex> ring(gRingMu);
+    gRingRead = gRingWrite = gRingFill = 0;
+}
+
+void SoundRunCommands(uint32_t list) {
+    std::lock_guard<std::mutex> lock(gMu);
+    for (int guard = 0; list && guard < 4096; ++guard) {
+        RunCommand(Read32(list + 4), Read32(list + 8), Read32(list + 12), Read32(list + 16), Read32(list + 20));
+        list = Read32(list);
+    }
+    if (gShared) Write32(gShared, Read32(gShared) + 1);  // finishCommandTag
+    UpdateSharedWork();
+}
+
+void SoundFrame() {
+    std::lock_guard<std::mutex> lock(gMu);
+    const double frameTicks = kOsTickRate / kFrameRate;
+    const double end = gTicks + frameTicks;
+    for (Alarm &al : gAlarms) {
+        if (!al.running) continue;
+        for (int n = 0; al.at <= end && n < 64; ++n) {
+            Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
+            if (al.period <= 0) {
+                al.running = false;
+                break;
+            }
+            al.at += al.period;
+        }
+    }
+    gTicks = end;
+    gSamplesDue += kSoundOutputRate / kFrameRate;
+    int frames = static_cast<int>(gSamplesDue);
+    gSamplesDue -= frames;
+    MixFrame(frames);
+    UpdateSharedWork();
+}
+
+size_t SoundRead(int16_t *stereo, size_t frames) {
+    std::lock_guard<std::mutex> lock(gRingMu);
+    const size_t cap = gRing.size() / 2;
+    // Keep the latency low: if more than about six frames are waiting, skip ahead.
+    const size_t maxFill = kSoundOutputRate / 10;
+    while (gRingFill > maxFill + frames) {
+        gRingRead = (gRingRead + 1) % cap;
+        --gRingFill;
+    }
+    size_t n = std::min(frames, gRingFill);
+    for (size_t i = 0; i < n; ++i) {
+        stereo[2 * i] = gRing[2 * gRingRead];
+        stereo[2 * i + 1] = gRing[2 * gRingRead + 1];
+        gRingRead = (gRingRead + 1) % cap;
+    }
+    gRingFill -= n;
+    for (size_t i = n; i < frames; ++i) stereo[2 * i] = stereo[2 * i + 1] = 0;
+    return n;
+}
+
+void SoundQueueMovie(const int16_t *samples, size_t frames, int channels, int rate) {
+    std::lock_guard<std::mutex> lock(gMu);
+    gMovieRate = rate > 0 ? rate : 32768;
+    for (size_t i = 0; i < frames; ++i) {
+        int16_t l = samples[i * channels], r = channels > 1 ? samples[i * channels + 1] : l;
+        gMovie.push_back(l);
+        gMovie.push_back(r);
+    }
+    // Never hold more than two seconds (a stalled mixer must not grow this without bound).
+    const size_t limit = static_cast<size_t>(gMovieRate) * 2 * 2;
+    if (gMovie.size() > limit) gMovie.erase(gMovie.begin(), gMovie.end() - static_cast<long>(limit));
+}
+
+void SoundStopMovie() {
+    std::lock_guard<std::mutex> lock(gMu);
+    gMovie.clear();
+    gMoviePos = 0.0;
+}
+
+}  // namespace khvr::hle
