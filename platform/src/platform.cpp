@@ -44,6 +44,8 @@ void SnapshotTake() {
 }
 std::string gCrash;
 std::mutex gCrashMu;
+int gLanguage = 1;
+void BootGuest();
 // ARM9 cycles per frame: 263 lines x 2130 cycles.
 constexpr uint64_t kFrameCycles = 263ull * 2130ull;
 }  // namespace
@@ -65,6 +67,11 @@ void SnapshotOnSceneRequest(uint32_t scene) {
     gSnapAt2 = gFrames + 300;
 }
 
+void PlatformRequestReset() {
+    Log("game: OS_ResetSystem - restarting the game");
+    gState = PlatformState::Resetting;
+}
+
 void PlatformReportTrap(const char *where) {
     PlatformReportStop(std::string(where) + " hit a wasm trap (" + LastTrapName() + ")");
 }
@@ -83,6 +90,7 @@ void PlatformInitForTests() {
 
 bool PlatformLoadSnapshotForTests(const std::string &path) { return hle::SnapshotRead(path); }
 bool PlatformSaveSnapshotForTests(const std::string &path) { return hle::SnapshotWrite(path); }
+void PlatformTestRequestReset() { hle::PlatformRequestReset(); }
 
 uint32_t PlatformTestRead(uint32_t addr, uint32_t size) {
     return static_cast<uint32_t>(hle::BusRead(addr, size));
@@ -115,11 +123,31 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     RomWriteFileList(config.fileListPath);
 
     wasm_rt_init();
+    gLanguage = config.language;
+    BootGuest();
+    return true;
+}
+
+void Platform::Restart() {
+    using namespace hle;
+    if (gState != PlatformState::Resetting) return;
+    SaveFlush();
+    ThreadsReset();
+    MovieClose();
+    wasm2c_khdays_free(Guest());
+    BootGuest();
+}
+
+namespace hle {
+namespace {
+// Everything from a fresh guest instance to main() running: at the first start and after the
+// game resets itself.
+void BootGuest() {
     wasm2c_khdays_instantiate(Guest(), nullptr);
     Log("platform: guest instantiated, %llu MB of memory", static_cast<unsigned long long>(GuestMemSize() >> 20));
     IoReset();
     Arm7Reset();
-    SetupSharedArea(config.language);
+    SetupSharedArea(gLanguage);
     OverlaysInit();
     // KHVR_WATCH=<symbol or 0xaddress>: log the first writes to 4 bytes there (desktop runs).
     if (const char *sym = std::getenv("KHVR_WATCH")) {
@@ -132,8 +160,9 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     // wasm2c's instantiate set the (thread-local) stack pointer on this thread: hand its initial
     // value to the main guest thread.
     ThreadsStartMain(khvr_guest_sp);
-    return true;
 }
+}  // namespace
+}  // namespace hle
 
 void Platform::Stop() {
     hle::SaveFlush();

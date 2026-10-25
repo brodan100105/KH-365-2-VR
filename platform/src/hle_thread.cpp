@@ -49,6 +49,7 @@ struct GuestThread {
     bool started = false;
     pthread_t host{};
     bool hostKnown = false;
+    uint32_t gen = 0;  // the run it belongs to; a restart starts a new one (ThreadsReset)
 };
 
 // Guest code nests deeply and wasm2c's frames are large: give every guest thread a big host stack.
@@ -76,6 +77,10 @@ uint64_t gHalts = 0;       // how many times it halted
 bool gWake = false;        // an event (VBlank) arrived for the halted guest
 bool gStopping = false;
 int gIrqNesting = 0;
+uint32_t gGen = 0;         // the current run
+
+// A thread of an earlier run (before a restart): it must never touch the guest again.
+bool Stale() { return tSelf && tSelf->gen != gGen; }
 
 // OSThreadInfo (decomp: data_0204430c +0x24): isNeedRescheduling, irqDepth.
 uint32_t gThreadInfo = 0;
@@ -100,8 +105,8 @@ void TraceSwitch(const char *what, uint32_t context) {
 }
 
 void WaitForBaton(std::unique_lock<std::mutex> &lock) {
-    tSelf->cv.wait(lock, [] { return gRunning == tSelf || gStopping; });
-    if (gStopping && gRunning != tSelf) {
+    tSelf->cv.wait(lock, [] { return gRunning == tSelf || gStopping || Stale(); });
+    if ((gStopping && gRunning != tSelf) || Stale()) {
         // Shutting down: a parked thread must not run guest code alongside the others (they
         // would all fall through their switches at once). Stay parked until the process ends.
         lock.unlock();
@@ -197,7 +202,7 @@ void RunThread(GuestThread *t) {
     }
     // An exited thread never gets the baton again; park until shutdown.
     std::unique_lock<std::mutex> lock(gMu);
-    tSelf->cv.wait(lock, [] { return gStopping; });
+    tSelf->cv.wait(lock, [] { return gStopping || Stale(); });
 }
 
 }  // namespace
@@ -244,6 +249,7 @@ void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
     } else {
         // A thread OS_CreateThread set up with OS_InitContext: start it on a new host thread.
         next = new GuestThread;
+        next->gen = gGen;
         next->context = context;
         next->entry = Read32(context + 0x40) - 4;  // pc_plus4
         next->arg = Read32(context + 0x04);        // r0
@@ -271,7 +277,11 @@ void w2c_env_khvr_host_halt(struct w2c_env *) {
         gIdle = true;
         ++gHalts;
         gIdleCv.notify_all();
-        gIdleCv.wait(lock, [] { return gWake || gStopping; });
+        gIdleCv.wait(lock, [] { return gWake || gStopping || Stale(); });
+        if (Stale()) {
+            lock.unlock();
+            for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
+        }
         gWake = false;
         gIdle = false;
         if (gStopping) {
@@ -290,7 +300,10 @@ void w2c_env_khvr_host_spin(struct w2c_env *) {
     if ((RegIf() & RegIe()) && !GuestIrqsDisabled()) DispatchIrqs();
 }
 
-void w2c_env_khvr_host_reset(struct w2c_env *) { PlatformReportTrap("OS_ResetSystem"); }
+void w2c_env_khvr_host_reset(struct w2c_env *) {
+    PlatformRequestReset();
+    ThreadsParkForever();
+}
 
 void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
 
@@ -307,6 +320,7 @@ void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
 
 void ThreadsStartMain(uint32_t initialSp) {
     auto *t = new GuestThread;
+    t->gen = gGen;
     t->started = true;
     t->sp = initialSp;
     gAll.push_back(t);
@@ -331,7 +345,7 @@ void ThreadsStartMain(uint32_t initialSp) {
                 PlatformReportTrap("main thread");
             }
             std::unique_lock<std::mutex> lock(gMu);
-            tSelf->cv.wait(lock, [] { return gStopping; });
+            tSelf->cv.wait(lock, [] { return gStopping || Stale(); });
             return nullptr;
         },
         t);
@@ -443,6 +457,25 @@ bool ThreadsFinishExit() {
     Write32(g + 0x28, next);
     w2c_env_khvr_host_load_context(nullptr, next);  // parks this host thread for good
     return false;
+}
+
+void ThreadsReset() {
+    std::lock_guard<std::mutex> lock(gMu);
+    ++gGen;
+    // The old run's threads wake, see they are stale and park. Their GuestThreads stay allocated
+    // (a parked host thread still points at its own), so no new thread can share an address.
+    for (GuestThread *t : gAll) t->cv.notify_all();
+    gIdleCv.notify_all();
+    gAll.clear();
+    gByContext.clear();
+    gRunning = nullptr;
+    gIdle = false;
+    gWake = false;
+    gIrqNesting = 0;
+}
+
+void ThreadsParkForever() {
+    for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
 }
 
 void ThreadsStop() {

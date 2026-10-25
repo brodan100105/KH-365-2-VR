@@ -59,6 +59,10 @@ jobs:
           grep -q "overlay: start ov000" boot.log
           grep -q "printf self-test ok" boot.log
           ! grep -q "^trap:" boot.log
+          # "Return to title" resets the DS: the guest must boot a second time from scratch.
+          ./khdays_run --fake-rom --frames 120 --restart --log restart.log > /dev/null
+          test "$(grep -c 'overlay: start ov000' restart.log)" -eq 2
+          ! grep -q "^trap:" restart.log
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

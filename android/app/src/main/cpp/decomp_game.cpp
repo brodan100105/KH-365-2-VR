@@ -137,7 +137,9 @@ void DecompGame::DriverLoop() {
     Platform &p = Platform::Get();
     auto nextBeat = clock::now() + std::chrono::seconds(2);
     const auto started = clock::now();
-    while (!stop_ && p.state() == PlatformState::Running) {
+    while (!stop_ && (p.state() == PlatformState::Running || p.state() == PlatformState::Resetting)) {
+        // "Return to title" resets the DS: boot the game again (logos, then the title screen).
+        if (p.state() == PlatformState::Resetting) p.Restart();
         if (clock::now() >= nextBeat) {
             p.Heartbeat();
             nextBeat = clock::now() + std::chrono::seconds(5);

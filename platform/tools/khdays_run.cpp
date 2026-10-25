@@ -295,6 +295,7 @@ int main(int argc, char **argv) {
     khvr::PlatformConfig cfg;
     int frames = 600;
     std::string screens;
+    bool restart = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -312,6 +313,7 @@ int main(int argc, char **argv) {
         else if (a == "--file-list") cfg.fileListPath = next();
         else if (a == "--language") cfg.language = std::atoi(next().c_str());
         else if (a == "--screens") screens = next();
+        else if (a == "--restart") restart = true;  // run, reset as "Return to title" does, run again
         else {
             std::fprintf(stderr, "usage: %s --rom game.nds | --fake-rom [--frames N] [--save f] [--log f]\n", argv[0]);
             return 2;
@@ -330,15 +332,23 @@ int main(int argc, char **argv) {
         return 1;
     }
     int idleFrames = 0, busy = 0;
-    for (int f = 0; f < frames && p.state() == khvr::PlatformState::Running; ++f) {
-        if (f % 60 == 0) p.Heartbeat();
-        if (f == 0 && std::getenv("KHVR_TEST_SAMPLE"))
-            for (int i = 0; i < 20; ++i) {  // the watchdog's sample of a busy guest
-                usleep(500);
-                p.Heartbeat();
-            }
-        if (p.VBlank(200)) ++idleFrames;
-        else ++busy;
+    auto run = [&] {
+        for (int f = 0; f < frames && p.state() == khvr::PlatformState::Running; ++f) {
+            if (f % 60 == 0) p.Heartbeat();
+            if (f == 0 && std::getenv("KHVR_TEST_SAMPLE"))
+                for (int i = 0; i < 20; ++i) {  // the watchdog's sample of a busy guest
+                    usleep(500);
+                    p.Heartbeat();
+                }
+            if (p.VBlank(200)) ++idleFrames;
+            else ++busy;
+        }
+    };
+    run();
+    if (restart) {
+        khvr::PlatformTestRequestReset();
+        p.Restart();
+        run();
     }
     std::printf("state: %s after %u frames (%d completed, %d busy)\n",
                 p.state() == khvr::PlatformState::Running ? "running"

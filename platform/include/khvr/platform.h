@@ -17,7 +17,8 @@ struct PlatformConfig {
     int language = 1;      // firmware language: 1 English .. 5 Spanish
 };
 
-enum class PlatformState { NotStarted, Running, Crashed, Stopped };
+// Resetting: the game called OS_ResetSystem ("Return to title"); Restart() boots it again.
+enum class PlatformState { NotStarted, Running, Crashed, Stopped, Resetting };
 
 // What the DS's two screens show, rendered from the 2D engines (RGBA8, 0xAABBGGRR).
 struct PlatformScreens {
@@ -36,6 +37,8 @@ uint32_t PlatformTestRead(uint32_t addr, uint32_t size);
 // After PlatformInitForTests: load a screen snapshot (khvr_snap_N.bin) for CaptureScreens.
 bool PlatformLoadSnapshotForTests(const std::string &path);
 bool PlatformSaveSnapshotForTests(const std::string &path);
+// As if the game had called OS_ResetSystem: state() becomes Resetting, for Platform::Restart.
+void PlatformTestRequestReset();
 
 class Platform {
 public:
@@ -43,6 +46,10 @@ public:
 
     bool Start(const PlatformConfig &config, std::string *error);
     void Stop();
+    // After the game asked for a reset (state() == Resetting): the DS reboots the cartridge, so
+    // the guest is instantiated afresh and boots from main() again, keeping the ROM and the save.
+    // Call from the thread that calls VBlank().
+    void Restart();
 
     // Delivers one VBlank (the DS runs at ~59.83 Hz) and waits up to `timeoutMs` for the game to
     // finish the frame and go idle. Returns true if it did (screens and state are then stable).
