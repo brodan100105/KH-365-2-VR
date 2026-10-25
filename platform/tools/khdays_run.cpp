@@ -6,6 +6,7 @@
 // --fake-rom builds a minimal image with the right game code, an empty file system and an
 // overlay table, so the boot path (OS, threads, interrupts, ARM7 handshakes, file system set-up,
 // overlays) can be exercised without the game's data. The real game needs your own ROM.
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
