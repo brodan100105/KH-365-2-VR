@@ -3,11 +3,13 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 
 #include "guest.h"
 #include "hle.h"
 #include "hle_gx.h"
+#include "movie.h"
 #include "platform_internal.h"
 #include "render2d.h"
 
@@ -154,7 +156,11 @@ bool Platform::VBlank(int timeoutMs) {
     return ThreadsWaitHaltAfter(halts, timeoutMs);
 }
 
-void Platform::CaptureScreens(PlatformScreens *out) { hle::Render2D(out); }
+void Platform::CaptureScreens(PlatformScreens *out) {
+    hle::Render2D(out);
+    // A movie's picture (movie.cpp) replaces the top screen while it plays.
+    if (hle::MovieCopyPicture(out->top)) std::memcpy(out->topHud, out->top, sizeof out->top);
+}
 
 void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {
     std::lock_guard<std::mutex> lock(hle::gInputMu);

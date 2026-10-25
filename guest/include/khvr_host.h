@@ -23,5 +23,10 @@ void khvr_host_print(const char *text);
 /* A traced event for the boot log (guest/runtime/trace.c): `b` is shown by function name when it
  * is a guest function. */
 void khvr_host_trace(const char *what, unsigned long a, unsigned long b);
+/* Movie pictures (platform/src/movie.cpp): the stream opened by its NitroFS path, the frame due
+ * at each vertical blank, and its end. */
+void khvr_host_movie_open(const char *path);
+void khvr_host_movie_frame(unsigned long frame);
+void khvr_host_movie_close(void);
 
 #endif

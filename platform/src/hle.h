@@ -83,6 +83,8 @@ bool RomOpen(const std::string &path, std::string *error);
 uint32_t RomSize();
 void RomWriteFileList(const std::string &path);  // the ROM's file names and sizes, no data
 void RomRead(uint32_t offset, void *dst, uint32_t len);
+// A NitroFS file's bytes in the loaded ROM ("mv/802.mods", case-insensitive), or null.
+const uint8_t *RomFindFile(const std::string &path, uint32_t *size);
 void SetupSharedArea(int language);    // header copies, owner info, system work
 bool SaveOpen(const std::string &path);
 void SaveRead(uint32_t offset, void *dst, uint32_t len);

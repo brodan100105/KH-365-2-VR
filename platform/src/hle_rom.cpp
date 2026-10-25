@@ -2,6 +2,7 @@
 // area, and overlay resets.
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -93,6 +94,55 @@ void ListDir(FILE *out, uint32_t fnt, uint32_t fat, uint16_t dir, const std::str
     }
 }
 }  // namespace
+
+namespace {
+bool SameNameNoCase(const uint8_t *a, size_t n, const std::string &b) {
+    if (n != b.size()) return false;
+    for (size_t i = 0; i < n; ++i)
+        if (std::tolower(a[i]) != std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    return true;
+}
+}  // namespace
+
+const uint8_t *RomFindFile(const std::string &path, uint32_t *size) {
+    if (!gRom) return nullptr;
+    uint32_t fnt = RomU32(0x40), fat = RomU32(0x48);
+    uint16_t dir = 0xf000;
+    size_t at = 0;
+    while (at < path.size() && path[at] == '/') ++at;
+    while (at < path.size()) {
+        size_t slash = path.find('/', at);
+        bool last = slash == std::string::npos;
+        std::string part = path.substr(at, last ? std::string::npos : slash - at);
+        at = last ? path.size() : slash + 1;
+        size_t entry = fnt + (dir & 0x0fff) * 8u;
+        size_t p = fnt + RomU32(entry);
+        uint16_t fileId = RomU16(entry + 4);
+        bool found = false;
+        while (p < gRomSize && !found) {
+            uint8_t len = gRom[p++];
+            if (len == 0) break;
+            size_t n = std::min<size_t>(len & 0x7f, gRomSize - p);
+            bool match = SameNameNoCase(gRom + p, n, part);
+            p += len & 0x7f;
+            if (len & 0x80) {
+                uint16_t sub = RomU16(p);
+                p += 2;
+                if (match && !last) dir = sub, found = true;
+            } else {
+                if (match && last) {
+                    uint32_t start = RomU32(fat + fileId * 8u), end = RomU32(fat + fileId * 8u + 4);
+                    if (end < start || end > gRomSize) return nullptr;
+                    *size = end - start;
+                    return gRom + start;
+                }
+                ++fileId;
+            }
+        }
+        if (!found) return nullptr;
+    }
+    return nullptr;
+}
 
 void RomWriteFileList(const std::string &path) {
     if (!gRom || path.empty()) return;

@@ -29,6 +29,16 @@ that with a real ARM7 sound driver: a sequence player, a 16-channel mixer, and a
 
 ## Part A: movies (picture first, then their sound through part B)
 
+**Status (started):** the picture now goes a simpler way than steps 1-4 below. The platform
+decodes the stream itself (`platform/src/movie.cpp`) with the decomp's portable decoder and its
+two coefficient tables compiled natively, and the guest's existing player
+(`guest/runtime/movie.c`, which keeps the game's timing) asks it for the frame that is due each
+vertical blank; the picture replaces the top screen while the movie plays. The game's own C++
+player, its ITCM decoder copy and its VRAM blit are not needed for the picture. The log reports
+`movie: picture WxH, N frames` when a stream opens and how many frames decoded when it closes.
+Movie sound still comes with part B (the stream's IMA-ADPCM audio follows the video bits in each
+packet).
+
 1. **C++ in the guest build.** `build_guest.py` compiles `.cpp` with clang++ for wasm32
    (`-fno-exceptions -fno-rtti`, the module's own operator new/delete and vtable data symbols the
    files already reference). Check: the 9 `.cpp` files compile and link; `MakeStream` resolves.

@@ -1,11 +1,12 @@
-/* MobiClip movies, played without a picture (exclude.txt drops the decomp's versions of these
- * four): the decoder's core is still ARM assembly the port cannot run. The scenes around a movie
- * depend on it playing for its real length, though: the opening's script steps its timeline in
- * time with the movie's frames, and it needs the request's frame callback once per vertical
- * blank (Ov024_MobiClip_PresentOnVBlank calls it on the DS) to clear the flag it waits on. So a
- * movie here opens, counts its frames up at its own frame rate from the vertical blanks, calls
- * the callback every blank, and ends when the real one would; START skips it as on the DS.
- * Drawing the frames is a later step (FFmpeg's MobiClip decoder on the host side). */
+/* MobiClip movies (exclude.txt drops the decomp's versions of these four). The game's own player
+ * copies an ARM decoder to ITCM and blits into VRAM, which the port cannot run; instead the
+ * platform decodes the picture (platform/src/movie.cpp, with the decomp's portable decoder) and
+ * this keeps the game's side: the scenes around a movie depend on it playing for its real
+ * length (the opening's script steps its timeline in time with the movie's frames) and need the
+ * request's frame callback once per vertical blank (Ov024_MobiClip_PresentOnVBlank calls it on
+ * the DS) to clear the flag they wait on. So a movie here opens, counts its frames up at its own
+ * frame rate from the vertical blanks, asks the platform for the frame that is due, calls the
+ * callback every blank, and ends when the real one would; START skips it as on the DS. */
 #include "khvr_host.h"
 
 struct MobiClipOpenRequest {
@@ -45,7 +46,8 @@ static unsigned int ElapsedFrames(void)
 
 static void PresentNothingOnVBlank(void)
 {
-    if (sVBlanks++ == 0) khvr_host_print("movie: playing (no picture yet)");
+    if (sVBlanks++ == 0) khvr_host_print("movie: playing");
+    khvr_host_movie_frame(ElapsedFrames());
     if (sFrameReady) sFrameReady();
 }
 
@@ -79,9 +81,10 @@ int Ov024_MobiClip_OpenStreams(struct MobiClipOpenRequest *pRequest)
     const char *pszPath = pRequest->pszStream0 ? pRequest->pszStream0
                           : pRequest->pszStream1 ? pRequest->pszStream1
                                                  : pRequest->pszStream2;
-    khvr_host_print("movie (MobiClip video is not drawn yet):");
+    khvr_host_print("movie:");
     if (pszPath) khvr_host_print(pszPath);
     ReadLength(pszPath);
+    if (pszPath) khvr_host_movie_open(Msg_BuildLangPath(pszPath));
     {
         char line[96];
         unsigned int centiFps = (unsigned int)(((unsigned long long)sFps24 * 100) >> 24);
@@ -114,6 +117,7 @@ int Ov024_MobiClip_BufferedFrameCount(void)
 void Ov024_MobiClip_StopPlayback(void)
 {
     VBlank_UnregisterCallback(1, gOv024MobiclipIntrName);
+    khvr_host_movie_close();
     sFrameReady = 0;
     sOpen = 0;
     khvr_host_print("movie: stopped");

@@ -34,10 +34,21 @@ add_library(khvr_platform STATIC
     src/hle_rom.cpp
     src/hle_thread.cpp
     src/log.cpp
+    src/mobiclip_tables_0.c
+    src/mobiclip_tables_1.c
+    src/movie.cpp
     src/platform.cpp
     src/render2d.cpp
 )
 target_include_directories(khvr_platform PUBLIC include PRIVATE src)
+# Movie pictures: the decomp's portable MobiClip decoder and its tables (movie.cpp).
+set(KHVR_DECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../decomp")
+target_sources(khvr_platform PRIVATE "${KHVR_DECOMP_DIR}/libs/mobiclip/video/portable/mobiclip_reference.cpp")
+target_include_directories(khvr_platform PRIVATE "${KHVR_DECOMP_DIR}/libs/mobiclip/video/portable")
+set_source_files_properties(src/mobiclip_tables_0.c src/mobiclip_tables_1.c PROPERTIES
+    INCLUDE_DIRECTORIES "${KHVR_DECOMP_DIR}/include" COMPILE_OPTIONS "-w")
+set_source_files_properties("${KHVR_DECOMP_DIR}/libs/mobiclip/video/portable/mobiclip_reference.cpp"
+    PROPERTIES COMPILE_OPTIONS "-w")
 target_compile_options(khvr_platform PRIVATE -Wall -Wextra -Wno-unused-parameter)
 find_package(Threads REQUIRED)
 target_link_libraries(khvr_platform PUBLIC khdays_guest Threads::Threads)
