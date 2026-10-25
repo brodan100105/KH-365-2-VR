@@ -502,7 +502,7 @@ namespace khvr::hle {
 namespace {
 uint32_t gWatchStart = 0, gWatchSize = 0;
 int gWatchHits = 0;
-constexpr int kMaxWatchHits = 6;
+constexpr int kMaxWatchHits = 10;
 }  // namespace
 
 void WatchSet(uint32_t addr, uint32_t size, const char *what) {

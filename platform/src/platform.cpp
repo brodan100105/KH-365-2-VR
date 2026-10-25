@@ -84,13 +84,16 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     Arm7Reset();
     SetupSharedArea(config.language);
     OverlaysInit();
-    // The field's script names ("_s", "_i") are found overwritten when it starts: catch the writer.
     // KHVR_WATCH=<symbol or 0xaddress> watches 4 bytes there instead (desktop runs).
     if (const char *sym = std::getenv("KHVR_WATCH")) {
         uint32_t a = sym[0] == '0' ? static_cast<uint32_t>(std::strtoul(sym, nullptr, 16)) : SymbolAddress(sym);
         if (a) WatchSet(a, 4, sym);
-    } else if (uint32_t names = SymbolAddress("gOv002SName")) {
-        WatchSet(names, 8, "the field's script names");
+    } else if (uint32_t from = SymbolAddress("gOv002UiBtlBmLoBg002Path"),
+                        to = SymbolAddress("gOv002UiNldgNldgPath");
+               from && to > from) {
+        // The field's constant strings, its "%s" and "%d" (which it formats its script names
+        // with) among them: found overwritten with background tile entries when it starts.
+        WatchSet(from, to - from, "the field's constant strings");
     }
     gState = PlatformState::Running;
     // wasm2c's instantiate set the (thread-local) stack pointer on this thread: hand its initial

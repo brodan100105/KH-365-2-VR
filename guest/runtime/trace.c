@@ -80,8 +80,10 @@ int Stream_DecodeIntoStagingBuffer(char *o, int a, int c, int d)
             unsigned int index = (unsigned int)a & 0x1ff;
             unsigned short word = *(unsigned short *)(header + 2);
             if ((word & 0x8000) && index < (word & 0x1ffu)) CopyName(entry, ArchiveNames(header) + index * 8);
-            OS_SPrintf(line, "script load: entry %u \"%s\" of 0x%08x, member \"%s\", %d bytes: %08x %08x %08x %08x",
-                       index, entry, (unsigned int)header, c ? (const char *)c : "", n, w[0], w[1], w[2], w[3]);
+            OS_SPrintf(line, "script load: entry %d \"%s\" of 0x%08x, member \"%s\"", (int)index, entry,
+                       (unsigned int)header, c ? (const char *)c : "");
+            khvr_host_print(line);
+            OS_SPrintf(line, "script load: %d bytes: %08x %08x %08x %08x", n, w[0], w[1], w[2], w[3]);
         } else {
             OS_SPrintf(line, "script load: \"%s\", member \"%s\", %d bytes: %08x %08x %08x %08x", (const char *)a,
                        c ? (const char *)c : "", n, w[0], w[1], w[2], w[3]);
