@@ -101,3 +101,24 @@ int Stream_DecodeIntoStagingBuffer(char *o, int a, int c, int d)
     *(int *)(o + 8) = n;
     return Script_Start(o, (const char *)c, (void *)d);
 }
+
+/* Boot self-test of the game's printf (platform.cpp logs the result): its trailing arguments
+ * must come through, which on wasm needs the va_start rewrite in guest/build_guest.py. Run
+ * directly and through the field's script-name formatter, the call that went wrong (which
+ * worked or not depending on where its caller kept the arguments). */
+extern void Ov002_FormatResultLine(int reason, char *buffer);
+
+static int Same(const char *a, const char *b)
+{
+    while (*a && *a == *b) a++, b++;
+    return *a == *b;
+}
+
+int khvr_printf_selftest(void)
+{
+    char out[32];
+    OS_SPrintf(out, "%s %d %x %d", "ab", 12, 0x3f, -7);
+    if (!Same(out, "ab 12 3f -7")) return 0;
+    Ov002_FormatResultLine((int)"_s", out);
+    return Same(out, "_s");
+}

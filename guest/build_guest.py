@@ -165,12 +165,22 @@ _CONFIG_SYMBOLS = None
 RE_STATIC_LOCAL = re.compile(r"\bstatic(\s+[^;=(){}]*?\b(data_[0-9a-f]{8})\b[^;=(){}]*;)")
 
 
+RE_VA_START_MACRO = re.compile(r"#define\s+va_start\(ap,\s*last\)\s*\(\(ap\)\s*=\s*\(char \*\)\(\(\(int\)&\(last\)\s*&\s*~3\)\s*\+\s*4\)\)")
+RE_VA_INLINE = re.compile(r"\(void \*\)\(\(\(unsigned int\)&(\w+)\s*&\s*~3u\)\s*\+\s*4\)")
+
+
 def patch_source(rel, text, fx):
     """Returns the port's version of one decomp source."""
     t = RE_STATIC_LOCAL.sub(lambda m: ("extern" + m.group(1)) if m.group(2) in config_symbols() else m.group(0), text)
     t = RE_CLZ.sub(r"\1 = (\2) ? (unsigned int)__builtin_clz(\2) : 32u;", t)
     t = RE_REGPIN.sub("", t)
     t = RE_ARRAY_ASSIGN.sub(r"__builtin_memcpy((void *)\2, (const void *)(\3), \1 * sizeof(int));", t)
+    # Variadic functions find their trailing arguments the ARM way, one word past the last named
+    # parameter's home slot. On wasm the named parameters are locals and the trailing arguments
+    # sit in a separate buffer the caller passes, which only the compiler's va_start can name
+    # (a wasm32 va_list is a plain pointer into that buffer, read a word at a time like ARM's).
+    t = RE_VA_START_MACRO.sub("#define va_start(ap, last) __builtin_va_start(*(__builtin_va_list *)&(ap), last)", t)
+    t = RE_VA_INLINE.sub(r"({ __builtin_va_list khvr_ap; __builtin_va_start(khvr_ap, \1); (void *)khvr_ap; })", t)
     # Overlay ids are linker symbols whose *address* is the id. wasm has no absolute symbols, so
     # the id becomes a constant pointer.
     for name, value in SDK_CONSTANTS.items():

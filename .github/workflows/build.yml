@@ -49,6 +49,7 @@ jobs:
           # (OS_Terminate) because the fake ROM has no font. A trap would be a platform bug.
           ./khdays_run --fake-rom --frames 120 --log boot.log | tee run.txt
           grep -q "overlay: start ov000" boot.log
+          grep -q "printf self-test ok" boot.log
           ! grep -q "^trap:" boot.log
       - uses: actions/setup-java@v4
         with:
