@@ -54,13 +54,14 @@ void BusWrite(uint32_t a, uint32_t v, uint32_t size) {
 }
 
 extern "C" {
-// guest/postprocess.py's table; weak so a guest built before it existed still links.
-extern const char *const khvr_function_names[] __attribute__((weak));
-extern const unsigned khvr_function_name_count __attribute__((weak));
+// guest/postprocess.py's table. A strong reference: the table sits in the static guest library,
+// and a weak one would not pull it out of there, leaving every name unresolved.
+extern const char *const khvr_function_names[];
+extern const unsigned khvr_function_name_count;
 }
 
 const char *FunctionName(uint32_t pointer) {
-    if (&khvr_function_name_count == nullptr || pointer == 0 || pointer >= khvr_function_name_count) return nullptr;
+    if (pointer == 0 || pointer >= khvr_function_name_count) return nullptr;
     const char *n = khvr_function_names[pointer];
     return n && *n ? n : nullptr;
 }

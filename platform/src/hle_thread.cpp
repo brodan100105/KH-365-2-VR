@@ -233,7 +233,9 @@ void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
         next->lr = Read32(context + 0x3c);
         gByContext[context] = next;
         gAll.push_back(next);
-        Log("thread: start context 0x%08x entry %u sp 0x%08x", context, next->entry, next->sp);
+        const char *fn = FunctionName(next->entry);
+        if (fn) Log("thread: start context 0x%08x entry %s sp 0x%08x", context, fn, next->sp);
+        else Log("thread: start context 0x%08x entry %u sp 0x%08x", context, next->entry, next->sp);
     }
     if (next == tSelf) {
         if (tSelf->context != context) Log("thread: load of 0x%08x maps to the running host thread", context);
