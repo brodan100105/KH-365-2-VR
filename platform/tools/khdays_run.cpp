@@ -18,6 +18,7 @@
 #include "khvr/platform.h"
 #include "../src/guest.h"
 #include "../src/hle.h"
+#include "../src/hle_gx.h"
 #include "../src/sound.h"
 
 namespace khvr::hle {
@@ -239,6 +240,7 @@ int WorldTest() {
     w32(0x04000304, 0x8203);
     w32(0x04000000, 0x00010108);
     w32(0x04000060, 0x0001);
+    w32(0x04000354, 0x7fff);  // clear depth: far
     khvr::PlatformTestWrite(0x04000240, 0x80, 1);
     for (int t = 0; t < 8; ++t)
         for (int x = 0; x < 8; ++x) khvr::PlatformTestWrite(0x06800000 + 2 * (t * 8 + x), x < 4 ? 0xffff : 0x83e0, 2);
@@ -308,8 +310,16 @@ int WorldTest() {
         return ok;
     };
     bool a = check(false), b = check(true);
-    std::printf("world test: %s\n", a && b ? "ok" : "FAILED");
-    return a && b ? 0 : 1;
+    // Around the captured world: the HUD quad (orthographic) in front, the backdrop behind.
+    khvr::Platform::Get().SetWorldCapture(true);
+    static khvr::PlatformScreens s;
+    khvr::Platform::Get().CaptureScreens(&s);
+    const int mid = 96 * 256 + 128, corner = 4 * 256 + 4;
+    bool split = s.split && (s.topFront[mid] >> 24) == 255 && (s.topFront[corner] >> 24) == 0 &&
+                 (s.topBack[corner] >> 24) == 255;
+    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d)\n",
+                a && b && split ? "ok" : "FAILED", a && b, split);
+    return a && b && split ? 0 : 1;
 }
 
 int PxiTest() {

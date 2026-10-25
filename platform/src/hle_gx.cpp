@@ -55,6 +55,7 @@ struct Polygon {
     int n = 0;
     uint32_t attr = 0, texParam = 0, palBase = 0;
     bool translucent = false;
+    uint16_t proj = 0;  // the projection it was drawn with (Gx::projList)
 };
 
 constexpr size_t kMaxPolygons = 2048;
@@ -99,6 +100,7 @@ struct Gx {
     std::vector<WorldPoly> worldList, worldShown;
     std::vector<Mtx> projList, projShown;
     uint32_t projSerial = 1, projRecorded = 0;
+    std::vector<uint8_t> inSceneShown;  // per projShown: draws the scene (else a HUD piece)
     bool shownWBuffer = false, shownManualSort = false;
     uint32_t vertexCount = 0;
 
@@ -173,6 +175,75 @@ void Apply(const Mtx &m, bool vecToo) {
     g.clipDirty = true;
 }
 
+using Mat4d = std::array<double, 16>;
+
+Mat4d ToDouble(const Mtx &m) {
+    Mat4d d;
+    for (int i = 0; i < 16; ++i) d[i] = m[i] / 4096.0;
+    return d;
+}
+
+Mat4d MulD(const Mat4d &a, const Mat4d &b) {
+    Mat4d r{};
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            for (int k = 0; k < 4; ++k) r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+    return r;
+}
+
+bool Invert(const Mat4d &m, Mat4d *out) {
+    double a[4][8];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 8; ++j) a[i][j] = j < 4 ? m[i * 4 + j] : (j - 4 == i ? 1.0 : 0.0);
+    for (int c = 0; c < 4; ++c) {
+        int piv = c;
+        for (int r = c + 1; r < 4; ++r)
+            if (std::fabs(a[r][c]) > std::fabs(a[piv][c])) piv = r;
+        if (std::fabs(a[piv][c]) < 1e-12) return false;
+        if (piv != c)
+            for (int j = 0; j < 8; ++j) std::swap(a[c][j], a[piv][j]);
+        double inv = 1.0 / a[c][c];
+        for (int j = 0; j < 8; ++j) a[c][j] *= inv;
+        for (int r = 0; r < 4; ++r) {
+            if (r == c) continue;
+            double f = a[r][c];
+            for (int j = 0; j < 8; ++j) a[r][j] -= f * a[c][j];
+        }
+    }
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) (*out)[i * 4 + j] = a[i][j + 4];
+    return true;
+}
+
+uint64_t Fnv(const void *data, size_t n, uint64_t h = 1469598103934665603ull) {
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    return h;
+}
+
+// Whether a projection draws the game's scene: what it holds beyond NNS_G3dGlb's lens (nothing, or
+// the camera when the game flushed it into the projection) is affine. Otherwise it draws a flat
+// piece over the scene (an orthographic HUD element). `toWorld` gets position-matrix space to
+// world space. NNSG3dGlb (decomp: include/nnsys/g3d.h): the lens at +0x08, the camera at +0x4c.
+bool ReadLensAndCamera(Mat4d *lensInv, Mat4d *cameraInv, Mat4d *lens, Mat4d *camera) {
+    static const uint32_t glb = SymbolAddress("NNS_G3dGlb");
+    if (!glb) return false;
+    Mtx l, c = Identity();
+    for (int i = 0; i < 16; ++i) l[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
+    for (int r = 0; r < 4; ++r)
+        for (int k = 0; k < 3; ++k) c[r * 4 + k] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + k)));
+    *lens = ToDouble(l);
+    *camera = ToDouble(c);
+    return Invert(*lens, lensInv) && Invert(*camera, cameraInv);
+}
+
+bool InScene(const Mtx &proj, const Mat4d &lensInv, const Mat4d &cameraInv, Mat4d *toWorld) {
+    Mat4d q = MulD(ToDouble(proj), lensInv);
+    const double tol = 1e-3;
+    if (toWorld) *toWorld = MulD(q, cameraInv);
+    return std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol && std::fabs(q[15] - 1.0) < tol;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Polygons: culling, clipping, the polygon list
 // ---------------------------------------------------------------------------------------------
@@ -204,11 +275,11 @@ int ClipPlane(const Vertex *in, int n, Vertex *out, Dist dist) {
 void EmitPolygon(const Vertex *verts, int n) {
     const uint32_t attr = g.polyAttr;
     if (((attr >> 4) & 3) == 3) return;  // shadow volumes: not drawn yet
+    if (g.projRecorded != g.projSerial || g.projList.empty()) {
+        g.projList.push_back(g.proj);
+        g.projRecorded = g.projSerial;
+    }
     if (g.worldList.size() < 2 * kMaxPolygons && n <= 4) {
-        if (g.projRecorded != g.projSerial || g.projList.empty()) {
-            g.projList.push_back(g.proj);
-            g.projRecorded = g.projSerial;
-        }
         WorldPoly w;
         std::copy(verts, verts + n, w.v);
         w.n = n;
@@ -258,6 +329,7 @@ void EmitPolygon(const Vertex *verts, int n) {
     p.attr = attr;
     p.texParam = g.texParam;
     p.palBase = g.palBase;
+    p.proj = static_cast<uint16_t>(g.projList.size() - 1);
     uint32_t alpha = (attr >> 16) & 31;
     uint32_t format = (g.texParam >> 26) & 7;
     p.translucent = (alpha > 0 && alpha < 31) || format == 1 || format == 6;
@@ -609,6 +681,13 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.projShown.swap(g.projList);
         g.projList.clear();
         g.projRecorded = 0;
+        {
+            Mat4d lensInv, cameraInv, lens, camera;
+            const bool known = ReadLensAndCamera(&lensInv, &cameraInv, &lens, &camera);
+            g.inSceneShown.assign(g.projShown.size(), 0);
+            for (size_t i = 0; known && i < g.projShown.size(); ++i)
+                g.inSceneShown[i] = InScene(g.projShown[i], lensInv, cameraInv, nullptr);
+        }
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
@@ -1079,7 +1158,7 @@ void GxVBlank() {
     gCommands = 0;
 }
 
-void GxRender(uint16_t *color, uint8_t *alpha, int scale) {
+void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
     static Frame f;
     static TexMem mem;
     mem.tex.resize(kTexVramSize);
@@ -1116,6 +1195,7 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale) {
     std::vector<const Polygon *> opaque;
     std::vector<Sorted> translucent;
     for (const Polygon &p : g.shown) {
+        if (hudOnly && p.proj < g.inSceneShown.size() && g.inSceneShown[p.proj]) continue;
         if (!p.translucent) {
             opaque.push_back(&p);
             continue;
@@ -1154,56 +1234,6 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale) {
     }
 }
 
-namespace {
-
-using Mat4d = std::array<double, 16>;
-
-Mat4d ToDouble(const Mtx &m) {
-    Mat4d d;
-    for (int i = 0; i < 16; ++i) d[i] = m[i] / 4096.0;
-    return d;
-}
-
-Mat4d MulD(const Mat4d &a, const Mat4d &b) {
-    Mat4d r{};
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-            for (int k = 0; k < 4; ++k) r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
-    return r;
-}
-
-bool Invert(const Mat4d &m, Mat4d *out) {
-    double a[4][8];
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 8; ++j) a[i][j] = j < 4 ? m[i * 4 + j] : (j - 4 == i ? 1.0 : 0.0);
-    for (int c = 0; c < 4; ++c) {
-        int piv = c;
-        for (int r = c + 1; r < 4; ++r)
-            if (std::fabs(a[r][c]) > std::fabs(a[piv][c])) piv = r;
-        if (std::fabs(a[piv][c]) < 1e-12) return false;
-        if (piv != c)
-            for (int j = 0; j < 8; ++j) std::swap(a[c][j], a[piv][j]);
-        double inv = 1.0 / a[c][c];
-        for (int j = 0; j < 8; ++j) a[c][j] *= inv;
-        for (int r = 0; r < 4; ++r) {
-            if (r == c) continue;
-            double f = a[r][c];
-            for (int j = 0; j < 8; ++j) a[r][j] -= f * a[c][j];
-        }
-    }
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j) (*out)[i * 4 + j] = a[i][j + 4];
-    return true;
-}
-
-uint64_t Fnv(const void *data, size_t n, uint64_t h = 1469598103934665603ull) {
-    const uint8_t *p = static_cast<const uint8_t *>(data);
-    for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
-    return h;
-}
-
-}  // namespace
-
 void GxCaptureWorld(PlatformWorld *out) {
     out->vertices.clear();
     out->triangleTexture.clear();
@@ -1211,29 +1241,12 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->textures.clear();
     out->hasCamera = false;
     out->polygonsLeftOut = 0;
-    // NNSG3dGlb (decomp: include/nnsys/g3d.h): the lens at +0x08 (4x4), the camera at +0x4c (4x3).
-    static const uint32_t glb = SymbolAddress("NNS_G3dGlb");
-    if (!glb || g.worldShown.empty()) return;
-    Mtx lens, camera = Identity();
-    for (int i = 0; i < 16; ++i) lens[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
-    for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 3; ++c) camera[r * 4 + c] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + c)));
-    const Mat4d lensD = ToDouble(lens), cameraD = ToDouble(camera);
-    Mat4d lensInv, cameraInv;
-    if (!Invert(lensD, &lensInv) || !Invert(cameraD, &cameraInv)) return;
-
-    // Each projection the frame used: what it holds beyond the lens (the camera, when the game
-    // flushed it into the projection; nothing otherwise) must be an affine transform, or the
-    // polygons drawn with it are not in the scene (an orthographic HUD piece).
+    if (g.worldShown.empty()) return;
+    Mat4d lensD, cameraD, lensInv, cameraInv;
+    if (!ReadLensAndCamera(&lensInv, &cameraInv, &lensD, &cameraD)) return;
     std::vector<Mat4d> toWorld(g.projShown.size());
     std::vector<bool> inScene(g.projShown.size(), false);
-    for (size_t i = 0; i < g.projShown.size(); ++i) {
-        Mat4d q = MulD(ToDouble(g.projShown[i]), lensInv);
-        const double tol = 1e-3;
-        inScene[i] = std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol &&
-                     std::fabs(q[15] - 1.0) < tol;
-        toWorld[i] = MulD(q, cameraInv);
-    }
+    for (size_t i = 0; i < g.projShown.size(); ++i) inScene[i] = InScene(g.projShown[i], lensInv, cameraInv, &toWorld[i]);
 
     out->hasCamera = true;
     for (int k = 0; k < 3; ++k) {

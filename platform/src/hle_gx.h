@@ -25,7 +25,9 @@ void GxVBlank();
 // The 3D layer at `scale` times the DS's 256 x 192 (1 to kMax3dScale): BGR555 colour and 5-bit
 // alpha per pixel (alpha 0: nothing there).
 constexpr int kMax3dScale = 4;
-void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1);
+// `hudOnly`: just the polygons drawn with another projection than the scene's (the flat HUD
+// pieces the world capture leaves out).
+void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1, bool hudOnly = false);
 // The polygons of the last SWAP_BUFFERS drawn with the game's main camera, in world space.
 void GxCaptureWorld(PlatformWorld *out);
 // Polygons in the list GxRender draws (for the heartbeat and tests).

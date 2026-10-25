@@ -203,9 +203,11 @@ size_t Platform::ReadAudio(int16_t *stereo, size_t frames) { return hle::SoundRe
 
 namespace {
 std::atomic<int> g3dScale{1};
+std::atomic<bool> gWorldCapture{false};
 }
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
+void Platform::SetWorldCapture(bool on) { gWorldCapture = on; }
 
 void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
 
@@ -225,12 +227,15 @@ void Platform::NoteDisplay(bool skipped, float captureMs) {
 }
 
 void Platform::CaptureScreens(PlatformScreens *out) {
-    hle::Render2D(out, g3dScale.load());
+    const bool split = gWorldCapture.load() && (hle::IoReg16(0x304) & 0x8000);  // engine A on top
+    hle::Render2D(out, g3dScale.load(), split);
+    out->split = split;
     // A movie's picture (movie.cpp) replaces the top screen while it plays.
     out->movie = hle::MovieCopyPicture(out->top);
     if (out->movie) {
         std::memcpy(out->topHud, out->top, sizeof out->top);
         out->topScale = 1;
+        out->split = false;
     }
 }
 

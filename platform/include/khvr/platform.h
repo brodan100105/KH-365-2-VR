@@ -32,6 +32,12 @@ struct PlatformScreens {
     // has one: (256 x topScale) x (192 x topScale). topScale 1: use `top`.
     int topScale = 1;
     std::vector<uint32_t> topHi;
+    // With the world capture on (SetWorldCapture): the top screen's 2D in front of the 3D layer
+    // with the flat 3D HUD pieces, and its 2D behind the 3D layer (opaque), to go around the
+    // captured world. `split` says they are filled.
+    bool split = false;
+    uint32_t topFront[kWidth * kHeight];
+    uint32_t topBack[kWidth * kHeight];
 };
 
 // The game's 3D as geometry (Platform::CaptureWorld): every polygon of the last finished 3D
@@ -96,6 +102,8 @@ public:
     void CaptureScreens(PlatformScreens *out);
     // The game's 3D world (PlatformWorld). Call when CaptureScreens may be called.
     void CaptureWorld(PlatformWorld *out);
+    // CaptureScreens also fills topFront / topBack.
+    void SetWorldCapture(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
