@@ -123,9 +123,26 @@ void HandTo(GuestThread *next, std::unique_lock<std::mutex> &lock) {
 
 }  // namespace
 
-bool GuestIrqsDisabled() {
+namespace {
+uint32_t CpsrAddr() {
     static uint32_t addr = SymbolAddress("khvr_cpsr_i");
-    return addr && (Read32(addr) & 0x80);
+    return addr;
+}
+}  // namespace
+
+bool GuestIrqsDisabled() { return CpsrAddr() && (Read32(CpsrAddr()) & 0x80); }
+
+// The CPSR's I and F bits belong to each thread, as on the hardware: a thread that switches away
+// with interrupts disabled must not leave them disabled for the next one. They live in the
+// OSContext's cpsr word (+0) while the thread is switched out.
+void SaveCpsrTo(uint32_t context) {
+    if (!CpsrAddr() || !context || context == 0xffffffffu) return;
+    Write32(context, (Read32(context) & ~0xc0u) | (Read32(CpsrAddr()) & 0xc0));
+}
+
+void LoadCpsrFrom(uint32_t context) {
+    if (!CpsrAddr() || !context || context == 0xffffffffu) return;
+    Write32(CpsrAddr(), (Read32(CpsrAddr()) & ~0xc0u) | (Read32(context) & 0xc0));
 }
 
 void RaiseIrq(uint32_t bits) { RegIf() |= bits; }
@@ -170,6 +187,7 @@ void RunThread(GuestThread *t) {
         if (gStopping) return;
     }
     khvr_guest_sp = t->sp;
+    LoadCpsrFrom(t->context);  // OS_InitContext: interrupts enabled
     if (wasm_rt_impl_try() == 0) {
         CallGuest(t->entry, t->arg);
         // OS_CreateThread puts OS_ExitThread in lr; returning from the entry ends the thread.
@@ -241,8 +259,10 @@ void w2c_env_khvr_host_load_context(struct w2c_env *, u32 context) {
         if (tSelf->context != context) Log("thread: load of 0x%08x maps to the running host thread", context);
         return;
     }
+    SaveCpsrTo(tSelf->context);
     HandTo(next, lock);
     WaitForBaton(lock);
+    LoadCpsrFrom(tSelf->context);
 }
 
 void w2c_env_khvr_host_halt(struct w2c_env *) {
