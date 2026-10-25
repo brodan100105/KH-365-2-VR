@@ -37,6 +37,12 @@ jobs:
           wasm2c --version
       - name: Build the game as the guest module
         run: python3 guest/build_guest.py --jobs 4
+      - name: Guest data laid out as on the DS
+        # Code reads past one data symbol into the next; the port must keep DS neighbours together.
+        run: |
+          python3 guest/check_data_layout.py | tee layout.txt | tail -5
+          bad=$(tail -1 layout.txt | cut -d' ' -f1)
+          test "$bad" -le 30
       - name: Platform tests on the desktop
         run: |
           cmake -S platform -B build/platform -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++

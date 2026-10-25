@@ -160,6 +160,70 @@ def config_symbols():
 
 
 _CONFIG_SYMBOLS = None
+_DS_DATA = None
+
+
+def ds_data_addresses():
+    """Initialized data symbols the decomp's config places, by name: (module, DS address).
+    A name two modules both use (overlays share addresses) keeps the first."""
+    global _DS_DATA
+    if _DS_DATA is None:
+        _DS_DATA = {}
+        cfg = DECOMP / "config" / "arm9"
+        for f in sorted(cfg.rglob("symbols.txt")):
+            mod = f.parent.name if f.parent != cfg else "main"
+            for line in f.read_text().splitlines():
+                m = re.match(r"(\S+) kind:data\(\w+\) addr:0x([0-9a-f]+)", line)
+                if m and m.group(1) not in _DS_DATA:
+                    _DS_DATA[m.group(1)] = (mod, int(m.group(2), 16))
+    return _DS_DATA
+
+
+def is_data_file(rel):
+    return "/data/" in rel
+
+
+# The data files' definitions: `<type> name[dims] = ...` (the attribute goes before the `=`).
+RE_DATA_DEF = re.compile(r"\b([A-Za-z_]\w*)((?:\s*\[[^\]\n]*\])*)(\s*=)")
+RE_DATA_CONST = re.compile(r"^([ \t]*(?:static[ \t]+)?)const[ \t]+|(\*[ \t]*)const\b", re.M)
+
+
+def ds_layout(text, strip_const=True):
+    """Keeps a data file's definitions where the DS has them relative to each other: code reads
+    past one symbol into the next (the decomp splits tables the original kept whole), and clang
+    would align every array of 16 bytes or more to 16 and keep const ones in a separate segment.
+    Each definition gets its DS address's alignment (which also stops that), and loses `const`
+    (wasm memory is writable anyway) so the whole file is one run of .data."""
+    addrs = ds_data_addresses()
+
+    def attr(m):
+        name = m.group(1)
+        if name not in addrs or "__attribute__" in m.group(0):
+            return m.group(0)
+        if not strip_const:
+            # Outside the data files, only file-scope definitions: a type (or a struct's closing
+            # brace) at the start of the line, never an assignment inside a function.
+            line = text[text.rfind("\n", 0, m.start()) + 1:m.start()]
+            if not line or line[0] in " \t" or not re.match(r"[A-Za-z_}]", line) or "const" in line:
+                return m.group(0)
+        a = addrs[name][1]
+        align = 4 if a % 4 == 0 else (2 if a % 2 == 0 else 1)
+        # Its own .data section, also for an all-zero table (clang would put that in .bss).
+        return "%s%s __attribute__((aligned(%d), section(\".data.%s\")))%s" % (
+            name, m.group(2), align, name, m.group(3))
+
+    if strip_const:
+        text = RE_DATA_CONST.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), text)
+    return RE_DATA_DEF.sub(attr, text)
+
+
+def data_file_order(rel, path):
+    """Sort key that links the files defining DS data in DS order, each module's together."""
+    addrs = ds_data_addresses()
+    text = Path(path).read_text(errors="replace")
+    found = [addrs[n] for n in re.findall(r"\b([A-Za-z_]\w*)(?:\s*\[[^\]\n]*\])*(?:\s*__attribute__\(\(.*?\)\))?\s*=", text)
+             if n in addrs]
+    return min(found) if found else None
 # A function-local `static T data_02046d50;` that stands for the real global at that address
 # (the original only kept the function's code): it becomes a block-scope extern declaration.
 RE_STATIC_LOCAL = re.compile(r"\bstatic(\s+[^;=(){}]*?\b(data_[0-9a-f]{8})\b[^;=(){}]*;)")
@@ -190,6 +254,7 @@ def patch_source(rel, text, fx):
         t = RE_OVL_DECL.sub("", t)
         t = RE_OVL_ADDR.sub(lambda m: "((unsigned long *)%s)" % (m.group(1) or m.group(2)), t)
         t = RE_OVL.sub(r"((unsigned long *)\1)", t)
+    t = ds_layout(t, strip_const=is_data_file(rel))
     for name in fx["unstatic"].get(rel, []):
         # A static helper that the same file (or a header) also declares extern, which mwcc
         # allows: it becomes an ordinary weak definition, and the linker keeps one copy.
@@ -388,15 +453,53 @@ def obj_name(rel):
     return rel.replace("/", "_") + ".o"
 
 
+RE_ASM_DATA_BLOCK = re.compile(r"^\t\.section\t\.data\.([A-Za-z_]\w*),")
+
+
+def reorder_data_sections(asm):
+    """clang emits a file's globals in its own order (a table's initializer pulls the symbols it
+    points at ahead of it); this puts the file's per-symbol data sections back in DS address
+    order, each block moved whole into the slots the data blocks occupied."""
+    addrs = ds_data_addresses()
+    lines = asm.split("\n")
+    starts = [i for i, l in enumerate(lines) if l.startswith("\t.section\t")]
+    blocks = []
+    for k, i in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        blocks.append((i, end))
+    head = lines[:starts[0]] if starts else lines
+    chunks = [lines[a:b] for a, b in blocks]
+    data = [k for k, (a, _) in enumerate(blocks)
+            if RE_ASM_DATA_BLOCK.match(lines[a]) and RE_ASM_DATA_BLOCK.match(lines[a]).group(1) in addrs
+            and any(l.startswith(RE_ASM_DATA_BLOCK.match(lines[a]).group(1) + ":") for l in chunks[k])]
+    order = sorted(data, key=lambda k: addrs[RE_ASM_DATA_BLOCK.match(chunks[k][0]).group(1)][1])
+    out = list(chunks)
+    for slot, k in zip(data, order):
+        out[slot] = chunks[k]
+    return "\n".join(head + [l for c in out for l in c])
+
+
 def compile_one(rel, path, objdir):
     obj = objdir / obj_name(rel)
     data = Path(path).read_bytes()
-    key = hashlib.sha1(data + " ".join(CFLAGS).encode()).hexdigest()
+    reorder = is_data_file(rel) or b"__attribute__((aligned(" in data
+    key = hashlib.sha1(data + " ".join(CFLAGS).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
     stamp = obj.with_suffix(".key")
     if obj.exists() and stamp.exists() and stamp.read_text() == key:
         return rel, True, ""
-    r = run(["clang", *CFLAGS, "-I", str(DECOMP / "include"), "-I", str(GUEST / "include"),
-             "-c", str(path), "-o", str(obj)])
+    inc = ["-I", str(DECOMP / "include"), "-I", str(GUEST / "include")]
+    if reorder:
+        # Through assembly, so the data sections can be put in DS order (reorder_data_sections).
+        asm = obj.with_suffix(".s")
+        r = run(["clang", *CFLAGS, *inc, "-S", str(path), "-o", str(asm)])
+        if r.returncode == 0:
+            asm.write_text(reorder_data_sections(asm.read_text()))
+            r2 = run(["clang", "--target=wasm32", "-c", str(asm), "-o", str(obj)])
+            asm.unlink()
+            if r2.returncode == 0:
+                stamp.write_text(key)
+                return rel, True, ""
+    r = run(["clang", *CFLAGS, *inc, "-c", str(path), "-o", str(obj)])
     if r.returncode == 0:
         stamp.write_text(key)
         return rel, True, ""
@@ -551,7 +654,11 @@ def main():
         if r.returncode:
             sys.exit("storage.s: " + r.stderr)
         # storage.o first: its low block must be the first data wasm-ld lays out.
-        objs = [out / "obj" / "storage.o"] + [out / "obj" / obj_name(rel) for rel in paths if rel not in failures]
+        # Data files first, in DS order (ds_layout keeps each one's symbols in DS order).
+        built = [rel for rel in paths if rel not in failures]
+        keys = {rel: data_file_order(rel, paths[rel]) for rel in built}
+        built.sort(key=lambda rel: (0, keys[rel]) if keys[rel] is not None else (1, ("", 0)))
+        objs = [out / "obj" / "storage.o"] + [out / "obj" / obj_name(rel) for rel in built]
         if placeholders:
             ph = out / "gen" / "placeholders.s"
             ph.write_text("".join(emit_block("khvr_ph_" + s, 0, 64, [(s, 0)]) for s in sorted(placeholders)))
