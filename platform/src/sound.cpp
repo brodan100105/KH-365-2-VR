@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -372,17 +373,19 @@ void SoundRunCommands(uint32_t list) {
     UpdateSharedWork();
 }
 
-void SoundFrame() {
-    std::lock_guard<std::mutex> lock(gMu);
+void SoundFrame(const std::function<void()> &respond) {
+    std::unique_lock<std::mutex> lock(gMu);
     // One video frame's worth of sound frames, each: due alarms, the sequences, its samples.
     gSoundFramesDue += kSoundFrameRate / kFrameRate;
     const double frameTicks = kOsTickRate / kSoundFrameRate;
     for (; gSoundFramesDue >= 1.0; gSoundFramesDue -= 1.0) {
         const double end = gTicks + frameTicks;
+        bool fired = false;
         for (Alarm &al : gAlarms) {
             if (!al.running) continue;
             for (int n = 0; al.at <= end && n < 64; ++n) {
                 Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
+                fired = true;
                 if (al.period <= 0) {
                     al.running = false;
                     break;
@@ -391,6 +394,15 @@ void SoundFrame() {
             }
         }
         gTicks = end;
+        if (fired && respond) {
+            // A stream refills the part of its buffer just played when its alarm comes; on the DS
+            // the ARM9 does that within a millisecond, before the channel gets back round to it.
+            // Let the guest answer before this sound frame's samples are mixed. It sends sound
+            // commands meanwhile, so the lock is let go.
+            lock.unlock();
+            respond();
+            lock.lock();
+        }
         SeqFrame();
         gSamplesDue += kSoundOutputRate / kSoundFrameRate;
         int frames = static_cast<int>(gSamplesDue);

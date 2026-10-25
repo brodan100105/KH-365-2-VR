@@ -262,6 +262,11 @@ uint16_t IpcFifoCnt() {
 void IpcAfterSend() {
     if (Arm7HasReply() && (R16(0x184) & 0x400)) gIf |= kIrqIpcRecv;
 }
+}  // namespace
+
+void IpcRaiseIfReply() { IpcAfterSend(); }
+
+namespace {
 
 // ---------------------------------------------------------------------------------------------
 // Synthesized registers

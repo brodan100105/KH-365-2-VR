@@ -6,14 +6,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace khvr::hle {
 
 void SoundReset();
 // One PXI sound word from the ARM9: a list of SNDCommand {next, id, arg[4]} at `list`.
 void SoundRunCommands(uint32_t list);
-// Once per frame, between the guest's frames: alarms that came due, then one frame of samples.
-void SoundFrame();
+// Once per frame, between the guest's frames: the ~3.2 sound frames of a video frame, each its
+// alarms, then its sequences and samples. `respond` runs after a sound frame that fired alarms,
+// before its samples, to let the guest handle them (the platform wakes it).
+void SoundFrame(const std::function<void()> &respond = {});
 // The audio thread: up to `frames` stereo frames (interleaved L, R) of what has been mixed.
 size_t SoundRead(int16_t *stereo, size_t frames);
 // Movie sound (movie.cpp): mono or stereo 16-bit samples at `rate` Hz, mixed in as they come.

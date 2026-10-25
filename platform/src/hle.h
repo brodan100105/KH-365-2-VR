@@ -78,6 +78,8 @@ uint16_t VramRead16(uint32_t addr);
 void Arm7Reset();
 void Arm7OnSend(uint32_t word);   // a word the ARM9 wrote to IPCFIFOSEND
 bool Arm7HasReply();
+// The ARM9's receive interrupt for replies waiting in the FIFO, when the guest enabled it.
+void IpcRaiseIfReply();
 uint32_t Arm7PopReply();
 uint32_t Arm7SyncOut(uint32_t arm9Out);  // IPCSYNC: the ARM7's nibble for the ARM9's
 void Arm7VBlank();                       // per-frame work (touch sampling, sound tags)

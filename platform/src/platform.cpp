@@ -182,9 +182,17 @@ bool Platform::VBlank(int timeoutMs) {
     }
     // The guest is between frames: a consistent moment for a snapshot.
     if (gFrames == gSnapAt1 || gFrames == gSnapAt2) SnapshotTake();
+    // Sound first: its alarms may wake the guest (stream refills) before this frame's VBlank is
+    // raised, as they would come in the middle of the DS's frame.
+    SoundFrame([timeoutMs] {
+        IpcRaiseIfReply();
+        if (!(RegIf() & RegIe())) return;
+        uint64_t h = ThreadsWakeIdle();
+        ThreadsWaitHaltAfter(h, timeoutMs);
+    });
+    IpcRaiseIfReply();
     IoVBlank(kFrameCycles);
     GxVBlank();
-    SoundFrame();
     ++gFrames;
     // The idle thread leaves halt, the game runs its frame and halts again.
     uint64_t halts = ThreadsWakeIdle();
