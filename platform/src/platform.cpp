@@ -211,10 +211,33 @@ void LogActionScript() {
 }
 }  // namespace
 
+// Calls to the guest functions in guest/counted.txt (postprocess inserts khvr_count at their
+// entry); the heartbeat logs the ones that changed.
+extern "C" {
+extern const char *const khvr_counted_names[];
+extern const unsigned khvr_counted_count;
+}
+namespace hle {
+namespace {
+std::atomic<uint32_t> gCounts[64];
+uint32_t gCountsLogged[64];
+}  // namespace
+}  // namespace hle
+
 void Platform::Heartbeat() {
     using namespace hle;
     static uint64_t lastHalts = ~0ull;
     static int stuckBeats = 0;
+    {
+        std::string changed;
+        for (unsigned i = 0; i < khvr_counted_count && i < 64; ++i) {
+            uint32_t n = gCounts[i].load();
+            if (n == gCountsLogged[i]) continue;
+            gCountsLogged[i] = n;
+            changed += " " + std::string(khvr_counted_names[i]) + " " + std::to_string(n);
+        }
+        if (!changed.empty()) Log("  calls:%s", changed.c_str());
+    }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
     // the engines on, so these tell a stuck game from an invisible one.
@@ -293,3 +316,7 @@ std::string Platform::crashReason() const {
 std::vector<std::string> Platform::RecentLog(size_t lines) const { return hle::RecentLogLines(lines); }
 
 }  // namespace khvr
+
+extern "C" void khvr_count(uint32_t index) {
+    if (index < 64) khvr::hle::gCounts[index].fetch_add(1, std::memory_order_relaxed);
+}

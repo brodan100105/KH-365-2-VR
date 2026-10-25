@@ -1,0 +1,14 @@
+# Guest functions whose calls the platform counts and prints in the boot log's heartbeat
+# (guest/postprocess.py inserts the counter at their entry). One name per line.
+# The text pipeline: fonts, the character canvas, glyph lookup and drawing.
+Font_LoadUTF16
+NNS_G2dFontInitUTF16
+NNS_G2dCharCanvasInitForBG
+InitCharCanvas
+Text_DrawAlignedLines
+Text_DrawLine
+Text_DrawGlyph
+GetGlyphIndex
+LetterChar
+DrawGlyphLine
+ClearChar
