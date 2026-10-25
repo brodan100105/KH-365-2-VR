@@ -290,7 +290,6 @@ uint16_t Read16Reg(uint32_t off) {
     case 0x184: return IpcFifoCnt();
     case 0x214: return static_cast<uint16_t>(gIf);
     case 0x216: return static_cast<uint16_t>(gIf >> 16);
-    case 0x600: return 0;                                  // GXSTAT low: nothing busy, no tests
     case 0x602: return static_cast<uint16_t>(0x0600 | (R16(0x602) & 0xc000));  // FIFO empty
     default:
         if (off >= 0x600 && off < 0x700) return GxReadRegister(off);
@@ -349,6 +348,7 @@ uint32_t &RegIf() { return gIf; }
 uint64_t IoCycles() { return gCycles; }
 
 void IoReset() {
+    GxReset();
     gRegs.fill(0);
     gIf = 0;
     gCycles = 0;
@@ -474,6 +474,24 @@ const uint8_t *VramExtPalette(int engine, bool obj, int slot) {
         }
     }
     return nullptr;
+}
+
+void VramTexture(uint8_t *tex, uint8_t *pal) {
+    std::memset(tex, 0, kTexVramSize);
+    std::memset(pal, 0, kTexPalSize);
+    for (int b = 0; b < 7; ++b) {
+        uint8_t cnt = gRegs[0x240 + b];
+        if (!(cnt & 0x80) || (cnt & 7) != 3) continue;
+        uint32_t ofs = (cnt >> 3) & 3;
+        const uint8_t *bank = gBanks[b].data();
+        if (b <= 3) {
+            for (uint32_t i = 0; i < 0x20000; ++i) tex[ofs * 0x20000 + i] |= bank[i];
+        } else {
+            uint32_t at = b == 4 ? 0 : 0x4000 * (ofs & 1) + 0x10000 * (ofs >> 1);
+            uint32_t size = kBankSize[b];
+            for (uint32_t i = 0; i < size && at + i < kTexPalSize; ++i) pal[at + i] |= bank[i];
+        }
+    }
 }
 
 uint8_t *VramBank(int bank) { return gBanks[bank].data(); }

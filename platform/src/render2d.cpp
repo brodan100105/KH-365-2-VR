@@ -6,6 +6,7 @@
 
 #include "guest.h"
 #include "hle.h"
+#include "hle_gx.h"
 
 namespace khvr::hle {
 
@@ -298,6 +299,12 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
     uint16_t master = IoReg16(e.io + 0x6c);
     uint16_t backdrop = Pal(e.bgPal, 0);
 
+    // The 3D layer, when BG0 shows it: rendered once for the whole screen.
+    static uint16_t color3d[kScreenW * kScreenH];
+    static uint8_t alpha3d[kScreenW * kScreenH];
+    const bool draw3d = bg0is3d && (e.dispcnt & 0x100);
+    if (draw3d) GxRender(color3d, alpha3d);
+
     Line bgl[4];
     ObjLine objl;
     for (int y = 0; y < kScreenH; ++y) {
@@ -306,7 +313,10 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             on[b] = (e.dispcnt >> (8 + b)) & 1;
             if (!on[b]) continue;
             if (b == 0 && bg0is3d) {
-                for (int x = 0; x < kScreenW; ++x) bgl[0].c[x] = kTransparent;
+                for (int x = 0; x < kScreenW; ++x) {
+                    int i = y * kScreenW + x;
+                    bgl[0].c[x] = draw3d && alpha3d[i] ? color3d[i] : kTransparent;
+                }
                 continue;
             }
             bool affine = (b == 2 && (bgMode == 2 || bgMode == 4)) || (b == 3 && (bgMode == 1 || bgMode == 2));
@@ -359,7 +369,13 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             uint16_t c = static_cast<uint16_t>(top);
             bool fx = (mask & 0x20) != 0;
             bool firstTarget = (bldcnt >> topId) & 1, secondTarget = (bldcnt >> (8 + secondId)) & 1;
-            if (semi && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
+            const bool top3dPixel = topId == 0 && bg0is3d;
+            const int a3d = top3dPixel ? alpha3d[y * kScreenW + x] : 31;
+            if (top3dPixel && a3d < 31 && secondTarget) {
+                // The 3D layer blends with what is behind it by its own alpha.
+                uint32_t a = static_cast<uint32_t>(a3d + 1) / 2;
+                c = Blend(c, static_cast<uint16_t>(second), a, 16 - a);
+            } else if (semi && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
             else if (fx && firstTarget) {
                 if (effect == 1 && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
                 else if (effect == 2) c = Bright(c, evy, true);
@@ -370,7 +386,9 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             else if (mode == 2) c = Bright(c, factor, false);
             int i = y * kScreenW + x;
             rgba[i] = ToRgba(c);
-            if (hud) hud[i] = topId == 5 ? 0 : ToRgba(c);
+            // The HUD image leaves the 3D layer out: what is behind it instead.
+            if (hud) hud[i] = top3dPixel ? (secondId == 5 ? 0 : ToRgba(static_cast<uint16_t>(second)))
+                                         : (topId == 5 ? 0 : ToRgba(c));
         }
     }
 }

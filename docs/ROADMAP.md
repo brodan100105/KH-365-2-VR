@@ -42,14 +42,19 @@ feedback from the first install decides what changes next.
 
 Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
 
-- [ ] Movies with picture: the game's own MobiClip player (its C++ parts and the decomp's
+- [x] Movies with picture: the game's own MobiClip player (its C++ parts and the decomp's
       portable frame decoder compiled into the port, the row blitter written in C)
-- [ ] Audio output (AAudio), the DS's 16-channel mixer, the ARM7 sound driver's commands
-- [ ] The sequence player (SSEQ/SBNK/SWAR from `sound_data.sdat`), streams, alarms
+- [x] Audio output (AAudio), the DS's 16-channel mixer, the ARM7 sound driver's commands
+- [x] The sequence player (SSEQ/SBNK/SWAR from `sound_data.sdat`), streams, alarms
 - [ ] Sound settings (master, music, effects, movie volume)
 
 ## Iteration 4: the world in VR
 
+- [x] The DS's 3D engine: geometry engine (matrix stacks, lighting, texture coordinate modes,
+      strips, clipping, box/position/vector tests) and a software rasterizer (all texture
+      formats, modulate/decal/toon/highlight, alpha test and blending, depth/W buffer, fog),
+      drawn as the top screen's BG0 (`platform/src/hle_gx.cpp`, `khdays_run --gx-test`)
+- [ ] Shadow volumes, edge marking, anti-aliasing, wireframe polygons, the rear-plane bitmap
 - [ ] GX geometry capture into world-space draw lists (textures, polygon attributes, toon/edge
       marking approximations)
 - [ ] Game hooks: camera read/override, player state, analog movement, room-scale step, culling

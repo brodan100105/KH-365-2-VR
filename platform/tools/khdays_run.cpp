@@ -141,6 +141,62 @@ int RenderSnapshot(const char *path, const char *prefix) {
 }
 
 // The ARM7 stand-in's answers to requests exactly as the SDK sends them.
+// The 3D engine without a ROM: commands through the ports, the picture through BG0.
+int GxTest() {
+    khvr::PlatformInitForTests();
+    auto w32 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 4); };
+    auto w8 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 1); };
+    w32(0x04000304, 0x8203);                 // POWCNT: engine A on top, 2D A and 3D on
+    w32(0x04000000, 0x00010108);             // DISPCNT A: graphics, BG0 on, BG0 is 3D
+    w32(0x04000060, 0x0001);                 // DISP3DCNT: textures on
+    w32(0x04000350, 0x00000000);             // clear colour: transparent
+    w32(0x04000354, 0x7fff);                 // clear depth: far
+    // An 8x8 direct-colour texture in bank A (texture slot 0): left half white, right half green.
+    w8(0x04000240, 0x80);                    // bank A to LCDC to fill it
+    for (int t = 0; t < 8; ++t)
+        for (int s = 0; s < 8; ++s) khvr::PlatformTestWrite(0x06800000 + 2 * (t * 8 + s), s < 4 ? 0xffff : 0x83e0, 2);
+    w8(0x04000240, 0x83);                    // bank A: texture image slot 0
+    auto cmd = [&](uint32_t c, uint32_t v) { w32(0x04000400 + 4 * c, v); };
+    auto vtx = [&](double x, double y) {
+        cmd(0x23, (static_cast<uint32_t>(static_cast<int16_t>(x * 4096)) & 0xffff) |
+                      (static_cast<uint32_t>(static_cast<int16_t>(y * 4096)) << 16));
+        cmd(0x23, 0);
+    };
+    auto frame = [&](uint32_t attr, bool textured) {
+        cmd(0x10, 0); cmd(0x15, 0); cmd(0x10, 2); cmd(0x15, 0);
+        cmd(0x60, 0xbfff0000);               // viewport 0,0 - 255,191
+        cmd(0x29, attr);
+        cmd(0x2a, textured ? 7u << 26 : 0);
+        cmd(0x20, textured ? 0x7fff : 0x001f);   // white / red
+        if (textured) {
+            cmd(0x40, 1);                    // a quad, counterclockwise, texture across it
+            cmd(0x22, 0); vtx(-0.5, -0.5);
+            cmd(0x22, 8 * 16); vtx(0.5, -0.5);
+            cmd(0x22, 8 * 16 | (8 * 16) << 16); vtx(0.5, 0.5);
+            cmd(0x22, (8 * 16) << 16); vtx(-0.5, 0.5);
+        } else {
+            cmd(0x40, 0);                    // a triangle, counterclockwise
+            vtx(-0.5, -0.5); vtx(0.5, -0.5); vtx(0.0, 0.5);
+        }
+        cmd(0x41, 0);
+        cmd(0x50, 0);                        // SWAP_BUFFERS
+    };
+    static khvr::PlatformScreens s;
+    auto px = [&](int x, int y) { return s.top[y * 256 + x] & 0xffffff; };
+    frame(0x001f00c0, false);                // both faces
+    khvr::Platform::Get().CaptureScreens(&s);
+    bool tri = px(128, 100) == 0x0000ff && px(128, 30) == 0 && px(10, 100) == 0;
+    frame(0x001f0040, false);                // back faces only: the front-facing triangle goes
+    khvr::Platform::Get().CaptureScreens(&s);
+    bool culled = px(128, 100) == 0;
+    frame(0x001f0080, true);
+    khvr::Platform::Get().CaptureScreens(&s);
+    bool tex = px(90, 96) == 0xffffff && px(166, 96) == 0x00ff00;
+    std::printf("gx test: %s (triangle %d, culling %d, texture %d; pixels %06x %06x)\n",
+                tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
+    return tri && culled && tex ? 0 : 1;
+}
+
 int PxiTest() {
     using namespace khvr::hle;
     khvr::PlatformInitForTests();
@@ -299,6 +355,7 @@ int SeqTest() {
 int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
+    if (argc >= 2 && std::string(argv[1]) == "--gx-test") return GxTest();
     if (argc >= 2 && std::string(argv[1]) == "--sound-test") return SoundTest();
     if (argc >= 2 && std::string(argv[1]) == "--seq-test") return SeqTest();
     if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);

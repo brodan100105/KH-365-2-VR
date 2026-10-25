@@ -58,6 +58,10 @@ uint32_t VramBankSize(int bank);
 void VramCopyRegion(uint32_t base, uint32_t size, uint8_t *dst);
 // Extended palette slot `slot` (BG 0-3, OBJ 0) of engine 0 (A) or 1 (B), or null if unmapped.
 const uint8_t *VramExtPalette(int engine, bool obj, int slot);
+// The 3D engine's view: texture image slots 0-3 (512 KB, banks A-D) and texture palette slots
+// 0-5 (96 KB, banks E-G), as mapped now. Unmapped parts read as 0.
+constexpr uint32_t kTexVramSize = 0x80000, kTexPalSize = 0x18000;
+void VramTexture(uint8_t *tex, uint8_t *pal);
 // Plain memory reads of the 2D engines' regions through the current mapping.
 // Screen snapshots (hle_io.cpp): what the 2D renderer reads, to a file and back.
 bool SnapshotWrite(const std::string &path);

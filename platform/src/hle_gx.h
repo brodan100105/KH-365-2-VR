@@ -1,15 +1,26 @@
-// The 3D geometry engine. Iteration 2 only keeps the guest's view of it consistent (the FIFO
-// always drains, status reads are idle); iteration 3 decodes the command stream into the
-// world-space draw lists the VR renderer uses (docs/ARCHITECTURE.md).
+// The 3D engine: the geometry engine the guest feeds through the GX FIFO and command ports
+// (matrices, lighting, texture coordinates, primitives, clipping, the box/position/vector tests)
+// and a software rasterizer that draws the polygons of the last SWAP_BUFFERS the way the DS's
+// rendering engine does (textures in all seven formats, modulate/decal/toon/highlight, alpha
+// test and blending, depth or W buffer, fog). Its picture is engine A's BG0 when DISPCNT puts
+// the 3D layer there (render2d.cpp).
+//
+// The VR view will later take the same polygons as world-space draw lists (docs/ROADMAP.md).
 #pragma once
 
 #include <cstdint>
 
 namespace khvr::hle {
 
-void GxWrite(uint32_t addr, uint32_t value, uint32_t size);
+void GxReset();
+void GxWrite(uint32_t addr, uint32_t value, uint32_t size);  // 0x04000400-0x040005ff
 uint16_t GxReadRegister(uint32_t off);  // 0x600-0x6ff, offset from 0x04000000
 uint32_t GxCommandsThisFrame();
 void GxVBlank();
+
+// The 3D layer, 256 x 192: BGR555 colour and 5-bit alpha per pixel (alpha 0: nothing there).
+void GxRender(uint16_t *color, uint8_t *alpha);
+// Polygons in the list GxRender draws (for the heartbeat and tests).
+uint32_t GxPolygonsShown();
 
 }  // namespace khvr::hle
