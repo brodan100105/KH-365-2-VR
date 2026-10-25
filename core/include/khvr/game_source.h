@@ -45,6 +45,10 @@ struct TexturedWorld {
     std::vector<uint8_t> triangleFlags;
     std::vector<WorldTexture> textures;
     uint32_t revision = 0;  // bumped with every new frame of it
+    // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
+    // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.
+    int viewport[4] = {0, 0, 255, 191};
+    int fadeMode[2] = {0, 0}, fadeFactor[2] = {0, 0};
 };
 
 // The DS's two 256x192 screens, RGBA8. The top screen is the game's 3D view with its 2D HUD;

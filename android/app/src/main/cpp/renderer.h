@@ -62,7 +62,8 @@ public:
     void DrawComfortOverlay(float vignette, float blink);
     // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
     // over them. Its textures are kept on the GPU by key and uploaded only when new.
-    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj);
+    // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
+    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest);
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
@@ -74,7 +75,7 @@ private:
     GLuint vao_ = 0, vbo_ = 0;
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
     GLuint worldProgram_ = 0, worldVbo_ = 0;
-    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1;
+    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1;
     struct WorldBatch {
         int32_t texture;  // index into the world's textures, -1 none
         bool translucent, decal;

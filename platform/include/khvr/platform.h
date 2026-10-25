@@ -72,8 +72,17 @@ struct PlatformWorld {
     // The game's own lens and camera (world to view) matrices, exactly as the DS used them. The
     // DS multiplies row vectors, so its row-major arrays are OpenGL's column-major ones as is.
     float lens[16] = {}, view[16] = {};
+    // The DS's viewport (VIEWPORT: x1, y1 bottom-left, x2, y2, in its 256 x 192), and the
+    // brightness changes the DS applies to its 3D layer (fades): up to two, each mode 0 none,
+    // 1 towards white, 2 towards black, by factor / 16.
+    int viewport[4] = {0, 0, 255, 191};
+    int fadeMode[2] = {0, 0}, fadeFactor[2] = {0, 0};
     uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
 };
+
+// A captured world to a file and back (world_file.cpp).
+bool PlatformWorldWrite(const std::string &path, const PlatformWorld &w);
+bool PlatformWorldRead(const std::string &path, PlatformWorld *w);
 
 // Instantiates the guest and resets the hardware stand-ins without running the game, so tests
 // can poke registers and memory (PlatformTestPoke) and render (Platform::CaptureScreens).

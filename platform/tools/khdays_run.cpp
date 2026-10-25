@@ -233,6 +233,8 @@ int GxTest() {
 // NNS_G3dGlbFlush (camera in the position matrix) and NNS_G3dGlbFlushP (camera in the projection)
 // load them, a textured quad moved by a model matrix, and an orthographic HUD quad. The capture
 // must give the quad's corners in world space, the camera, the texture, and leave the HUD out.
+int RenderWorld(const char *in, const char *outPpm);
+
 int WorldTest() {
     khvr::PlatformInitForTests();
     auto w32 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 4); };
@@ -321,6 +323,15 @@ int WorldTest() {
         return ok;
     };
     bool a = check(false), b = check(true);
+    // A capture survives the file round trip, and the desktop draws it.
+    {
+        static khvr::PlatformWorld w, back;
+        khvr::Platform::Get().CaptureWorld(&w);
+        b = b && khvr::PlatformWorldWrite("khvr_world_test.bin", w) && khvr::PlatformWorldRead("khvr_world_test.bin", &back) &&
+            back.vertices.size() == w.vertices.size() && back.textures.size() == w.textures.size() &&
+            back.lens[5] == w.lens[5] && back.textures[0].rgba == w.textures[0].rgba &&
+            RenderWorld("khvr_world_test.bin", "khvr_world_test.ppm") == 0;
+    }
     // Around the captured world: the HUD quad (orthographic) in front, the backdrop behind.
     khvr::Platform::Get().SetWorldCapture(true);
     static khvr::PlatformScreens s;
@@ -331,6 +342,126 @@ int WorldTest() {
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d)\n",
                 a && b && split ? "ok" : "FAILED", a && b, split);
     return a && b && split ? 0 : 1;
+}
+
+// Draws a captured world (khvr_world_N.bin) the way Screen > Game in 3D does, on the CPU: the
+// game's camera and lens, its viewport, textures (nearest), depth, alpha and fades. Prints where
+// the triangles land, for a world the headset showed wrong.
+int RenderWorld(const char *in, const char *outPpm) {
+    static khvr::PlatformWorld w;
+    if (!khvr::PlatformWorldRead(in, &w)) {
+        std::fprintf(stderr, "cannot read %s\n", in);
+        return 1;
+    }
+    const int W = 512, H = 384;
+    std::vector<uint32_t> px(W * H, 0xff000000u);
+    std::vector<float> depth(W * H, 1e30f);
+    // Viewport: the DS's 256 x 192, bottom-left origin.
+    const float vx = w.viewport[0] / 256.0f, vy = w.viewport[1] / 192.0f;
+    const float vw = (w.viewport[2] - w.viewport[0] + 1) / 256.0f, vh = (w.viewport[3] - w.viewport[1] + 1) / 192.0f;
+    auto mul = [](const float *m, const float *v, float *o) {
+        for (int r = 0; r < 4; ++r) o[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+    };
+    int behind = 0, inside = 0, outside = 0;
+    float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f, minW = 1e9f, maxW = -1e9f;
+    const size_t tris = w.triangleTexture.size();
+    for (size_t t = 0; t < tris; ++t) {
+        float sx[3], sy[3], sz[3], iw[3], su[3], sv[3];
+        uint32_t col[3];
+        bool skip = false;
+        for (int k = 0; k < 3; ++k) {
+            const khvr::PlatformWorldVertex &v = w.vertices[t * 3 + k];
+            float p[4] = {v.x, v.y, v.z, 1}, e[4], c[4];
+            mul(w.view, p, e);
+            mul(w.lens, e, c);
+            minW = std::min(minW, c[3]);
+            maxW = std::max(maxW, c[3]);
+            if (c[3] <= 1e-6f) {
+                skip = true;
+                continue;
+            }
+            float nx = c[0] / c[3], ny = c[1] / c[3];
+            minX = std::min(minX, nx); maxX = std::max(maxX, nx);
+            minY = std::min(minY, ny); maxY = std::max(maxY, ny);
+            sx[k] = ((nx * 0.5f + 0.5f) * vw + vx) * W;
+            sy[k] = (1.0f - ((ny * 0.5f + 0.5f) * vh + vy)) * H;
+            sz[k] = c[2] / c[3];
+            iw[k] = 1.0f / c[3];
+            su[k] = v.u * iw[k];
+            sv[k] = v.v * iw[k];
+            col[k] = v.color;
+        }
+        if (skip) {
+            ++behind;
+            continue;
+        }
+        bool in = false;
+        for (int k = 0; k < 3; ++k) in |= sx[k] >= 0 && sx[k] < W && sy[k] >= 0 && sy[k] < H;
+        (in ? inside : outside)++;
+        const float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
+        if (std::fabs(area) < 1e-6f) continue;
+        const int x0 = std::max(0, static_cast<int>(std::min({sx[0], sx[1], sx[2]})));
+        const int x1 = std::min(W - 1, static_cast<int>(std::max({sx[0], sx[1], sx[2]})) + 1);
+        const int y0 = std::max(0, static_cast<int>(std::min({sy[0], sy[1], sy[2]})));
+        const int y1 = std::min(H - 1, static_cast<int>(std::max({sy[0], sy[1], sy[2]})) + 1);
+        const int32_t tex = w.triangleTexture[t];
+        const bool translucent = w.triangleFlags[t] & khvr::kWorldTranslucent;
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) {
+                const float qx = x + 0.5f, qy = y + 0.5f;
+                float b0 = ((sx[1] - qx) * (sy[2] - qy) - (sx[2] - qx) * (sy[1] - qy)) / area;
+                float b1 = ((sx[2] - qx) * (sy[0] - qy) - (sx[0] - qx) * (sy[2] - qy)) / area;
+                float b2 = 1 - b0 - b1;
+                if (b0 < 0 || b1 < 0 || b2 < 0) continue;
+                float z = b0 * sz[0] + b1 * sz[1] + b2 * sz[2];
+                if (z < -1 || z > 1 || z >= depth[y * W + x]) continue;
+                float ww = 1.0f / (b0 * iw[0] + b1 * iw[1] + b2 * iw[2]);
+                float c[4];
+                for (int ch = 0; ch < 4; ++ch)
+                    c[ch] = (b0 * ((col[0] >> (8 * ch)) & 255) + b1 * ((col[1] >> (8 * ch)) & 255) +
+                             b2 * ((col[2] >> (8 * ch)) & 255)) / 255.0f;
+                if (tex >= 0) {
+                    const khvr::PlatformWorldTexture &tx = w.textures[tex];
+                    float u = (b0 * su[0] + b1 * su[1] + b2 * su[2]) * ww, v = (b0 * sv[0] + b1 * sv[1] + b2 * sv[2]) * ww;
+                    int iu = static_cast<int>(std::floor(u * tx.width)), iv = static_cast<int>(std::floor(v * tx.height));
+                    iu = ((iu % tx.width) + tx.width) % tx.width;
+                    iv = ((iv % tx.height) + tx.height) % tx.height;
+                    uint32_t t4 = tx.rgba[static_cast<size_t>(iv) * tx.width + iu];
+                    for (int ch = 0; ch < 4; ++ch) c[ch] *= ((t4 >> (8 * ch)) & 255) / 255.0f;
+                }
+                if (c[3] < 0.02f) continue;
+                for (int f = 0; f < 2; ++f) {
+                    if (!w.fadeMode[f]) continue;
+                    float k = w.fadeFactor[f] / 16.0f, to = w.fadeMode[f] == 1 ? 1.0f : 0.0f;
+                    for (int ch = 0; ch < 3; ++ch) c[ch] += (to - c[ch]) * k;
+                }
+                uint32_t &d = px[y * W + x];
+                float a = translucent ? c[3] : 1.0f;
+                uint32_t o = 0xff000000u;
+                for (int ch = 0; ch < 3; ++ch) {
+                    float old = ((d >> (8 * ch)) & 255) / 255.0f;
+                    o |= static_cast<uint32_t>(std::clamp(c[ch] * a + old * (1 - a), 0.0f, 1.0f) * 255) << (8 * ch);
+                }
+                d = o;
+                if (!translucent) depth[y * W + x] = z;
+            }
+    }
+    FILE *f = std::fopen(outPpm, "wb");
+    if (!f) return 1;
+    std::fprintf(f, "P6 %d %d 255\n", W, H);
+    for (uint32_t p : px) {
+        unsigned char rgb[3] = {static_cast<unsigned char>(p), static_cast<unsigned char>(p >> 8), static_cast<unsigned char>(p >> 16)};
+        std::fwrite(rgb, 1, 3, f);
+    }
+    std::fclose(f);
+    std::printf("world: %zu triangles (%d on screen, %d off it, %d behind the camera), %zu textures\n", tris, inside,
+                outside, behind, w.textures.size());
+    std::printf("  NDC x %.2f..%.2f, y %.2f..%.2f, clip w %.2f..%.2f; viewport %d %d %d %d; fades %d/%d %d/%d\n", minX,
+                maxX, minY, maxY, minW, maxW, w.viewport[0], w.viewport[1], w.viewport[2], w.viewport[3], w.fadeMode[0],
+                w.fadeFactor[0], w.fadeMode[1], w.fadeFactor[1]);
+    std::printf("  camera eye (%.1f %.1f %.1f) target (%.1f %.1f %.1f), fov %.2f, near %.2f, far %.1f\n", w.eye[0],
+                w.eye[1], w.eye[2], w.target[0], w.target[1], w.target[2], w.fovY, w.nearZ, w.farZ);
+    return 0;
 }
 
 int PxiTest() {
@@ -565,6 +696,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--seq-test") return SeqTest();
     if (argc >= 2 && std::string(argv[1]) == "--stream-test") return StreamTest();
     if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);
+    if (argc >= 4 && std::string(argv[1]) == "--render-world") return RenderWorld(argv[2], argv[3]);
     khvr::PlatformConfig cfg;
     int frames = 600;
     std::string screens;

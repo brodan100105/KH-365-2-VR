@@ -42,6 +42,7 @@ add_library(khvr_platform STATIC
     src/snd_calc_volume.c
     src/snd_tables.c
     src/sound.cpp
+    src/world_file.cpp
     src/sound_seq.cpp
 )
 target_include_directories(khvr_platform PUBLIC include PRIVATE src)

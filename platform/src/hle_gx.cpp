@@ -1343,6 +1343,18 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->triangleFlags.push_back(flags);
         }
     }
+    out->viewport[0] = g.vpX1;
+    out->viewport[1] = g.vpY1;
+    out->viewport[2] = g.vpX2;
+    out->viewport[3] = g.vpY2;
+    // Fades: engine A's BLDY brightness when the 3D layer (BG0) is its first target, then its
+    // master brightness.
+    const uint16_t bldcnt = IoReg16(0x50), master = IoReg16(0x6c);
+    const uint32_t effect = (bldcnt >> 6) & 3;
+    out->fadeMode[0] = (bldcnt & 1) && (effect == 2 || effect == 3) ? static_cast<int>(effect - 1) : 0;
+    out->fadeFactor[0] = std::min<int>(IoReg16(0x54) & 31, 16);
+    out->fadeMode[1] = (master >> 14) == 1 ? 1 : (master >> 14) == 2 ? 2 : 0;
+    out->fadeFactor[1] = std::min<int>(master & 31, 16);
     gWorldStats.triangles = static_cast<uint32_t>(out->triangleTexture.size());
     gWorldStats.textures = static_cast<uint32_t>(out->textures.size());
     gWorldStats.leftOut = out->polygonsLeftOut;

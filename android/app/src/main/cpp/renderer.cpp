@@ -55,6 +55,8 @@ in vec4 vColor;
 uniform sampler2D uTex;
 uniform int uUseTex;
 uniform int uDecal;
+// The DS's fades of its 3D layer: (target, amount) twice; target 1 white, 0 black.
+uniform vec4 uFade;
 out vec4 oColor;
 void main() {
     vec4 c = vColor;
@@ -64,6 +66,8 @@ void main() {
         else c *= t;
     }
     if (c.a < 0.02) discard;
+    c.rgb = mix(c.rgb, vec3(uFade.x), uFade.y);
+    c.rgb = mix(c.rgb, vec3(uFade.z), uFade.w);
     oColor = c;
 })";
 
@@ -248,6 +252,7 @@ bool Renderer::Init() {
     worldUseTex_ = glGetUniformLocation(worldProgram_, "uUseTex");
     worldDecal_ = glGetUniformLocation(worldProgram_, "uDecal");
     worldSampler_ = glGetUniformLocation(worldProgram_, "uTex");
+    worldFade_ = glGetUniformLocation(worldProgram_, "uFade");
     glGenBuffers(1, &worldVbo_);
     litMvp_ = glGetUniformLocation(litProgram_, "uMvp");
     litAlpha_ = glGetUniformLocation(litProgram_, "uAlpha");
@@ -295,7 +300,7 @@ void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, fl
     glDisableVertexAttribArray(2);
 }
 
-void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj) {
+void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest) {
     if (world.vertices.empty()) return;
     ++worldFrames_;
     if (world.revision != worldRevision_) {
@@ -365,6 +370,14 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     glUseProgram(worldProgram_);
     glUniformMatrix4fv(worldMvp_, 1, GL_FALSE, viewProj.m);
     glUniform1i(worldSampler_, 0);
+    auto fade = [&](int i, float *target, float *amount) {
+        *target = world.fadeMode[i] == 1 ? 1.0f : 0.0f;
+        *amount = world.fadeMode[i] ? world.fadeFactor[i] / 16.0f : 0.0f;
+    };
+    float f[4];
+    fade(0, &f[0], &f[1]);
+    fade(1, &f[2], &f[3]);
+    glUniform4f(worldFade_, f[0], f[1], f[2], f[3]);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
@@ -385,7 +398,10 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         const bool textured = b.texture >= 0 && static_cast<size_t>(b.texture) < worldTextureIds_.size();
         glUniform1i(worldUseTex_, textured ? 1 : 0);
         glUniform1i(worldDecal_, b.decal ? 1 : 0);
-        if (textured) glBindTexture(GL_TEXTURE_2D, worldTextureIds_[b.texture]);
+        if (textured) {
+            glBindTexture(GL_TEXTURE_2D, worldTextureIds_[b.texture]);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, nearest ? GL_NEAREST : GL_LINEAR);
+        }
         glDrawArrays(GL_TRIANGLES, b.first, b.count);
     }
     glDepthMask(GL_TRUE);

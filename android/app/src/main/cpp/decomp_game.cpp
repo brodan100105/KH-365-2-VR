@@ -255,6 +255,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             b.flipT = a.flipT;
             b.rgba = a.rgba;
         }
+        std::copy(w.viewport, w.viewport + 4, t.viewport);
+        std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
+        std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);
         ++t.revision;
         if (w.hasCamera) {
             frame_.camera.eye = {w.eye[0], w.eye[1], w.eye[2]};

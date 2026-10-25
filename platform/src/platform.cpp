@@ -33,8 +33,21 @@ std::string gSnapDir;
 std::atomic<uint32_t> gSnapScene{0}, gSnapAt1{0}, gSnapAt2{0};
 uint32_t gSnapCount = 0;
 
+// The captured 3D world, next to the snapshots (khvr_world_N.bin), for khdays_run
+// --render-world: what the app draws in Screen > Game in 3D.
+std::atomic<bool> gWorldCaptureOn{false};
+void WorldDumpTake(uint32_t n) {
+    static PlatformWorld w;
+    GxCaptureWorld(&w);
+    if (w.vertices.empty()) return;
+    char name[32];
+    std::snprintf(name, sizeof name, "khvr_world_%u.bin", n % 8);
+    if (PlatformWorldWrite(gSnapDir + name, w)) Log("snapshot: %s (%zu triangles, %zu textures)", name, w.triangleTexture.size(), w.textures.size());
+}
+
 void SnapshotTake() {
     if (gSnapDir.empty()) return;
+    if (gWorldCaptureOn) WorldDumpTake(gSnapCount);
     char name[32];
     std::snprintf(name, sizeof name, "khvr_snap_%u.bin", gSnapCount % 8);
     std::string path = gSnapDir + name;
@@ -207,7 +220,10 @@ std::atomic<bool> gWorldCapture{false};
 }
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
-void Platform::SetWorldCapture(bool on) { gWorldCapture = on; }
+void Platform::SetWorldCapture(bool on) {
+    gWorldCapture = on;
+    hle::gWorldCaptureOn = on;
+}
 
 void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
 

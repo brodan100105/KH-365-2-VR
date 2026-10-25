@@ -695,6 +695,15 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
             Mat4 side = Mat4::Identity();
             side.at(0, 3) = -offset;
             view = side * cam;
+            // The DS's viewport: the lens's picture lands in that part of the 256 x 192 screen.
+            const int *vp = game_->texturedWorld().viewport;
+            const float vw = (vp[2] - vp[0] + 1) / 256.0f, vh = (vp[3] - vp[1] + 1) / 192.0f;
+            Mat4 place = Mat4::Identity();
+            place.at(0, 0) = vw;
+            place.at(1, 1) = vh;
+            place.at(0, 3) = (vp[0] + (vp[2] - vp[0] + 1) * 0.5f) / 128.0f - 1.0f;
+            place.at(1, 3) = (vp[1] + (vp[3] - vp[1] + 1) * 0.5f) / 96.0f - 1.0f;
+            eyeProj = place * eyeProj;
         }
         giantViews_[eye].Ensure(kGiantViewW, kGiantViewH);
         giantViews_[eye].Bind();
@@ -704,7 +713,9 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
             // The DS's 2D behind the 3D (a painted sky, a backdrop) fills the view first.
             renderer_.DrawQuad(backTex_.id(), Pose{}, 2.0f, 2.0f, Mat4::Identity());
             glClear(GL_DEPTH_BUFFER_BIT);
-            renderer_.DrawTexturedWorld(game_->texturedWorld(), eyeProj * view);
+            const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            renderer_.DrawTexturedWorld(game_->texturedWorld(), eyeProj * view,
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp);
         } else {
             renderer_.DrawTriangles(game_->world(), proj * view);
             renderer_.DrawTriangles(game_->player(), proj * view);
