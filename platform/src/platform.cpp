@@ -150,6 +150,24 @@ void LogActionScript() {
         "action slot %u",
         depth, cmd, op, sub, word & 0x7ff, (word >> 11) & 0x1f, fn, Read32(e + 0x18));
     Log("    bytes: %s", bytes);
+
+    // Where the script came from (Script_Start): the staging buffer at +0x594 holds a bare script
+    // or a "CAKP" archive whose member is chosen by name; a failed name lookup lands on the
+    // archive's name table. Log the archive's names and the number the field formatted.
+    uint32_t buf = st + 0x594;
+    char head[3 * 16 + 1] = {0};
+    for (int i = 0; i < 16; ++i) std::snprintf(head + 3 * i, 4, "%02x ", Read8(buf + i));
+    Log("  script source: base 0x%08x end 0x%08x | staging %s| field number %d", Read32(st + 0xc),
+        Read32(st + 0x18), head, static_cast<int16_t>(Read16(heap + 0x8baa)));
+    if (Read32(buf) == 0x504b4143) {
+        uint32_t table = Read32(buf + 8), names = table ? Read32(table + 4) : 0;
+        if (names >= 0x02000000 && names < 0x03000000) {
+            uint32_t count = Read16(names);
+            std::string list;
+            for (uint32_t i = 0; i < count && i < 24; ++i) list += " " + ReadString(names + Read16(names + 2 + 2 * i), 32);
+            Log("  script archive: %u named members:%s", count, list.c_str());
+        }
+    }
 }
 }  // namespace
 
