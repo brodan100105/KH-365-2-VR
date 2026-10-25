@@ -218,24 +218,58 @@ void VrApp::BuildLoadingArea(float floorY) {
         loadingBeam_.triangles.push_back({h1, n, hi});
         loadingBeam_.triangles.push_back({h0, n, hi});
     }
+    // The platform's rim: a gold band around the edge, below the glass, as the series' stations
+    // have.
+    for (int i = 0; i < kSides * 2; ++i) {
+        float a0 = kPi * i / kSides, a1 = kPi * (i + 1) / kSides;
+        Vec3 n = Normalize(Vec3{std::cos((a0 + a1) / 2), 0, std::sin((a0 + a1) / 2)});
+        Vec3 t0 = ringPoint(kRadius * 1.004f, a0, 0.004f), t1 = ringPoint(kRadius * 1.004f, a1, 0.004f);
+        Vec3 b0 = ringPoint(kRadius * 1.004f, a0, -0.16f), b1 = ringPoint(kRadius * 1.004f, a1, -0.16f);
+        uint32_t gold = Rgba(196, 150, 60), dark = Rgba(110, 76, 30);
+        loadingArea_.triangles.push_back({t0, n, gold});
+        loadingArea_.triangles.push_back({t1, n, gold});
+        loadingArea_.triangles.push_back({b1, n, dark});
+        loadingArea_.triangles.push_back({t0, n, gold});
+        loadingArea_.triangles.push_back({b1, n, dark});
+        loadingArea_.triangles.push_back({b0, n, dark});
+        // Its top edge, a thin ring around the glass.
+        Vec3 i0 = ringPoint(kRadius * 0.996f, a0, 0.004f), i1 = ringPoint(kRadius * 0.996f, a1, 0.004f);
+        loadingArea_.triangles.push_back({i0, up, gold});
+        loadingArea_.triangles.push_back({t1, up, gold});
+        loadingArea_.triangles.push_back({i1, up, gold});
+        loadingArea_.triangles.push_back({i0, up, gold});
+        loadingArea_.triangles.push_back({t0, up, gold});
+        loadingArea_.triangles.push_back({t1, up, gold});
+    }
     loadingCenter_ = c;
     if (!stationTex_.id()) {
         std::vector<uint32_t> art = PaintStationArt(1024);
-        stationTex_.Upload(1024, 1024, art.data(), true);
+        stationTex_.Upload(1024, 1024, art.data(), true, true);
+    }
+    if (!glowTex_.id()) {
+        std::vector<uint32_t> glow = PaintGlow(64);
+        glowTex_.Upload(64, 64, glow.data(), true, true);
     }
 }
 
 void VrApp::UpdateLoadingSparkles(double now) {
-    // Motes of light drifting up through the column, so the area is visibly alive.
+    // Motes of light drifting up through the column and swaying as they rise, each fading in at
+    // the floor, twinkling, and fading out high above, so the area is visibly alive.
     loadingSparkles_.triangles.clear();
-    for (int i = 0; i < 40; ++i) {
+    motes_.clear();
+    const float t = static_cast<float>(now);
+    for (int i = 0; i < 64; ++i) {
         float seed = static_cast<float>(i) * 12.9898f;
-        float a = std::fmod(seed * 3.7f, 2 * kPi) + static_cast<float>(now) * 0.05f;
-        float r = 0.4f + std::fmod(seed * 0.618f, 2.4f);
-        float y = std::fmod(static_cast<float>(now) * (0.12f + 0.05f * (i % 5)) + seed * 0.37f, 5.0f);
-        Vec3 p = loadingCenter_ + Vec3{r * std::cos(a), 0.2f + y, r * std::sin(a)};
-        float size = 0.012f + 0.006f * (i % 3);
-        AddBox(&loadingSparkles_, p, {size, size, size}, static_cast<float>(now) + i, Rgba(255, 236, 180));
+        float a = std::fmod(seed * 3.7f, 2 * kPi) + t * (0.03f + 0.02f * (i % 3));
+        float r = 0.35f + std::fmod(seed * 0.618f, 2.6f);
+        const float rise = 6.0f;
+        float y = std::fmod(t * (0.10f + 0.04f * (i % 5)) + seed * 0.37f, rise);
+        float sway = 0.08f * std::sin(t * 0.7f + seed);
+        Vec3 p = loadingCenter_ + Vec3{(r + sway) * std::cos(a), 0.15f + y, (r + sway) * std::sin(a)};
+        float life = std::min(y / 0.6f, (rise - y) / 1.5f);
+        float twinkle = 0.75f + 0.25f * std::sin(t * (2.0f + (i % 4)) + seed * 5.0f);
+        motes_.push_back({p, 0.035f + 0.02f * static_cast<float>(i % 4) / 3.0f,
+                          std::clamp(life, 0.0f, 1.0f) * twinkle});
     }
 }
 
@@ -753,8 +787,20 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                        loadingCenter_ + Vec3{0, 0.002f, 0}};
             renderer_.DrawQuad(stationTex_.id(), floor, 6.4f, 6.4f, vpTracking);
         }
-        renderer_.DrawTriangles(loadingSparkles_, vpTracking);
         renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
+        // The motes face your eye, farthest first so their glows blend over each other.
+        const Vec3 eyePos = in.eyes[eye].pose.position;
+        std::vector<const Mote *> order;
+        for (const Mote &m : motes_) order.push_back(&m);
+        std::sort(order.begin(), order.end(), [&](const Mote *a, const Mote *b) {
+            return Length(a->position - eyePos) > Length(b->position - eyePos);
+        });
+        glDepthMask(GL_FALSE);
+        for (const Mote *m : order)
+            if (m->alpha > 0.02f)
+                renderer_.DrawQuad(glowTex_.id(), FacingFrom(m->position, eyePos), m->size, m->size, vpTracking,
+                                   m->alpha);
+        glDepthMask(GL_TRUE);
     } else if (mode == ViewMode::GiantScreen && handheld_ && !settings_.Bool(SettingId::HandScreenDsGiant)) {
         // The handheld shows the top screen instead.
     } else if (mode == ViewMode::GiantScreen) {

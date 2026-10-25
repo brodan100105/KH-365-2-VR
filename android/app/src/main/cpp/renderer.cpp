@@ -1,5 +1,7 @@
 #include "renderer.h"
 
+#include <cstring>
+
 #include <cmath>
 #include <cstddef>
 
@@ -145,7 +147,7 @@ void SetBlend(bool on) {
 
 }  // namespace
 
-void Texture::Upload(int w, int h, const uint32_t *rgba, bool linear) {
+void Texture::Upload(int w, int h, const uint32_t *rgba, bool linear, bool mipmaps) {
     if (!id_) glGenTextures(1, &id_);
     glBindTexture(GL_TEXTURE_2D, id_);
     if (w != w_ || h != h_) {
@@ -161,6 +163,16 @@ void Texture::Upload(int w, int h, const uint32_t *rgba, bool linear) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (mipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        // Anisotropic filtering keeps a floor sharp toward the horizon, where the GPU has it.
+        static const bool aniso = [] {
+            const char *ext = reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS));
+            return ext && std::strstr(ext, "GL_EXT_texture_filter_anisotropic");
+        }();
+        if (aniso) glTexParameterf(GL_TEXTURE_2D, 0x84FE /* GL_TEXTURE_MAX_ANISOTROPY_EXT */, 8.0f);
+    }
 }
 
 void RenderTarget::Ensure(int w, int h) {

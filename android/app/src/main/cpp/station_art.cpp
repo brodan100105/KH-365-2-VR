@@ -243,6 +243,25 @@ bool Paint(float x, float y, Rgb *out) {
 
 }  // namespace
 
+std::vector<uint32_t> PaintGlow(int size) {
+    std::vector<uint32_t> px(static_cast<size_t>(size) * size, 0);
+    for (int j = 0; j < size; ++j)
+        for (int i = 0; i < size; ++i) {
+            float x = (i + 0.5f) / size * 2 - 1, y = (j + 0.5f) / size * 2 - 1;
+            float r = std::hypot(x, y);
+            float core = std::exp(-r * r * 30.0f);
+            float halo = std::exp(-r * r * 5.0f) * 0.55f;
+            float glint = std::exp(-std::fabs(x) * 26.0f) * std::exp(-std::fabs(y) * 3.5f) +
+                          std::exp(-std::fabs(y) * 26.0f) * std::exp(-std::fabs(x) * 3.5f);
+            float a = std::clamp(core + halo + glint * 0.35f, 0.0f, 1.0f) * std::clamp((1.0f - r) * 4.0f, 0.0f, 1.0f);
+            Rgb c = Mix(Rgb{255, 214, 140}, Rgb{255, 252, 236}, core);
+            auto ch = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 255.0f)); };
+            px[static_cast<size_t>(j) * size + i] =
+                (ch(a * 255) << 24) | (ch(c.b) << 16) | (ch(c.g) << 8) | ch(c.r);
+        }
+    return px;
+}
+
 std::vector<uint32_t> PaintStationArt(int size) {
     std::vector<uint32_t> px(static_cast<size_t>(size) * size, 0);
     for (int j = 0; j < size; ++j)

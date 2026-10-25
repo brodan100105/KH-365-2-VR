@@ -94,7 +94,12 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_;
+    struct Mote {
+        Vec3 position;
+        float size, alpha;
+    };
+    std::vector<Mote> motes_;  // the loading area's drifting lights, this frame
     Canvas loadingCanvas_{768, 192};
     std::vector<uint32_t> sharpScratch_;  // the Sharp filter's enlarged screen
     std::vector<uint32_t> smoothScratch_;  // Smooth filter: the 2x step of Scale4x

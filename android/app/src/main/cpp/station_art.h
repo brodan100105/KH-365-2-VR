@@ -12,5 +12,8 @@ namespace khvr {
 // `size` x `size` RGBA pixels (0xAABBGGRR), row 0 at the top; transparent outside the disc.
 // The top of the image is the side in front of you.
 std::vector<uint32_t> PaintStationArt(int size);
+// A mote of light: a soft round glow, white-gold at the centre, fading to transparent, with a
+// faint four-pointed glint. `size` x `size` RGBA.
+std::vector<uint32_t> PaintGlow(int size);
 
 }  // namespace khvr

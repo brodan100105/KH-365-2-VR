@@ -15,7 +15,8 @@ namespace khvr {
 
 class Texture {
 public:
-    void Upload(int w, int h, const uint32_t *rgba, bool linear);
+    // `mipmaps`: for a texture seen at a slant or from afar (a floor), filtered without shimmer.
+    void Upload(int w, int h, const uint32_t *rgba, bool linear, bool mipmaps = false);
     GLuint id() const { return id_; }
     int width() const { return w_; }
     int height() const { return h_; }
