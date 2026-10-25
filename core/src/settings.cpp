@@ -226,7 +226,7 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::HandScreenDsScreenScale, "Handheld", "screen_scale", "Screen size", 100.0f, 60.0f, 140.0f,
                   5.0f, "%", "The screens' size on the handheld: 100% is a DS Lite's, larger covers more of "
                   "the shell."));
-    d.push_back(F(S::HandScreenDsHinge, "Handheld", "hinge", "Hinge angle", 140.0f, 90.0f, 175.0f, 5.0f, "deg",
+    d.push_back(F(S::HandScreenDsHinge, "Handheld", "hinge", "Hinge angle", 160.0f, 90.0f, 175.0f, 5.0f, "deg",
                   "How far it is opened: the angle between the two halves (180 would be flat)."));
     d.push_back(B(S::HandScreenDsGiant, "Handheld", "giant_screen_too", "Giant screen too", false,
                   "Keep the giant screen (or the top screen panel) while the handheld shows the top screen."));

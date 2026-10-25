@@ -310,14 +310,18 @@ int SoundTest() {
         size_t n = SoundRead(buf, 802);
         out.insert(out.end(), buf, buf + 2 * n);
     }
-    // Zero crossings of the left channel over the second: about 800 for 400 Hz.
-    int crossings = 0;
+    // Zero crossings of the left channel, a second's worth: about 800 for 400 Hz. The first 0.1 s
+    // is left out: the output's cushion still holds silence from before the start.
+    int counted = 0;
     double sum = 0;
-    for (size_t i = 2; i < out.size(); i += 2) {
-        if ((out[i] >= 0) != (out[i - 2] >= 0)) ++crossings;
+    const size_t from = 2 * (khvr::hle::kSoundOutputRate / 10);
+    for (size_t i = from + 2; i < out.size(); i += 2) {
+        if ((out[i] >= 0) != (out[i - 2] >= 0)) ++counted;
         sum += static_cast<double>(out[i]) * out[i];
     }
-    double rms = out.empty() ? 0 : std::sqrt(sum / (out.size() / 2));
+    const size_t measured = out.size() > from ? (out.size() - from) / 2 : 1;
+    const int crossings = static_cast<int>(counted * static_cast<double>(khvr::hle::kSoundOutputRate) / measured);
+    double rms = std::sqrt(sum / measured);
     bool status = khvr::PlatformTestRead(shared + 8, 2) & 1;
     bool ok = out.size() / 2 > 40000 && crossings > 760 && crossings < 840 && rms > 1000 && alarms >= 9 &&
               alarms <= 11 && status && khvr::PlatformTestRead(shared, 4) == 2;  // both batches done

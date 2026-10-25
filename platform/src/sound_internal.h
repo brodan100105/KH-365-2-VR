@@ -30,6 +30,7 @@ struct SoundChannel {
     double pos = 0.0;          // in samples from the start of the data (past an ADPCM header)
     uint32_t decodedUpTo = 0;  // ADPCM: samples decoded so far
     int adpcmValue = 0, adpcmIndex = 0;
+    int adpcmPrev = 0;         // the sample before adpcmValue, for interpolation
     bool loopSaved = false;
     int loopValue = 0, loopIndex = 0;
     uint16_t lfsr = 0x7fff;    // noise

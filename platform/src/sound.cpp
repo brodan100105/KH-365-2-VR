@@ -58,6 +58,8 @@ uint32_t gShared = 0;          // SNDSharedWork
 
 // The output ring: interleaved stereo.
 std::mutex gRingMu;
+bool gPrimed = false;       // the output has its cushion (SoundRead)
+uint32_t gUnderruns = 0;    // times the output ran dry
 std::vector<int16_t> gRing(2 * kSoundOutputRate / 2);  // half a second
 size_t gRingRead = 0, gRingWrite = 0, gRingFill = 0;
 
@@ -106,6 +108,7 @@ int32_t SampleAt(Channel &c, uint32_t index) {
                 c.loopIndex = c.adpcmIndex;
             }
             uint8_t byte = Read8(c.source + 4 + c.decodedUpTo / 2);
+            c.adpcmPrev = c.adpcmValue;
             AdpcmStep(c, (c.decodedUpTo & 1) ? byte >> 4 : byte & 0xf);
             ++c.decodedUpTo;
         }
@@ -161,9 +164,26 @@ int32_t NextSample(Channel &c, int index) {
             return 0;
         }
     }
-    int32_t s = SampleAt(c, i);
+    // Linear interpolation between this sample and the next: picking the nearest one when the
+    // channel's rate is converted to the output's adds a grainy edge to everything.
+    const double frac = c.pos - i;
+    int32_t s0, s1;
+    if (c.format == kAdpcm) {
+        // ADPCM decodes forwards only: decode the next sample and keep the one before it.
+        if (i + 1 < total) {
+            s1 = SampleAt(c, i + 1);
+            s0 = c.adpcmPrev;
+        } else {
+            s0 = s1 = SampleAt(c, i);
+        }
+    } else {
+        s0 = SampleAt(c, i);
+        uint32_t j = i + 1;
+        if (j >= total) j = (c.repeat == kLoop && total > loopAt) ? loopAt : i;
+        s1 = SampleAt(c, j);
+    }
     c.pos += step;
-    return s;
+    return s0 + static_cast<int32_t>((s1 - s0) * frac);
 }
 
 void MixFrame(int frames) {
@@ -182,8 +202,13 @@ void MixFrame(int frames) {
         if (!gMovie.empty()) {
             size_t idx = static_cast<size_t>(gMoviePos) * 2;
             if (idx + 1 < gMovie.size()) {
-                left += gMovie[idx] * 2;   // the movie at the level of two full channels
-                right += gMovie[idx + 1] * 2;
+                // The movie at the level of two full channels, interpolated like the channels.
+                double frac = gMoviePos - std::floor(gMoviePos);
+                bool next = idx + 3 < gMovie.size();
+                double l = gMovie[idx] + (next ? (gMovie[idx + 2] - gMovie[idx]) * frac : 0.0);
+                double r = gMovie[idx + 1] + (next ? (gMovie[idx + 3] - gMovie[idx + 1]) * frac : 0.0);
+                left += static_cast<int64_t>(l * 2);
+                right += static_cast<int64_t>(r * 2);
             }
             gMoviePos += static_cast<double>(gMovieRate) / kSoundOutputRate;
         }
@@ -361,6 +386,7 @@ void SoundReset() {
     SeqReset();
     std::lock_guard<std::mutex> ring(gRingMu);
     gRingRead = gRingWrite = gRingFill = 0;
+    gPrimed = false;
 }
 
 void SoundRunCommands(uint32_t list) {
@@ -415,13 +441,29 @@ void SoundFrame(const std::function<void()> &respond) {
 size_t SoundRead(int16_t *stereo, size_t frames) {
     std::lock_guard<std::mutex> lock(gRingMu);
     const size_t cap = gRing.size() / 2;
-    // Keep the latency low: if more than about six frames are waiting, skip ahead.
-    const size_t maxFill = kSoundOutputRate / 10;
-    while (gRingFill > maxFill + frames) {
-        gRingRead = (gRingRead + 1) % cap;
-        --gRingFill;
+    // The game mixes a video frame's samples at once (~800), the output takes them a few hundred
+    // at a time. Keep a cushion of three video frames so a late frame does not leave a gap (each
+    // gap is a click): start, and start again after running dry, only once it is there.
+    const size_t cushion = kSoundOutputRate * 3 / 60;
+    if (!gPrimed) {
+        if (gRingFill < cushion + frames) {
+            for (size_t i = 0; i < frames; ++i) stereo[2 * i] = stereo[2 * i + 1] = 0;
+            return 0;
+        }
+        gPrimed = true;
+    }
+    // Keep the latency low: well past the cushion (the game ran ahead), skip ahead to it.
+    const size_t maxFill = cushion * 3;
+    if (gRingFill > maxFill + frames) {
+        size_t skip = gRingFill - cushion - frames;
+        gRingRead = (gRingRead + skip) % cap;
+        gRingFill -= skip;
     }
     size_t n = std::min(frames, gRingFill);
+    if (n < frames) {
+        gPrimed = false;
+        ++gUnderruns;
+    }
     for (size_t i = 0; i < n; ++i) {
         stereo[2 * i] = gRing[2 * gRingRead];
         stereo[2 * i + 1] = gRing[2 * gRingRead + 1];
@@ -430,6 +472,11 @@ size_t SoundRead(int16_t *stereo, size_t frames) {
     gRingFill -= n;
     for (size_t i = n; i < frames; ++i) stereo[2 * i] = stereo[2 * i + 1] = 0;
     return n;
+}
+
+uint32_t SoundUnderruns() {
+    std::lock_guard<std::mutex> lock(gRingMu);
+    return gUnderruns;
 }
 
 void SoundQueueMovie(const int16_t *samples, size_t frames, int channels, int rate) {

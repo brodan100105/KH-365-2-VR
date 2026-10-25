@@ -303,11 +303,11 @@ void Platform::Heartbeat() {
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
     // the engines on, so these tell a stuck game from an invisible one.
     Log("heartbeat: %u frames, %llu halts, %s, %d threads | DISPCNT A %08x B %08x | BRIGHT A %04x B %04x | "
-        "POWCNT %04x | VRAMCNT %08x | IME %u IE %08x IF %08x%s | 3D %u polygons, %u commands",
+        "POWCNT %04x | VRAMCNT %08x | IME %u IE %08x IF %08x%s | 3D %u polygons, %u commands | audio gaps %u",
         gFrames.load(), static_cast<unsigned long long>(t.halts), t.idle ? "idle" : "busy", t.threads,
         IoReg32(0x0000), IoReg32(0x1000), IoReg16(0x006c), IoReg16(0x106c), IoReg16(0x0304), IoReg32(0x0240),
         RegIme(), RegIe(), RegIf(), GuestIrqsDisabled() ? " (CPSR irqs off)" : "", GxPolygonsShown(),
-        GxCommandsThisFrame());
+        GxCommandsThisFrame(), SoundUnderruns());
     // The background layers' control and scroll registers, both engines: what decides which part
     // of each layer shows.
     for (uint32_t e = 0; e < 2; ++e) {

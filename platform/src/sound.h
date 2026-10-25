@@ -22,6 +22,8 @@ size_t SoundRead(int16_t *stereo, size_t frames);
 // Movie sound (movie.cpp): mono or stereo 16-bit samples at `rate` Hz, mixed in as they come.
 void SoundQueueMovie(const int16_t *samples, size_t frames, int channels, int rate);
 void SoundStopMovie();
+// How often the output ran out of mixed samples (each time is a short gap).
+uint32_t SoundUnderruns();
 
 constexpr int kSoundOutputRate = 48000;
 
