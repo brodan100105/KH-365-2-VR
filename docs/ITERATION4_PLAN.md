@@ -19,7 +19,8 @@ and into VR as real geometry around you.
       flip and colour-0 rules, keyed by its parameters and a hash of its texels and palette so the
       app uploads it to the GPU only when it changes.
 - [x] **VR renderer**: textured, vertex-coloured, unlit triangles (the DS already lit them),
-      alpha test and blending as the polygon asks, culling by the polygon's own front/back bits.
+      alpha test and blending as the polygon asks. Both faces are drawn for now (culling by the
+      polygon's own front/back bits needs the winding checked on the headset).
 - [x] **Screen > Game in 3D** (experimental, off until it has been seen right on the headset): the giant
       screen shows the captured world from the game's camera at headset resolution, one camera per
       eye, so the level has depth behind the screen. The DS's 2D behind its 3D layer fills the
