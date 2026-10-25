@@ -27,6 +27,7 @@ struct PlatformScreens {
     uint32_t topHud[kWidth * kHeight];  // top screen 2D layers only: alpha 0 where nothing is drawn
     uint32_t bottom[kWidth * kHeight];
     bool top3d = false;                 // the top screen's BG0 shows the 3D engine
+    bool movie = false;                 // the top screen shows a movie's picture
 };
 
 // Instantiates the guest and resets the hardware stand-ins without running the game, so tests

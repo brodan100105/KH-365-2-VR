@@ -104,6 +104,10 @@ enum class SettingId : int {
     HandScreenTilt,
     HandScreenTurn,
     HandScreenRoll,
+    HandScreenDs,
+    HandScreenDsSize,
+    HandScreenDsGiant,
+    HandScreenDsColor,
     // Game
     GamePlay,
     GameLanguage,
@@ -126,6 +130,8 @@ enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
 enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
+enum class HandheldDs : int { Off = 0, Movies = 1, Always = 2 };
+enum class DsColor : int { Black = 0, White = 1, Red = 2, Blue = 3, Silver = 4 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
 enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2, Smooth = 3 };
 enum class GamePlay : int { Auto = 0, Demo = 1 };

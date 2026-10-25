@@ -33,6 +33,7 @@ struct DsScreens {
     std::vector<uint32_t> topHud;  // top screen 2D layers only, alpha where nothing is drawn
     std::vector<uint32_t> bottom;  // touch screen
     uint32_t revision = 0;         // bumped whenever any of them changes
+    bool movie = false;            // the top screen shows a movie
 };
 
 class GameSource {

@@ -196,7 +196,8 @@ size_t Platform::ReadAudio(int16_t *stereo, size_t frames) { return hle::SoundRe
 void Platform::CaptureScreens(PlatformScreens *out) {
     hle::Render2D(out);
     // A movie's picture (movie.cpp) replaces the top screen while it plays.
-    if (hle::MovieCopyPicture(out->top)) std::memcpy(out->topHud, out->top, sizeof out->top);
+    out->movie = hle::MovieCopyPicture(out->top);
+    if (out->movie) std::memcpy(out->topHud, out->top, sizeof out->top);
 }
 
 void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {

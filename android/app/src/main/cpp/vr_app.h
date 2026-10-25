@@ -51,6 +51,9 @@ private:
     void RenderGiantScreenViews(const XrFrameInput &in);
     void RenderEye(const XrFrameInput &in, int eye);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
+    // Handheld > Handheld DS: a small DS where the touch screen is, both screens on it, drawn at
+    // `scale` of its size and `alpha` opacity (the grow and fade of the hand screen).
+    void DrawHandheld(const Mat4 &vpTracking, float scale, float alpha, float smoothing);
     void StartGame();
     // While the game boots and has not drawn anything yet, you stand in a loading area: a
     // stained-glass platform and a panel saying how far the boot got.
@@ -113,6 +116,7 @@ private:
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     float handScreenShown_ = 0.0f;  // 0 small .. 1 full size (the grow/shrink animation)
+    bool handheld_ = false;         // the touch screen is shown as a whole DS, top screen included
     Quat handScreenLock_;           // with Face your view off: its angle relative to the controller
     bool handScreenLockValid_ = false;
     Vec3 laserEnd_;

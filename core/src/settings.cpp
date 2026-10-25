@@ -211,6 +211,19 @@ std::vector<SettingDef> BuildDefs() {
                   "Turns the screen left or right."));
     d.push_back(F(S::HandScreenRoll, "Hand screen", "roll", "Roll", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
                   "Rolls the screen clockwise or counterclockwise."));
+    // ---- Handheld ----
+    d.push_back(E(S::HandScreenDs, "Handheld", "show", "Handheld DS", 0, {"off", "movies", "always"},
+                  {"Off (touch screen only)", "For movies", "Always"},
+                  "Holds a whole DS: the top screen above the touch screen on a small handheld, "
+                  "opened on its hinge, where the touch screen is (Hand screen > Placement). It grows, "
+                  "shrinks and fades as one. For movies: only while a movie plays."));
+    d.push_back(F(S::HandScreenDsSize, "Handheld", "screen_size", "Screen size", 0.10f, 0.06f,
+                  0.25f, 0.01f, "m", "Width of each of the handheld's screens (a real DS Lite: 0.06 m)."));
+    d.push_back(B(S::HandScreenDsGiant, "Handheld", "giant_screen_too", "Giant screen too", false,
+                  "Keep the giant screen (or the top screen panel) while the handheld shows the top screen."));
+    d.push_back(E(S::HandScreenDsColor, "Handheld", "color", "Color", 0,
+                  {"black", "white", "red", "blue", "silver"}, {"Black", "White", "Red", "Blue", "Silver"},
+                  "The handheld's shell."));
     // ---- Game ----
     d.push_back(E(S::GamePlay, "Game", "play", "Play", 0, {"auto", "demo"},
                   {"The game (if a ROM is found)", "Demo arena"},

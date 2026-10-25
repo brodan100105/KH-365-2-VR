@@ -374,8 +374,11 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     // grow in only while you look toward them.
     const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
     handScreenSide_ = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
+    const HandheldDs handheld = settings_.Enum<HandheldDs>(SettingId::HandScreenDs);
+    handheld_ = placement != BottomScreenPlacement::Hidden && !Loading() &&
+                (handheld == HandheldDs::Always || (handheld == HandheldDs::Movies && game_->screens().movie));
     if (placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist) {
-        bottomPanel_.width = settings_.Get(SettingId::HandScreenSize);
+        bottomPanel_.width = settings_.Get(handheld_ ? SettingId::HandScreenDsSize : SettingId::HandScreenSize);
         bottomPanel_.height = bottomPanel_.width * 0.75f;
         const int h = handScreenSide_;
         if (in.gripValid[h]) {
@@ -662,6 +665,56 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     renderer_.DrawTriangles(props, vpTracking);
 }
 
+void VrApp::DrawHandheld(const Mat4 &vpTracking, float scale, float alpha, float smoothing) {
+    // A generic clamshell in DS Lite proportions, measured from its screen width w: two halves
+    // of 2.15w x 1.19w, the lower one with a cross pad and four face buttons beside the touch
+    // screen, the upper one opened 20 degrees past upright on a hinge along its back edge.
+    const float w = bottomPanel_.width * scale, h = w * 0.75f;
+    const float bodyW = w * 2.15f, bodyH = w * 1.19f, thick = w * 0.12f;
+    static const uint32_t kShell[] = {Rgba(28, 28, 32), Rgba(232, 232, 236), Rgba(170, 28, 36),
+                                      Rgba(36, 64, 150), Rgba(170, 174, 184)};
+    static const uint32_t kTrim[] = {Rgba(48, 48, 54), Rgba(200, 200, 206), Rgba(130, 20, 28),
+                                     Rgba(26, 46, 112), Rgba(130, 134, 144)};
+    const int color = std::clamp(settings_.Int(SettingId::HandScreenDsColor), 0, 4);
+    const uint32_t shell = kShell[color], trim = kTrim[color];
+    const uint32_t bezel = Rgba(12, 12, 14), button = color == 1 ? Rgba(150, 150, 158) : Rgba(70, 70, 78);
+
+    WorldDrawList ds;
+    auto box = [&ds](const Pose &frame, const Vec3 &center, const Vec3 &half, uint32_t c) {
+        AddOrientedBox(&ds, frame.Transform(center), half, frame.orientation, c);
+    };
+    // Lower half: the touch screen's center is the pose's origin, its face at z = 0.
+    const Pose &lower = bottomPanel_.pose;
+    box(lower, {0, 0, -thick * 0.5f - 0.0012f}, {bodyW * 0.5f, bodyH * 0.5f, thick * 0.5f}, shell);
+    box(lower, {0, 0, -0.0009f}, {w * 0.54f, h * 0.56f, 0.0003f}, bezel);
+    const float side = (w + bodyW) * 0.25f;  // halfway from the screen's edge to the shell's
+    const float padY = h * 0.18f, key = w * 0.028f;
+    box(lower, {-side, padY, 0.0f}, {w * 0.085f, key, 0.0015f}, button);
+    box(lower, {-side, padY, 0.0f}, {key, w * 0.085f, 0.0015f}, button);
+    const float r = w * 0.06f;
+    const Vec3 face[] = {{r, 0, 0}, {-r, 0, 0}, {0, r, 0}, {0, -r, 0}};
+    for (const Vec3 &o : face) box(lower, Vec3{side, padY, 0.0f} + o, {key, key, 0.0015f}, button);
+    box(lower, {side, -h * 0.30f, 0.0f}, {w * 0.035f, w * 0.012f, 0.001f}, button);  // start
+    box(lower, {side, -h * 0.42f, 0.0f}, {w * 0.035f, w * 0.012f, 0.001f}, button);  // select
+    box(lower, {0, bodyH * 0.5f, -thick * 0.5f - 0.0012f}, {bodyW * 0.45f, thick * 0.45f, thick * 0.45f},
+        trim);  // hinge
+
+    // Upper half, in the hinge's frame: the hinge line along the lower half's top back edge.
+    const Pose upper = lower * Pose{Quat::AxisAngle({1, 0, 0}, -DegToRad(20.0f)),
+                                    {0, bodyH * 0.5f + thick * 0.15f, -thick - 0.0012f}};
+    box(upper, {0, bodyH * 0.5f, thick * 0.5f}, {bodyW * 0.5f, bodyH * 0.5f, thick * 0.5f}, shell);
+    box(upper, {0, bodyH * 0.52f, thick + 0.0003f}, {w * 0.54f, h * 0.56f, 0.0003f}, bezel);
+    for (float sx : {-side, side})  // speaker grilles
+        box(upper, {sx, bodyH * 0.52f, thick + 0.0002f}, {w * 0.05f, w * 0.05f, 0.0002f}, trim);
+
+    renderer_.DrawTriangles(ds, vpTracking, alpha);
+    const Pose topScreen = upper * Pose{Quat(), {0, bodyH * 0.52f, thick + 0.0012f}};
+    renderer_.SetScreenSmoothing(smoothing);
+    renderer_.DrawQuad(topTex_.id(), topScreen, w, h, vpTracking, alpha);
+    renderer_.DrawQuad(bottomTex_.id(), lower, w, h, vpTracking, alpha);
+    renderer_.SetScreenSmoothing(0.0f);
+}
+
 void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     const ViewMode mode = lastMode_;
     // DS screens: edge-preserving smoothing (Picture > Screen smoothing).
@@ -688,6 +741,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         }
         renderer_.DrawTriangles(loadingSparkles_, vpTracking);
         renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
+    } else if (mode == ViewMode::GiantScreen && handheld_ && !settings_.Bool(SettingId::HandScreenDsGiant)) {
+        // The handheld shows the top screen instead.
     } else if (mode == ViewMode::GiantScreen) {
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
@@ -722,7 +777,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     // Panels float in front of the world: never let a pillar, the floor or the character cut into
     // them. They still sort against each other and the laser.
     glClear(GL_DEPTH_BUFFER_BIT);
-    if (mode != ViewMode::GiantScreen &&
+    if (mode != ViewMode::GiantScreen && (!handheld_ || settings_.Bool(SettingId::HandScreenDsGiant)) &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
     {
         renderer_.SetScreenSmoothing(screenSmoothing);
@@ -737,10 +792,14 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             // full size and opacity with a smooth ease.
             float t = handScreenShown_, e = t * t * (3.0f - 2.0f * t);
             float scale = 0.45f + 0.55f * e, alpha = 0.55f + 0.45f * e;
-            renderer_.SetScreenSmoothing(screenSmoothing);
-            renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * scale,
-                               bottomPanel_.height * scale, vpTracking, alpha);
-            renderer_.SetScreenSmoothing(0.0f);
+            if (handheld_) {
+                DrawHandheld(vpTracking, scale, alpha, screenSmoothing);
+            } else {
+                renderer_.SetScreenSmoothing(screenSmoothing);
+                renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * scale,
+                                   bottomPanel_.height * scale, vpTracking, alpha);
+                renderer_.SetScreenSmoothing(0.0f);
+            }
         }
     }
     if (Loading() && loadingTex_.id())

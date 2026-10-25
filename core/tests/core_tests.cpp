@@ -1,3 +1,4 @@
+#include <cstring>
 // Unit tests for the platform-independent VR core. Run with `ctest` or ./khvr_core_tests.
 #include <cmath>
 #include <cstdio>
@@ -163,7 +164,13 @@ TEST(SettingsStepAndFormat) {
 }
 
 TEST(SettingsEveryTabHasOptions) {
-    CHECK(SettingTabs().size() == 11);
+    // The panel has two rows of six tabs, and room for eleven options on a tab.
+    CHECK(SettingTabs().size() == 12);
+    for (const char *tab : SettingTabs()) {
+        int n = 0;
+        for (const SettingDef &d : SettingDefs()) n += std::strcmp(d.tab, tab) == 0;
+        CHECK(n >= 1 && n <= 11);
+    }
     for (const SettingDef &d : SettingDefs()) {
         CHECK(d.help && *d.help);
         if (d.type == SettingType::Enum) CHECK(d.optionKeys.size() == d.optionLabels.size());
