@@ -378,7 +378,9 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     handheld_ = placement != BottomScreenPlacement::Hidden && !Loading() &&
                 (handheld == HandheldDs::Always || (handheld == HandheldDs::Movies && game_->screens().movie));
     if (placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist) {
-        bottomPanel_.width = settings_.Get(handheld_ ? SettingId::HandScreenDsSize : SettingId::HandScreenSize);
+        bottomPanel_.width = handheld_ ? settings_.Get(SettingId::HandScreenDsSize) / 2.15f *
+                                             settings_.Get(SettingId::HandScreenDsScreenScale) / 100.0f
+                                       : settings_.Get(SettingId::HandScreenSize);
         bottomPanel_.height = bottomPanel_.width * 0.75f;
         const int h = handScreenSide_;
         if (in.gripValid[h]) {
@@ -666,11 +668,13 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
 }
 
 void VrApp::DrawHandheld(const Mat4 &vpTracking, float scale, float alpha, float smoothing) {
-    // A generic clamshell in DS Lite proportions, measured from its screen width w: two halves
-    // of 2.15w x 1.19w, the lower one with a cross pad and four face buttons beside the touch
-    // screen, the upper one opened 20 degrees past upright on a hinge along its back edge.
+    // A generic clamshell in DS Lite proportions: two halves of 2.15u x 1.19u (u is a DS Lite
+    // screen's width at this size), the lower one with a cross pad and four face buttons beside
+    // the touch screen, the upper one on a hinge along the lower one's top front edge, opened to
+    // Hinge angle. The screens are w wide (Screen size scales them from u).
+    const float u = settings_.Get(SettingId::HandScreenDsSize) / 2.15f * scale;
     const float w = bottomPanel_.width * scale, h = w * 0.75f;
-    const float bodyW = w * 2.15f, bodyH = w * 1.19f, thick = w * 0.12f;
+    const float bodyW = u * 2.15f, bodyH = u * 1.19f, thick = u * 0.12f;
     static const uint32_t kShell[] = {Rgba(28, 28, 32), Rgba(232, 232, 236), Rgba(170, 28, 36),
                                       Rgba(36, 64, 150), Rgba(170, 174, 184)};
     static const uint32_t kTrim[] = {Rgba(48, 48, 54), Rgba(200, 200, 206), Rgba(130, 20, 28),
@@ -688,27 +692,28 @@ void VrApp::DrawHandheld(const Mat4 &vpTracking, float scale, float alpha, float
     box(lower, {0, 0, -thick * 0.5f - 0.0012f}, {bodyW * 0.5f, bodyH * 0.5f, thick * 0.5f}, shell);
     box(lower, {0, 0, -0.0009f}, {w * 0.54f, h * 0.56f, 0.0003f}, bezel);
     const float side = (w + bodyW) * 0.25f;  // halfway from the screen's edge to the shell's
-    const float padY = h * 0.18f, key = w * 0.028f;
-    box(lower, {-side, padY, 0.0f}, {w * 0.085f, key, 0.0015f}, button);
-    box(lower, {-side, padY, 0.0f}, {key, w * 0.085f, 0.0015f}, button);
-    const float r = w * 0.06f;
+    const float padY = u * 0.135f, key = u * 0.028f;
+    box(lower, {-side, padY, 0.0f}, {u * 0.085f, key, 0.0015f}, button);
+    box(lower, {-side, padY, 0.0f}, {key, u * 0.085f, 0.0015f}, button);
+    const float r = u * 0.06f;
     const Vec3 face[] = {{r, 0, 0}, {-r, 0, 0}, {0, r, 0}, {0, -r, 0}};
     for (const Vec3 &o : face) box(lower, Vec3{side, padY, 0.0f} + o, {key, key, 0.0015f}, button);
-    box(lower, {side, -h * 0.30f, 0.0f}, {w * 0.035f, w * 0.012f, 0.001f}, button);  // start
-    box(lower, {side, -h * 0.42f, 0.0f}, {w * 0.035f, w * 0.012f, 0.001f}, button);  // select
+    box(lower, {side, -u * 0.22f, 0.0f}, {u * 0.035f, u * 0.012f, 0.001f}, button);  // start
+    box(lower, {side, -u * 0.31f, 0.0f}, {u * 0.035f, u * 0.012f, 0.001f}, button);  // select
     box(lower, {0, bodyH * 0.5f, -thick * 0.5f - 0.0012f}, {bodyW * 0.45f, thick * 0.45f, thick * 0.45f},
         trim);  // hinge
 
-    // Upper half, in the hinge's frame: the hinge line along the lower half's top back edge.
-    const Pose upper = lower * Pose{Quat::AxisAngle({1, 0, 0}, -DegToRad(20.0f)),
-                                    {0, bodyH * 0.5f + thick * 0.15f, -thick - 0.0012f}};
-    box(upper, {0, bodyH * 0.5f, thick * 0.5f}, {bodyW * 0.5f, bodyH * 0.5f, thick * 0.5f}, shell);
-    box(upper, {0, bodyH * 0.52f, thick + 0.0003f}, {w * 0.54f, h * 0.56f, 0.0003f}, bezel);
+    // Upper half, in the hinge's frame: the axis along the lower half's top front edge, so closing
+    // it (turning toward you) would lay the top screen face down on the touch screen.
+    const float closed = DegToRad(180.0f - settings_.Get(SettingId::HandScreenDsHinge));
+    const Pose upper = lower * Pose{Quat::AxisAngle({1, 0, 0}, closed), {0, bodyH * 0.5f + thick * 0.15f, -0.0012f}};
+    box(upper, {0, bodyH * 0.5f, -thick * 0.5f}, {bodyW * 0.5f, bodyH * 0.5f, thick * 0.5f}, shell);
+    box(upper, {0, bodyH * 0.52f, 0.0003f}, {w * 0.54f, h * 0.56f, 0.0003f}, bezel);
     for (float sx : {-side, side})  // speaker grilles
-        box(upper, {sx, bodyH * 0.52f, thick + 0.0002f}, {w * 0.05f, w * 0.05f, 0.0002f}, trim);
+        box(upper, {sx, bodyH * 0.52f, 0.0002f}, {u * 0.05f, u * 0.05f, 0.0002f}, trim);
 
     renderer_.DrawTriangles(ds, vpTracking, alpha);
-    const Pose topScreen = upper * Pose{Quat(), {0, bodyH * 0.52f, thick + 0.0012f}};
+    const Pose topScreen = upper * Pose{Quat(), {0, bodyH * 0.52f, 0.0012f}};
     renderer_.SetScreenSmoothing(smoothing);
     renderer_.DrawQuad(topTex_.id(), topScreen, w, h, vpTracking, alpha);
     renderer_.DrawQuad(bottomTex_.id(), lower, w, h, vpTracking, alpha);

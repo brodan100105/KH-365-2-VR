@@ -106,6 +106,8 @@ enum class SettingId : int {
     HandScreenRoll,
     HandScreenDs,
     HandScreenDsSize,
+    HandScreenDsScreenScale,
+    HandScreenDsHinge,
     HandScreenDsGiant,
     HandScreenDsColor,
     // Game

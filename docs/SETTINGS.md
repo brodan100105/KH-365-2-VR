@@ -134,7 +134,9 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
 | `show` | Handheld DS | `off`, `movies`, `always` | `off` | Holds a whole DS: the top screen above the touch screen on a small handheld, opened on its hinge, where the touch screen is (Hand screen > Placement). It grows, shrinks and fades as one. For movies: only while a movie plays. |
-| `screen_size` | Screen size | 0.06 to 0.25 m | `0.1` | Width of each of the handheld's screens (a real DS Lite: 0.06 m). |
+| `size` | Size | 0.1 to 0.5 m | `0.2` | Width of the whole handheld, screens and all (a real DS Lite: 0.13 m). |
+| `screen_scale` | Screen size | 60 to 140 % | `100` | The screens' size on the handheld: 100% is a DS Lite's, larger covers more of the shell. |
+| `hinge` | Hinge angle | 90 to 175 deg | `140` | How far it is opened: the angle between the two halves (180 would be flat). |
 | `giant_screen_too` | Giant screen too | `true` / `false` | `false` | Keep the giant screen (or the top screen panel) while the handheld shows the top screen. |
 | `color` | Color | `black`, `white`, `red`, `blue`, `silver` | `black` | The handheld's shell. |
 
