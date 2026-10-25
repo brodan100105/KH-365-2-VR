@@ -133,6 +133,7 @@ void DecompGame::DriverLoop() {
     using clock = std::chrono::steady_clock;
     auto frame = std::chrono::duration_cast<clock::duration>(std::chrono::duration<double>(kDsFrameSeconds));
     auto next = clock::now();
+    int skippedCaptures = 0;
     auto scratch = std::make_unique<PlatformScreens>();
     Platform &p = Platform::Get();
     auto nextBeat = clock::now() + std::chrono::seconds(2);
@@ -150,7 +151,17 @@ void DecompGame::DriverLoop() {
         uint32_t t = touch_.load();
         p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
         if (!p.VBlank(100)) continue;  // still busy with the previous frame
+        // Behind schedule (a heavy frame): keep the game, and so its sound, at full speed and
+        // skip drawing the screens this time, at most twice in a row.
+        if (clock::now() > next && skippedCaptures < 2) {
+            ++skippedCaptures;
+            p.NoteDisplay(true, 0.0f);
+            continue;
+        }
+        skippedCaptures = 0;
+        const auto captureStart = clock::now();
         p.CaptureScreens(scratch.get());
+        p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
         // The loading area stays for 5 seconds at least, and until either screen shows an
         // image: the game starts on flat white or black (a brightness fade), which is not one.
         if (!hasPicture_ && clock::now() - started > std::chrono::seconds(5)) {

@@ -83,7 +83,12 @@ void AdpcmStep(Channel &c, int nibble) {
 
 void StartChannelImpl(Channel &c) {
     c.active = true;
-    c.pos = 0.0;
+    // The channel starts now, which lies between two output samples: gSamplesDue is how far the
+    // mix is behind now (negative when ahead), so the next sample mixed is that much before
+    // (or after) the channel's start. Keeping that offset ties the channel to the sound clock
+    // exactly, as the DS's channels and alarms share one.
+    const double rate = c.timer ? kChannelClock / c.timer : 0.0;
+    c.pos = -gSamplesDue * rate / kSoundOutputRate;
     c.decodedUpTo = 0;
     c.loopSaved = false;
     c.lfsr = 0x7fff;
@@ -141,6 +146,10 @@ int32_t NextSample(Channel &c, int index) {
             s = 0;
         }
         return s;
+    }
+    if (c.pos < 0) {  // not started yet within this output sample
+        c.pos += step;
+        return 0;
     }
     const uint32_t perWord = SamplesPerWord(c.format);
     const uint32_t header = c.format == kAdpcm ? 1 : 0;
@@ -401,39 +410,57 @@ void SoundRunCommands(uint32_t list) {
 
 void SoundFrame(const std::function<void()> &respond) {
     std::unique_lock<std::mutex> lock(gMu);
-    // One video frame's worth of sound frames, each: due alarms, the sequences, its samples.
+    // One video frame's worth of sound frames. Each runs the sequences, then mixes its samples up
+    // to each alarm as it comes due and fires it there: a stream's alarm marks the moment its
+    // channel has played a part of the buffer, which the game then refills. Fired early, the game
+    // would overwrite sound not played yet; fired late, the channel would play stale sound.
     gSoundFramesDue += kSoundFrameRate / kFrameRate;
     const double frameTicks = kOsTickRate / kSoundFrameRate;
+    auto mixTicks = [](double ticks) {
+        gSamplesDue += ticks * kSoundOutputRate / kOsTickRate;
+        int frames = static_cast<int>(gSamplesDue);
+        gSamplesDue -= frames;
+        if (frames > 0) MixFrame(frames);
+    };
     for (; gSoundFramesDue >= 1.0; gSoundFramesDue -= 1.0) {
         const double end = gTicks + frameTicks;
-        bool fired = false;
-        for (Alarm &al : gAlarms) {
-            if (!al.running) continue;
-            for (int n = 0; al.at <= end && n < 64; ++n) {
-                Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
-                fired = true;
-                if (al.period <= 0) {
-                    al.running = false;
-                    break;
+        SeqFrame();
+        for (int guard = 0; guard < 256; ++guard) {
+            double next = end;
+            for (const Alarm &al : gAlarms)
+                if (al.running && al.at < next) next = al.at;
+            if (next > gTicks) {
+                mixTicks(next - gTicks);
+                gTicks = next;
+            }
+            if (next >= end) break;
+            // Also the output sample that straddles the alarm: it still belongs to what has played.
+            if (gSamplesDue > 0) {
+                MixFrame(1);
+                gSamplesDue -= 1.0;
+            }
+            bool fired = false;
+            for (Alarm &al : gAlarms) {
+                if (!al.running) continue;
+                for (int n = 0; al.at <= gTicks && n < 64; ++n) {
+                    Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
+                    fired = true;
+                    if (al.period <= 0) {
+                        al.running = false;
+                        break;
+                    }
+                    al.at += al.period;
                 }
-                al.at += al.period;
+            }
+            if (fired && respond) {
+                // On the DS the ARM9 answers within a millisecond. The guest sends sound commands
+                // meanwhile, so the lock is let go.
+                lock.unlock();
+                respond();
+                lock.lock();
             }
         }
         gTicks = end;
-        if (fired && respond) {
-            // A stream refills the part of its buffer just played when its alarm comes; on the DS
-            // the ARM9 does that within a millisecond, before the channel gets back round to it.
-            // Let the guest answer before this sound frame's samples are mixed. It sends sound
-            // commands meanwhile, so the lock is let go.
-            lock.unlock();
-            respond();
-            lock.lock();
-        }
-        SeqFrame();
-        gSamplesDue += kSoundOutputRate / kSoundFrameRate;
-        int frames = static_cast<int>(gSamplesDue);
-        gSamplesDue -= frames;
-        MixFrame(frames);
     }
     UpdateSharedWork();
 }

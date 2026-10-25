@@ -333,6 +333,70 @@ int SoundTest() {
 // The sequence player without a ROM: a wave archive with one looped PCM16 square wave (one
 // period, 82 samples: 399 Hz at its original key 60), a bank with that one instrument, and a
 // sequence of two one-second notes, key 60 then 72, then its end.
+// A stream as the NNS stream player runs one: a looped buffer of two segments, an alarm each
+// time the channel finishes a segment, and the segment just played refilled with the next data
+// at that alarm. Every segment holds one level, rising: if an alarm came early, the refill would
+// land in sound not played yet, and the output would step back down.
+int StreamTest() {
+    using namespace khvr::hle;
+    khvr::PlatformInitForTests();
+    Arm7Reset();
+    const uint32_t buf = 0x02120000, cmds = 0x02124000, shared = 0x02125000;
+    const uint32_t seg = 1024;  // samples per segment, PCM16
+    auto fill = [&](int segment, int seq) {
+        for (uint32_t i = 0; i < seg; ++i) khvr::PlatformTestWrite(buf + 2 * (segment * seg + i), seq * 450, 2);
+    };
+    fill(0, 0);
+    fill(1, 1);
+    auto cmd = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+        uint32_t at = cmds + 0x18 * n;
+        khvr::PlatformTestWrite(at, next, 4);
+        khvr::PlatformTestWrite(at + 4, id, 4);
+        khvr::PlatformTestWrite(at + 8, a0, 4);
+        khvr::PlatformTestWrite(at + 12, a1, 4);
+        khvr::PlatformTestWrite(at + 16, a2, 4);
+        khvr::PlatformTestWrite(at + 20, a3, 4);
+    };
+    // NNS_SndStrmSetup: channel timer = t << 5, alarm = t * samples per segment (here t = 16).
+    const uint32_t t = 16, period = t * seg;
+    cmd(0, cmds + 0x18, 0x1d, shared, 0, 0, 0);
+    cmd(1, cmds + 0x30, 0x0e, 0 | (t << 5) << 16, buf, (2 * seg / 2) | 127u << 24, 0 | 64u << 16 | 1u << 24 | 1u << 26);
+    cmd(2, cmds + 0x48, 0x12, 2, period, period, 9);
+    cmd(3, 0, 0x0c, 1, 0, 1u << 2, 0);
+    Arm7OnSend(7 | (cmds << 6));
+    int seq = 2, played = 1;  // the segment the channel plays next, and the data to put in it
+    std::vector<int16_t> out;
+    auto respond = [&] {
+        while (Arm7HasReply()) {
+            uint32_t w = Arm7PopReply();
+            if ((w & 0x1f) != 7 || (w >> 6) != (2u | 9u << 8)) continue;
+            // The channel just finished segment `played ^ 1`... it now plays `played`: refill the other.
+            fill(played ^ 1, seq++);
+            played ^= 1;
+        }
+    };
+    for (int f = 0; f < 120; ++f) {
+        SoundFrame(respond);
+        int16_t b[2 * 1024];
+        size_t n = SoundRead(b, 802);
+        out.insert(out.end(), b, b + 2 * n);
+    }
+    // Levels only rise (interpolation blends each step over one sample, never back).
+    int drops = 0, last = -1, steps = 0;
+    for (size_t i = 0; i < out.size(); i += 2) {
+        int v = out[i];
+        if (last >= 0 && v < last - 20) ++drops;
+        if (v > last + 20) ++steps;
+        if (std::getenv("KHVR_STREAM_TRACE") && (v > last + 20 || v < last - 20) && i < 60000)
+            std::printf("  sample %zu: %d -> %d\n", i / 2, last, v);
+        last = v;
+    }
+    bool ok = drops == 0 && seq > 40 && steps > 20;
+    std::printf("stream test: %s (%d refills, %d level steps, %d steps back)\n", ok ? "ok" : "FAILED", seq - 2,
+                steps, drops);
+    return ok ? 0 : 1;
+}
+
 int SeqTest() {
     using namespace khvr::hle;
     khvr::PlatformInitForTests();
@@ -392,6 +456,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--gx-test") return GxTest();
     if (argc >= 2 && std::string(argv[1]) == "--sound-test") return SoundTest();
     if (argc >= 2 && std::string(argv[1]) == "--seq-test") return SeqTest();
+    if (argc >= 2 && std::string(argv[1]) == "--stream-test") return StreamTest();
     if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);
     khvr::PlatformConfig cfg;
     int frames = 600;

@@ -207,6 +207,21 @@ std::atomic<int> g3dScale{1};
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
 
+namespace {
+std::atomic<uint32_t> gSkippedCaptures{0}, gCaptures{0};
+std::atomic<float> gCaptureMsMax{0.0f}, gCaptureMsSum{0.0f};
+}
+
+void Platform::NoteDisplay(bool skipped, float captureMs) {
+    if (skipped) {
+        ++gSkippedCaptures;
+        return;
+    }
+    ++gCaptures;
+    gCaptureMsSum = gCaptureMsSum + captureMs;
+    if (captureMs > gCaptureMsMax) gCaptureMsMax = captureMs;
+}
+
 void Platform::CaptureScreens(PlatformScreens *out) {
     hle::Render2D(out, g3dScale.load());
     // A movie's picture (movie.cpp) replaces the top screen while it plays.
@@ -298,6 +313,13 @@ void Platform::Heartbeat() {
             changed += " " + std::string(khvr_counted_names[i]) + " " + std::to_string(n);
         }
         if (!changed.empty()) Log("  calls:%s", changed.c_str());
+    }
+    // How the screens kept up since the last heartbeat (the app's driver reports them).
+    if (uint32_t n = gCaptures.exchange(0); n || gSkippedCaptures) {
+        Log("  screens: %u drawn (%.1f ms average, %.1f ms at most), %u skipped to keep up", n,
+            n ? gCaptureMsSum.load() / n : 0.0f, gCaptureMsMax.load(), gSkippedCaptures.exchange(0));
+        gCaptureMsSum = 0.0f;
+        gCaptureMsMax = 0.0f;
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has

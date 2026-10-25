@@ -64,6 +64,9 @@ public:
     void CaptureScreens(PlatformScreens *out);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
+    // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
+    // how long CaptureScreens took.
+    void NoteDisplay(bool skipped, float captureMs);
     // The game's sound, 48 kHz stereo (interleaved L, R): fills `frames` frames, silence where
     // nothing has been mixed yet; returns how many were real. For the audio thread.
     size_t ReadAudio(int16_t *stereo, size_t frames);
