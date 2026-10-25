@@ -98,7 +98,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `refresh_rate` | Refresh rate | `72`, `90`, `120` | `90` | Headset refresh rate. The game itself runs at its original frame rate. |
 | `resolution_scale` | Resolution scale | 0.5 to 1.5 x | `1` | Per-eye render resolution relative to the headset's. Applies on restart. |
 | `msaa` | Anti-aliasing | `off`, `2x`, `4x` | `4x` | Multisample anti-aliasing. Applies on restart. |
-| `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges. |
+| `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp`, `smooth` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth also rounds diagonal edges (Scale4x) instead of showing them as steps. |
 | `sharpen` | Sharpening | 0 to 1 | `0.3` | Sharpens the final picture. |
 | `foveation` | Fixed foveation | `off`, `low`, `medium`, `high` | `medium` | Lowers resolution at the edges of the lenses to save GPU time. |
 | `draw_distance` | Draw distance | 1 to 4 x | `1.5` | Widens the game's culling so you can look around freely. |

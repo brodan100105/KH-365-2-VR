@@ -126,7 +126,7 @@ enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
 enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
-enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2 };
+enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2, Smooth = 3 };
 enum class GamePlay : int { Auto = 0, Demo = 1 };
 // Buttons a gesture can press, in the order the Controls tab lists them.
 enum class DsBinding : int { A = 0, B = 1, X = 2, Y = 3, L = 4, R = 5, None = 6 };

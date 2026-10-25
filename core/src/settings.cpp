@@ -160,8 +160,10 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::PicMsaa, "Picture", "msaa", "Anti-aliasing", 2, {"off", "2x", "4x"},
                   {"Off", "2x MSAA", "4x MSAA"}, "Multisample anti-aliasing. Applies on restart."));
     d.push_back(E(S::PicTextureFilter, "Picture", "texture_filter", "Texture filtering", 2,
-                  {"nearest", "bilinear", "sharp"}, {"Nearest (DS look)", "Bilinear", "Sharp (pixel art)"},
-                  "How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges."));
+                  {"nearest", "bilinear", "sharp", "smooth"},
+                  {"Nearest (DS look)", "Bilinear", "Sharp (pixel art)", "Smooth (upscale)"},
+                  "How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth "
+                  "also rounds diagonal edges (Scale4x) instead of showing them as steps."));
     d.push_back(F(S::PicSharpen, "Picture", "sharpen", "Sharpening", 0.3f, 0.0f, 1.0f, 0.05f, "",
                   "Sharpens the final picture."));
     d.push_back(E(S::PicFoveation, "Picture", "foveation", "Fixed foveation", 2,

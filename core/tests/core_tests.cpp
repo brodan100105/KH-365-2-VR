@@ -10,6 +10,7 @@
 #include "khvr/input_mapper.h"
 #include "khvr/math.h"
 #include "khvr/settings.h"
+#include "khvr/upscale.h"
 #include "khvr/settings_panel.h"
 #include "khvr/view_rig.h"
 
@@ -57,6 +58,29 @@ TrackingFrame MakeTracking(Vec3 head = {0, 1.6f, 0}, float dt = 1.0f / 90.0f) {
     t.dt = dt;
     t.head.position = head;
     return t;
+}
+
+// ---------------------------------------------------------------- upscale
+
+TEST(UpscaleScale2xFlatAndDiagonal) {
+    // A flat image stays flat.
+    const uint32_t flat[4] = {7, 7, 7, 7};
+    uint32_t out[16];
+    Scale2x(flat, 2, 2, out);
+    for (uint32_t v : out) CHECK(v == 7);
+    // A diagonal edge: the corner between two equal neighbours takes their colour.
+    //   1 1 0       1 1 1 1 0 0
+    //   1 0 0  ->   1 1 1 0 0 0  (row 1, pixel (1,1): its top-left corner becomes 1)
+    //   0 0 0
+    const uint32_t diag[9] = {1, 1, 0, 1, 0, 0, 0, 0, 0};
+    uint32_t big[36];
+    Scale2x(diag, 3, 3, big);
+    CHECK(big[2 * 6 + 2] == 1);  // (1,1)'s top-left corner
+    CHECK(big[2 * 6 + 3] == 0);  // its top-right corner keeps its own colour
+    CHECK(big[0] == 1 && big[5] == 0);
+    uint32_t scratch[36], big4[144];
+    Scale4x(diag, 3, 3, scratch, big4);
+    CHECK(big4[0] == 1 && big4[143] == 0);
 }
 
 // ---------------------------------------------------------------- math

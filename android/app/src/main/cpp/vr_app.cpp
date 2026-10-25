@@ -7,6 +7,7 @@
 #include <sstream>
 #include <sys/stat.h>
 
+#include "khvr/upscale.h"
 #include "khvr/canvas.h"
 #include "station_art.h"
 #include "log.h"
@@ -301,6 +302,15 @@ void VrApp::UpdateTextures() {
     if (s.revision != screensRevision_) {
         const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
         auto upload = [&](Texture &tex, const std::vector<uint32_t> &px) {
+            if (filter == TextureFilter::Smooth) {
+                // Smooth: Scale4x rounds diagonal edges, then bilinear filtering softens the rest.
+                constexpr int W = DsScreens::kWidth * 4, H = DsScreens::kHeight * 4;
+                smoothScratch_.resize(static_cast<size_t>(W / 2) * (H / 2));
+                sharpScratch_.resize(static_cast<size_t>(W) * H);
+                Scale4x(px.data(), DsScreens::kWidth, DsScreens::kHeight, smoothScratch_.data(), sharpScratch_.data());
+                tex.Upload(W, H, sharpScratch_.data(), true);
+                return;
+            }
             if (filter != TextureFilter::Sharp) {
                 tex.Upload(DsScreens::kWidth, DsScreens::kHeight, px.data(), filter == TextureFilter::Bilinear);
                 return;
