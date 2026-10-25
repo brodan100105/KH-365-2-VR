@@ -251,10 +251,21 @@ void NoteOn(int ti, int key, int velocity, int length) {
         }
     }
     Instrument inst = FindInstrument(p.bank, t.prg, key);
-    if (inst.type == kInstNull) return;
+    // Notes that cannot sound are logged (a limited number), to find sound effects that go missing.
+    static int missingLogged = 0, busyLogged = 0;
+    if (inst.type == kInstNull) {
+        if (missingLogged++ < 40)
+            Log("sound: player %d note %d: no instrument (bank 0x%08x program %d)", t.player, key, p.bank, t.prg);
+        return;
+    }
     int prio = std::clamp(t.prio + p.prio - 64, 0, 255);
     int ch = AllocChannel(inst.type, t.chMask, prio);
-    if (ch == kAllocNone) return;
+    if (ch == kAllocNone) {
+        if (busyLogged++ < 40)
+            Log("sound: player %d note %d: no free channel (type %d, allowed 0x%04x, priority %d)", t.player, key,
+                inst.type, t.chMask, prio);
+        return;
+    }
     if (gVoice[ch].on) StopVoice(ch);
     SoundChannel &c = SoundChannels()[ch];
     Voice &v = gVoice[ch];
@@ -641,6 +652,10 @@ void TickPlayer(int pn) {
 }
 
 void StartPlayer(int pn, uint32_t base, uint32_t offset, uint32_t bank, bool start) {
+    static int logged = 0;
+    if (logged++ < 300)
+        Log("sound: %s player %d: sequence 0x%08x + 0x%x, bank 0x%08x", start ? "start" : "prepare", pn, base,
+            offset, bank);
     if (pn < 0 || pn >= kPlayers) return;
     StopPlayer(pn);
     Player &p = gPlayers[pn];
