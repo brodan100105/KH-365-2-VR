@@ -13,3 +13,6 @@ android/local.properties
 
 # Python bytecode
 __pycache__/
+
+# khdays_run --world-test output
+khvr_world_test.*
