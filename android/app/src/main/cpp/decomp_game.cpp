@@ -124,6 +124,7 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     screens_.topHud.assign(DsScreens::kWidth * DsScreens::kHeight, 0);
     screens_.bottom.assign(DsScreens::kWidth * DsScreens::kHeight, 0xff000000u);
     latest_ = std::make_unique<PlatformScreens>();
+    latestWorld_ = std::make_unique<PlatformWorld>();
     OpenAudio();
     driver_ = std::thread([this] { DriverLoop(); });
     return true;
@@ -135,6 +136,7 @@ void DecompGame::DriverLoop() {
     auto next = clock::now();
     int skippedCaptures = 0;
     auto scratch = std::make_unique<PlatformScreens>();
+    auto scratchWorld = std::make_unique<PlatformWorld>();
     Platform &p = Platform::Get();
     auto nextBeat = clock::now() + std::chrono::seconds(2);
     const auto started = clock::now();
@@ -161,7 +163,14 @@ void DecompGame::DriverLoop() {
         skippedCaptures = 0;
         const auto captureStart = clock::now();
         p.CaptureScreens(scratch.get());
+        const bool world = worldCapture_.load();
+        if (world) p.CaptureWorld(scratchWorld.get());
         p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
+        if (world) {
+            std::lock_guard<std::mutex> lock(screensMu_);
+            std::swap(scratchWorld, latestWorld_);
+            ++latestWorldRevision_;
+        }
         // The loading area stays for 5 seconds at least, and until either screen shows an
         // image: the game starts on flat white or black (a brightness fade), which is not one.
         if (!hasPicture_ && clock::now() - started > std::chrono::seconds(5)) {
@@ -203,10 +212,56 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         screens_.topHud.assign(latest_->topHud, latest_->topHud + n);
         screens_.bottom.assign(latest_->bottom, latest_->bottom + n);
         screens_.movie = latest_->movie;
+        if (latest_->split) {
+            screens_.topFront.assign(latest_->topFront, latest_->topFront + n);
+            screens_.topBack.assign(latest_->topBack, latest_->topBack + n);
+        } else {
+            screens_.topFront.clear();
+            screens_.topBack.clear();
+        }
         screens_.topScale = latest_->topScale;
         if (latest_->topScale > 1) screens_.topHi = latest_->topHi;
         ++screens_.revision;
         ++frame_.frameCounter;
+    }
+    if (!worldCapture_.load()) {
+        if (!texturedWorld_.vertices.empty()) {
+            texturedWorld_ = TexturedWorld();
+            ++texturedWorld_.revision;
+        }
+    } else if (latestWorldRevision_ != shownWorldRevision_) {
+        shownWorldRevision_ = latestWorldRevision_;
+        const PlatformWorld &w = *latestWorld_;
+        TexturedWorld &t = texturedWorld_;
+        t.vertices.resize(w.vertices.size());
+        for (size_t i = 0; i < w.vertices.size(); ++i) {
+            const PlatformWorldVertex &v = w.vertices[i];
+            t.vertices[i] = {{v.x, v.y, v.z}, v.u, v.v, v.color};
+        }
+        t.triangleTexture = w.triangleTexture;
+        t.triangleFlags = w.triangleFlags;  // the same bits (kTriFront ...)
+        t.textures.resize(w.textures.size());
+        for (size_t i = 0; i < w.textures.size(); ++i) {
+            const PlatformWorldTexture &a = w.textures[i];
+            WorldTexture &b = t.textures[i];
+            b.key = a.key;
+            b.width = a.width;
+            b.height = a.height;
+            b.repeatS = a.repeatS;
+            b.repeatT = a.repeatT;
+            b.flipS = a.flipS;
+            b.flipT = a.flipT;
+            b.rgba = a.rgba;
+        }
+        ++t.revision;
+        if (w.hasCamera) {
+            frame_.camera.eye = {w.eye[0], w.eye[1], w.eye[2]};
+            frame_.camera.target = {w.target[0], w.target[1], w.target[2]};
+            frame_.camera.up = {w.up[0], w.up[1], w.up[2]};
+            frame_.camera.fovYRad = w.fovY;
+            frame_.camera.nearZ = w.nearZ;
+            frame_.camera.farZ = w.farZ;
+        }
     }
 }
 

@@ -31,6 +31,7 @@ enum class SettingId : int {
     ScreenCurvature,
     ScreenStereo,
     ScreenDepth,
+    ScreenWorld3d,
     Passthrough,
     // Camera (third-person panoramic)
     TpWorldScale,

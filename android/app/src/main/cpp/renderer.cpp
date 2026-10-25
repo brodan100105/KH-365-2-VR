@@ -1,5 +1,6 @@
 #include "renderer.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include <cmath>
@@ -31,6 +32,40 @@ in vec4 vColor;
 uniform float uAlpha;
 out vec4 oColor;
 void main() { oColor = vec4(vColor.rgb, vColor.a * uAlpha); })";
+
+const char *kWorldVs = R"(#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+uniform mat4 uMvp;
+out vec2 vUv;
+out vec4 vColor;
+void main() {
+    vUv = aUv;
+    vColor = aColor;
+    gl_Position = uMvp * vec4(aPos, 1.0);
+})";
+
+// The DS's own blending of texture and vertex colour: multiplied (modulate), or the texture over
+// the colour by its alpha (decal). Fully transparent texels are not drawn.
+const char *kWorldFs = R"(#version 300 es
+precision mediump float;
+in vec2 vUv;
+in vec4 vColor;
+uniform sampler2D uTex;
+uniform int uUseTex;
+uniform int uDecal;
+out vec4 oColor;
+void main() {
+    vec4 c = vColor;
+    if (uUseTex == 1) {
+        vec4 t = texture(uTex, vUv);
+        if (uDecal == 1) c = vec4(mix(c.rgb, t.rgb, t.a), c.a);
+        else c *= t;
+    }
+    if (c.a < 0.02) discard;
+    oColor = c;
+})";
 
 const char *kTexVs = R"(#version 300 es
 layout(location = 0) in vec3 aPos;
@@ -207,7 +242,13 @@ bool Renderer::Init() {
     texProgram_ = Link(kTexVs, kTexFs);
     lineProgram_ = Link(kLineVs, kLineFs);
     overlayProgram_ = Link(kOverlayVs, kOverlayFs);
-    if (!litProgram_ || !texProgram_ || !lineProgram_ || !overlayProgram_) return false;
+    worldProgram_ = Link(kWorldVs, kWorldFs);
+    if (!litProgram_ || !texProgram_ || !lineProgram_ || !overlayProgram_ || !worldProgram_) return false;
+    worldMvp_ = glGetUniformLocation(worldProgram_, "uMvp");
+    worldUseTex_ = glGetUniformLocation(worldProgram_, "uUseTex");
+    worldDecal_ = glGetUniformLocation(worldProgram_, "uDecal");
+    worldSampler_ = glGetUniformLocation(worldProgram_, "uTex");
+    glGenBuffers(1, &worldVbo_);
     litMvp_ = glGetUniformLocation(litProgram_, "uMvp");
     litAlpha_ = glGetUniformLocation(litProgram_, "uAlpha");
     litLight_ = glGetUniformLocation(litProgram_, "uLight");
@@ -251,6 +292,104 @@ void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, fl
     glEnable(GL_CULL_FACE);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(list.triangles.size()));
     glDisable(GL_CULL_FACE);
+    glDisableVertexAttribArray(2);
+}
+
+void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj) {
+    if (world.vertices.empty()) return;
+    ++worldFrames_;
+    if (world.revision != worldRevision_) {
+        worldRevision_ = world.revision;
+        // Regroup the triangles: opaque batches first, then translucent ones, each by texture.
+        const size_t triangles = world.vertices.size() / 3;
+        std::vector<size_t> order(triangles);
+        for (size_t i = 0; i < triangles; ++i) order[i] = i;
+        auto keyOf = [&](size_t t) {
+            const uint8_t f = world.triangleFlags[t];
+            return (static_cast<int64_t>((f & kTriTranslucent) ? 1 : 0) << 40) |
+                   (static_cast<int64_t>((f & kTriDecal) ? 1 : 0) << 39) | (world.triangleTexture[t] + 1);
+        };
+        std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+            // Translucent triangles keep the game's order (it sorts them itself).
+            const bool ta = world.triangleFlags[a] & kTriTranslucent, tb = world.triangleFlags[b] & kTriTranslucent;
+            if (ta != tb) return !ta;
+            if (ta) return false;
+            return keyOf(a) < keyOf(b);
+        });
+        std::vector<TexturedVertex> sorted;
+        sorted.reserve(world.vertices.size());
+        worldBatches_.clear();
+        for (size_t n = 0; n < order.size(); ++n) {
+            const size_t t = order[n];
+            const int32_t tex = world.triangleTexture[t];
+            const bool translucent = world.triangleFlags[t] & kTriTranslucent, decal = world.triangleFlags[t] & kTriDecal;
+            if (worldBatches_.empty() || worldBatches_.back().texture != tex ||
+                worldBatches_.back().translucent != translucent || worldBatches_.back().decal != decal)
+                worldBatches_.push_back({tex, translucent, decal, static_cast<GLint>(sorted.size()), 0});
+            for (int k = 0; k < 3; ++k) sorted.push_back(world.vertices[t * 3 + k]);
+            worldBatches_.back().count += 3;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
+        glBufferData(GL_ARRAY_BUFFER, sorted.size() * sizeof(TexturedVertex), sorted.data(), GL_STREAM_DRAW);
+        // Textures: reuse what the GPU has by key, upload the new ones.
+        worldTextureIds_.assign(world.textures.size(), 0);
+        for (size_t i = 0; i < world.textures.size(); ++i) {
+            const WorldTexture &t = world.textures[i];
+            GpuTexture &g = worldTextures_[t.key];
+            if (!g.id) {
+                glGenTextures(1, &g.id);
+                glBindTexture(GL_TEXTURE_2D, g.id);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, t.width, t.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.rgba.data());
+                glGenerateMipmap(GL_TEXTURE_2D);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                auto wrap = [](bool repeat, bool flip) {
+                    return repeat ? (flip ? GL_MIRRORED_REPEAT : GL_REPEAT) : GL_CLAMP_TO_EDGE;
+                };
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap(t.repeatS, t.flipS));
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap(t.repeatT, t.flipT));
+            }
+            g.lastUsed = worldFrames_;
+            worldTextureIds_[i] = g.id;
+        }
+        // Textures not used for a while (about ten seconds at 72 Hz, both eyes) go.
+        for (auto it = worldTextures_.begin(); it != worldTextures_.end();) {
+            if (worldFrames_ - it->second.lastUsed > 1500) {
+                glDeleteTextures(1, &it->second.id);
+                it = worldTextures_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    glUseProgram(worldProgram_);
+    glUniformMatrix4fv(worldMvp_, 1, GL_FALSE, viewProj.m);
+    glUniform1i(worldSampler_, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedVertex),
+                          reinterpret_cast<void *>(offsetof(TexturedVertex, position)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TexturedVertex),
+                          reinterpret_cast<void *>(offsetof(TexturedVertex, u)));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TexturedVertex),
+                          reinterpret_cast<void *>(offsetof(TexturedVertex, color)));
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);  // both faces: the VR viewpoint is not the DS camera's
+    for (const WorldBatch &b : worldBatches_) {
+        SetBlend(b.translucent);
+        glDepthMask(b.translucent ? GL_FALSE : GL_TRUE);
+        const bool textured = b.texture >= 0 && static_cast<size_t>(b.texture) < worldTextureIds_.size();
+        glUniform1i(worldUseTex_, textured ? 1 : 0);
+        glUniform1i(worldDecal_, b.decal ? 1 : 0);
+        if (textured) glBindTexture(GL_TEXTURE_2D, worldTextureIds_[b.texture]);
+        glDrawArrays(GL_TRIANGLES, b.first, b.count);
+    }
+    glDepthMask(GL_TRUE);
+    SetBlend(false);
     glDisableVertexAttribArray(2);
 }
 

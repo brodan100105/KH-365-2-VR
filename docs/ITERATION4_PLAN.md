@@ -7,24 +7,24 @@ and into VR as real geometry around you.
 
 ## Step 1: the world as geometry (capture, textures, a stereo giant screen)
 
-- [ ] **Capture in world space.** Every polygon the game submits, before the DS's own culling and
+- [x] **Capture in world space.** Every polygon the game submits, before the DS's own culling and
       clipping (a VR viewpoint sees faces the DS camera did not), with its vertices through the
       position matrix. The NitroSystem 3D library puts the camera either into the position matrix
       (`NNS_G3dGlbFlush`) or into the projection matrix (`NNS_G3dGlbFlushP`): removing what the
       projection holds beyond the library's lens (`NNS_G3dGlb.projMtx`) and then the camera
       (`NNS_G3dGlb.cameraMtx`) gives world coordinates either way. Polygons drawn with another
       projection (orthographic HUD pieces such as the Day number) stay in the DS picture.
-- [ ] **The game camera** from `NNS_G3dGlb`: eye, target, up and the lens's field of view.
-- [ ] **Textures**: each texture the frame uses, decoded from texture VRAM to RGBA with its wrap,
+- [x] **The game camera** from `NNS_G3dGlb`: eye, target, up and the lens's field of view.
+- [x] **Textures**: each texture the frame uses, decoded from texture VRAM to RGBA with its wrap,
       flip and colour-0 rules, keyed by its parameters and a hash of its texels and palette so the
       app uploads it to the GPU only when it changes.
-- [ ] **VR renderer**: textured, vertex-coloured, unlit triangles (the DS already lit them),
+- [x] **VR renderer**: textured, vertex-coloured, unlit triangles (the DS already lit them),
       alpha test and blending as the polygon asks, culling by the polygon's own front/back bits.
-- [ ] **Screen > 3D giant screen** (off until it has been seen right on the headset): the giant
+- [x] **Screen > Game in 3D** (experimental, off until it has been seen right on the headset): the giant
       screen shows the captured world from the game's camera at headset resolution, one camera per
-      eye, so the level has depth behind the screen; the 2D HUD and the orthographic 3D pieces lie
-      on it as now.
-- [ ] Desktop test: a textured quad drawn through `NNS_G3dGlb` with a camera, captured back in
+      eye, so the level has depth behind the screen. The DS's 2D behind its 3D layer fills the
+      view first; the 2D in front of it, with the orthographic 3D pieces, lies on the screen.
+- [x] Desktop test: a textured quad drawn through `NNS_G3dGlb` with a camera, captured back in
       world space with the right camera and texture.
 
 ## Step 2: the game's state (hooks)

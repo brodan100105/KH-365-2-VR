@@ -6,6 +6,7 @@
 #include <GLES3/gl3.h>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "khvr/game_source.h"
@@ -59,6 +60,9 @@ public:
     void SetScreenSmoothing(float amount) { smoothing_ = amount; }
     void DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj);
     void DrawComfortOverlay(float vignette, float blink);
+    // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
+    // over them. Its textures are kept on the GPU by key and uploaded only when new.
+    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj);
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
@@ -68,6 +72,24 @@ private:
     GLint lineMvp_ = -1, lineColor_ = -1;
     GLint ovVignette_ = -1, ovBlink_ = -1;
     GLuint vao_ = 0, vbo_ = 0;
+    // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
+    GLuint worldProgram_ = 0, worldVbo_ = 0;
+    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1;
+    struct WorldBatch {
+        int32_t texture;  // index into the world's textures, -1 none
+        bool translucent, decal;
+        GLint first;
+        GLsizei count;
+    };
+    std::vector<WorldBatch> worldBatches_;
+    uint32_t worldRevision_ = ~0u;
+    struct GpuTexture {
+        GLuint id = 0;
+        uint32_t lastUsed = 0;
+    };
+    std::unordered_map<uint64_t, GpuTexture> worldTextures_;
+    std::vector<GLuint> worldTextureIds_;  // per texture of the current revision
+    uint32_t worldFrames_ = 0;
     std::vector<float> scratch_;
 };
 

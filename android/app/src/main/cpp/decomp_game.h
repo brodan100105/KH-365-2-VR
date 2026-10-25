@@ -33,6 +33,12 @@ public:
     const GameFrame &frame() const override { return frame_; }
     const WorldDrawList &world() const override { return world_; }
     const DsScreens &screens() const override { return screens_; }
+    const TexturedWorld &texturedWorld() const override { return texturedWorld_; }
+    // Screen > Game in 3D: capture the game's 3D world each frame.
+    void SetWorldCapture(bool on) {
+        worldCapture_ = on;
+        Platform::Get().SetWorldCapture(on);
+    }
 
     PlatformState state() const { return Platform::Get().state(); }
     // The game has shown an image (not a flat fade) on either screen, after the loading area's
@@ -52,6 +58,10 @@ private:
     GameFrame frame_;
     WorldDrawList world_;
     DsScreens screens_;
+    TexturedWorld texturedWorld_;
+    std::atomic<bool> worldCapture_{false};
+    std::unique_ptr<PlatformWorld> latestWorld_;
+    uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
 
     std::thread driver_;
     std::atomic<bool> stop_{false};

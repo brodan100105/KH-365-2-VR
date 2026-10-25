@@ -370,6 +370,10 @@ void VrApp::UpdateTextures() {
             upload(topTex_, s.top);
         }
         upload(hudTex_, s.topHud);
+        if (!s.topFront.empty()) {
+            upload(frontTex_, s.topFront);
+            upload(backTex_, s.topBack);
+        }
         upload(bottomTex_, s.bottom);
         screensRevision_ = s.revision;
     }
@@ -514,7 +518,10 @@ bool VrApp::Laser(const XrFrameInput &in, int hand, const Placement &p, int texW
 void VrApp::Frame(const XrFrameInput &in) {
     const float dt = in.dt;
 #ifdef KHVR_HAS_GAME
-    if (decomp_) decomp_->Set3dScale(settings_.Int(SettingId::Pic3dResolution) + 1);
+    if (decomp_) {
+        decomp_->Set3dScale(settings_.Int(SettingId::Pic3dResolution) + 1);
+        decomp_->SetWorldCapture(settings_.Bool(SettingId::ScreenWorld3d));
+    }
 #endif
     ViewMode mode = EffectiveMode();
     UpdatePlacements(in);
@@ -647,12 +654,18 @@ void VrApp::Frame(const XrFrameInput &in) {
     UpdateStatus(in.time);
     if (!in.shouldRender) return;
     // The game's own picture needs no 3D re-render until the geometry capture exists.
-    if (mode == ViewMode::GiantScreen && !game_->world().triangles.empty()) RenderGiantScreenViews(in);
+    if (mode == ViewMode::GiantScreen && (!game_->world().triangles.empty() || World3d())) RenderGiantScreenViews(in);
     for (int eye = 0; eye < 2; ++eye) {
         xr_->AcquireEye(eye);
         RenderEye(in, eye);
         xr_->ReleaseEye(eye);
     }
+}
+
+bool VrApp::World3d() const {
+    const DsScreens &s = game_->screens();
+    return settings_.Bool(SettingId::ScreenWorld3d) && !game_->texturedWorld().vertices.empty() && !s.movie &&
+           !s.topBack.empty();
 }
 
 void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
@@ -663,7 +676,10 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
     float sep = kIpd * settings_.Get(SettingId::ScreenDepth) * settings_.Get(SettingId::GameUnitsPerMeter);
     float fovY = g.camera.fovYRad > 0 ? g.camera.fovYRad : DegToRad(55.0f);
     float ty = std::tan(fovY * 0.5f), tx = ty * 4.0f / 3.0f;
-    Mat4 proj = Mat4::Projection(-tx, tx, ty, -ty, 0.1f, 1000.0f);
+    const bool world3d = World3d();
+    const float nearZ = g.camera.nearZ > 0 ? g.camera.nearZ * 0.5f : 0.1f;
+    const float farZ = g.camera.farZ > 0 ? g.camera.farZ * 1.5f : 1000.0f;
+    Mat4 proj = Mat4::Projection(-tx, tx, ty, -ty, nearZ, farZ);
     Vec3 f = Normalize(g.camera.target - g.camera.eye);
     Vec3 right = Normalize(Cross(f, g.camera.up));
     for (int eye = 0; eye < (stereo ? 2 : 1); ++eye) {
@@ -674,8 +690,15 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
         giantViews_[eye].Bind();
         glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        renderer_.DrawTriangles(game_->world(), proj * view);
-        renderer_.DrawTriangles(game_->player(), proj * view);
+        if (world3d) {
+            // The DS's 2D behind the 3D (a painted sky, a backdrop) fills the view first.
+            renderer_.DrawQuad(backTex_.id(), Pose{}, 2.0f, 2.0f, Mat4::Identity());
+            glClear(GL_DEPTH_BUFFER_BIT);
+            renderer_.DrawTexturedWorld(game_->texturedWorld(), proj * view);
+        } else {
+            renderer_.DrawTriangles(game_->world(), proj * view);
+            renderer_.DrawTriangles(game_->player(), proj * view);
+        }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -806,7 +829,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     } else if (mode == ViewMode::GiantScreen) {
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
-        if (game_->world().triangles.empty()) {
+        const bool world3d = World3d();
+        if (game_->world().triangles.empty() && !world3d) {
             // The DS's top screen exactly as the game draws it.
             renderer_.SetScreenSmoothing(screenSmoothing);
             renderer_.DrawQuad(topTex_.id(), giantScreen_.pose, giantScreen_.width, giantScreen_.height,
@@ -819,8 +843,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             // The 2D HUD sits on the screen surface, a few millimeters in front.
             Pose hudOnScreen = giantScreen_.pose * Pose{Quat(), {0, 0, 0.005f}};
             renderer_.SetScreenSmoothing(screenSmoothing);
-            renderer_.DrawQuad(hudTex_.id(), hudOnScreen, giantScreen_.width, giantScreen_.height,
-                               vpTracking, 1.0f, curv, dist);
+            renderer_.DrawQuad(world3d ? frontTex_.id() : hudTex_.id(), hudOnScreen, giantScreen_.width,
+                               giantScreen_.height, vpTracking, 1.0f, curv, dist);
             renderer_.SetScreenSmoothing(0.0f);
         }
     } else {

@@ -95,6 +95,9 @@ private:
     float prevTrigger_[2] = {0, 0};
 
     Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_;
+    Texture frontTex_, backTex_;  // Screen > Game in 3D: the 2D in front of and behind the world
+    // Screen > Game in 3D is on and the game gave a world to draw this frame.
+    bool World3d() const;
     struct Mote {
         Vec3 position;
         float size, alpha;
