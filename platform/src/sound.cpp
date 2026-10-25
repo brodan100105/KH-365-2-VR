@@ -42,6 +42,7 @@ struct Alarm {
     bool set = false, running = false;
     uint32_t id = 0;
     double at = 0.0, period = 0.0;  // in OS ticks of emulated time
+    double first = 0.0;             // the first one's delay, counted from START_TIMER
 };
 
 std::mutex gMu;
@@ -232,6 +233,11 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
         for (int i = 0; i < 8; ++i)
             if ((a2 & (1u << i)) && gAlarms[i].set) {
                 gAlarms[i].running = true;
+                gAlarms[i].at = gTicks + gAlarms[i].first;
+                static int logged = 0;
+                if (logged++ < 40)
+                    Log("sound: alarm %d started (first after %.0f, then every %.0f OS ticks)", i, gAlarms[i].first,
+                        gAlarms[i].period);
             }
         break;
     case 0x0d:  // STOP_TIMER
@@ -283,7 +289,7 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
         al.set = true;
         al.running = false;
         al.id = a3 & 0xff;
-        al.at = gTicks + a1;
+        al.first = a1;
         al.period = a2;
         break;
     }

@@ -199,11 +199,21 @@ int SoundTest() {
     cmd(0, cmds + 0x18, 0x1d, shared, 0, 0, 0);                                    // SHARED_WORK
     cmd(1, cmds + 0x30, 0x0e, 0 | timer << 16, wave, (samples / 2) | 127u << 24,   // SETUP_CHANNEL_PCM
         0 | 64u << 16 | 1u << 24 | 1u << 26);                                      //  PCM16, loop, pan 64
-    cmd(2, cmds + 0x48, 0x12, 3, 0, 52366, 7);                                     // SETUP_ALARM 3, 0.1 s
-    cmd(3, 0, 0x0c, 1, 0, 1u << 3, 0);                                             // START_TIMER ch 0, alarm 3
+    cmd(2, 0, 0x12, 3, 52366, 52366, 7);                                           // SETUP_ALARM 3, 0.1 s
     Arm7OnSend(7 | (cmds << 6));
+    // Half a second between setup and start, as a stream has between its prepare and its start:
+    // the alarm counts from the start, so none may come early or in a burst.
+    for (int f = 0; f < 30; ++f) {
+        SoundFrame();
+        int16_t buf[2 * 1024];
+        SoundRead(buf, 802);
+    }
+    int early = 0;
+    while (Arm7HasReply()) early += (Arm7PopReply() & 0x1f) == 7;
+    cmd(3, 0, 0x0c, 1, 0, 1u << 3, 0);                                             // START_TIMER ch 0, alarm 3
+    Arm7OnSend(7 | ((cmds + 0x48) << 6));
     std::vector<int16_t> out;
-    int alarms = 0;
+    int alarms = -early;
     for (int f = 0; f < 60; ++f) {
         SoundFrame();
         while (Arm7HasReply()) {
@@ -224,7 +234,7 @@ int SoundTest() {
     double rms = out.empty() ? 0 : std::sqrt(sum / (out.size() / 2));
     bool status = khvr::PlatformTestRead(shared + 8, 2) & 1;
     bool ok = out.size() / 2 > 40000 && crossings > 760 && crossings < 840 && rms > 1000 && alarms >= 9 &&
-              alarms <= 11 && status && khvr::PlatformTestRead(shared, 4) == 1;
+              alarms <= 11 && status && khvr::PlatformTestRead(shared, 4) == 2;  // both batches done
     std::printf("sound test: %s (%zu frames, %d zero crossings, rms %.0f, %d alarms, channel status %d)\n",
                 ok ? "ok" : "FAILED", out.size() / 2, crossings, rms, alarms, status);
     return ok ? 0 : 1;
