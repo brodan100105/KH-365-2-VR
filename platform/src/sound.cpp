@@ -1,8 +1,10 @@
 // The ARM7 sound driver stand-in (see sound.h). What the ARM9's NitroSDK sound library sends is a
 // list of commands (snd_command.h ids 0x00..0x21) that the real driver runs on the ARM7 against
 // the sound hardware; here the channel-level ones drive a model of the 16 channels (SOUNDxCNT and
-// friends), which is what streamed music (NitroSystem's strm player refilling a ring buffer on
-// alarms) and plain sound effects need. Sequence commands are acknowledged and logged once.
+// friends), which streamed music (NitroSystem's strm player refilling a ring buffer on alarms)
+// needs, and the sequence commands go to the sequence player (sound_seq.cpp). Like the real
+// driver it works in sound frames of 0xaa8 OS ticks (about 192 a second): alarms, then the
+// sequences, then that frame's share of samples.
 #include "sound.h"
 
 #include <algorithm>
@@ -14,6 +16,7 @@
 
 #include "guest.h"
 #include "hle.h"
+#include "sound_internal.h"
 
 namespace khvr::hle {
 
@@ -22,13 +25,7 @@ void Arm7PushReply(uint32_t tag, uint32_t data);  // hle_arm7.cpp
 namespace {
 
 constexpr uint32_t kTagSound = 7;
-constexpr double kArm7Clock = 33513982.0;              // bus clock
-constexpr double kChannelClock = kArm7Clock / 2.0;     // channel timers count at half of it
-constexpr double kOsTickRate = kArm7Clock / 64.0;      // OS_GetTick units (alarm times)
 constexpr double kFrameRate = 59.8261;
-
-enum Format { kPcm8 = 0, kPcm16 = 1, kAdpcm = 2, kPsg = 3 };
-enum Repeat { kManual = 0, kLoop = 1, kOneShot = 2 };
 
 const int kAdpcmIndex[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
 const int kAdpcmStep[89] = {
@@ -39,24 +36,7 @@ const int kAdpcmStep[89] = {
     2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,  5894,  6484,  7132,  7845,  8630,
     9493,  10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
 
-struct Channel {
-    bool active = false;
-    int format = kPcm8, repeat = kOneShot, duty = 0;
-    uint32_t source = 0;       // SOUNDxSAD
-    uint32_t loopStart = 0;    // SOUNDxPNT, in words
-    uint32_t loopLength = 0;   // SOUNDxLEN, in words
-    uint16_t timer = 0;        // SOUNDxTMR
-    int volume = 0, shift = 0, pan = 64;
-    bool locked = false;
-    // Playback.
-    double pos = 0.0;          // in samples from the start of the data (past an ADPCM header)
-    int32_t sample = 0;        // the current sample
-    uint32_t decodedUpTo = 0;  // ADPCM: samples decoded so far (the next one is this index)
-    int adpcmValue = 0, adpcmIndex = 0;
-    bool loopSaved = false;
-    int loopValue = 0, loopIndex = 0;
-    uint16_t lfsr = 0x7fff;    // noise
-};
+using Channel = SoundChannel;
 
 struct Alarm {
     bool set = false, running = false;
@@ -66,9 +46,11 @@ struct Alarm {
 
 std::mutex gMu;
 std::array<Channel, 16> gCh;
+uint32_t gRandom = 0x12345678;
 std::array<Alarm, 8> gAlarms;
 double gTicks = 0.0;          // emulated OS ticks since reset
 double gSamplesDue = 0.0;     // output samples owed (fractional)
+double gSoundFramesDue = 0.0; // sound frames owed
 int gMasterVolume = 127;
 uint32_t gShared = 0;          // SNDSharedWork
 
@@ -95,10 +77,9 @@ void AdpcmStep(Channel &c, int nibble) {
     c.adpcmIndex = std::clamp(c.adpcmIndex + kAdpcmIndex[nibble & 7], 0, 88);
 }
 
-void StartChannel(Channel &c) {
+void StartChannelImpl(Channel &c) {
     c.active = true;
     c.pos = 0.0;
-    c.sample = 0;
     c.decodedUpTo = 0;
     c.loopSaved = false;
     c.lfsr = 0x7fff;
@@ -134,7 +115,7 @@ int32_t SampleAt(Channel &c, uint32_t index) {
 
 // One output sample of a channel at the output rate, advancing it.
 int32_t NextSample(Channel &c, int index) {
-    const double rate = c.timer ? kChannelClock / (0x10000 - c.timer) : 0.0;
+    const double rate = c.timer ? kChannelClock / c.timer : 0.0;
     const double step = rate / kSoundOutputRate;
     if (c.format == kPsg) {
         int32_t s;
@@ -237,13 +218,17 @@ void UpdateSharedWork() {
     for (int i = 0; i < 16; ++i)
         if (gCh[i].active) status |= static_cast<uint16_t>(1u << i);
     Write16(gShared + 8, status);
+    SeqUpdateShared();
 }
 
 void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
     switch (id) {
     case 0x0c:  // START_TIMER: channels, captures, alarms
         for (int i = 0; i < 16; ++i)
-            if (a0 & (1u << i)) StartChannel(gCh[i]);
+            if (a0 & (1u << i)) {
+                StartChannelImpl(gCh[i]);
+                gCh[i].owner = -1;  // the ARM9's own use: sequences keep off it while it plays
+            }
         for (int i = 0; i < 8; ++i)
             if ((a2 & (1u << i)) && gAlarms[i].set) {
                 gAlarms[i].running = true;
@@ -258,7 +243,8 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     case 0x0e: {  // SETUP_CHANNEL_PCM
         Channel &c = gCh[a0 & 0xf];
         c.active = false;
-        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.owner = -1;
+        c.timer = a0 >> 16;
         c.source = a1;
         c.loopLength = a2 & 0x3fffff;
         c.volume = (a2 >> 24) & 0x7f;
@@ -272,8 +258,9 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     case 0x0f: {  // SETUP_CHANNEL_PSG: chNo | timer << 16, duty, volume | shift << 8, pan
         Channel &c = gCh[a0 & 0xf];
         c.active = false;
+        c.owner = -1;
         c.format = kPsg;
-        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.timer = a0 >> 16;
         c.duty = a1 & 7;
         c.volume = a2 & 0x7f;
         c.shift = (a2 >> 8) & 3;
@@ -283,8 +270,9 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     case 0x10: {  // SETUP_CHANNEL_NOISE
         Channel &c = gCh[a0 & 0xf];
         c.active = false;
+        c.owner = -1;
         c.format = kPsg;
-        c.timer = static_cast<uint16_t>(a0 >> 16);
+        c.timer = a0 >> 16;
         c.volume = a1 & 0x7f;
         c.shift = (a1 >> 8) & 3;
         c.pan = a2 & 0x7f;
@@ -301,7 +289,7 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     }
     case 0x13:  // CHANNEL_TIMER: mask, timer
         for (int i = 0; i < 16; ++i)
-            if (a0 & (1u << i)) gCh[i].timer = static_cast<uint16_t>(a1);
+            if (a0 & (1u << i)) gCh[i].timer = a1 & 0xffff;
         break;
     case 0x14:  // CHANNEL_VOLUME: mask, volume, shift
         for (int i = 0; i < 16; ++i)
@@ -336,12 +324,21 @@ void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     case 0x16: case 0x18: case 0x19: case 0x1e: case 0x1f: case 0x20:
         break;  // surround, master pan, output selector, cache invalidation: nothing to do
     default:
-        LogOnce(("snd-cmd-" + std::to_string(id)).c_str(), "sound: command 0x%02x not played yet (sequences come later)", id);
+        if (!SeqCommand(id, a0, a1, a2, a3))
+            LogOnce(("snd-cmd-" + std::to_string(id)).c_str(), "sound: command 0x%02x not played", id);
         break;
     }
 }
 
 }  // namespace
+
+std::array<SoundChannel, 16> &SoundChannels() { return gCh; }
+void SoundStartChannel(SoundChannel &c) { StartChannelImpl(c); }
+uint32_t SoundSharedWork() { return gShared; }
+uint32_t SoundRandom() {
+    gRandom = gRandom * 1664525u + 1013904223u;
+    return gRandom >> 16;
+}
 
 void SoundReset() {
     std::lock_guard<std::mutex> lock(gMu);
@@ -349,10 +346,12 @@ void SoundReset() {
     gAlarms = {};
     gTicks = 0.0;
     gSamplesDue = 0.0;
+    gSoundFramesDue = 0.0;
     gMasterVolume = 127;
     gShared = 0;
     gMovie.clear();
     gMoviePos = 0.0;
+    SeqReset();
     std::lock_guard<std::mutex> ring(gRingMu);
     gRingRead = gRingWrite = gRingFill = 0;
 }
@@ -369,24 +368,29 @@ void SoundRunCommands(uint32_t list) {
 
 void SoundFrame() {
     std::lock_guard<std::mutex> lock(gMu);
-    const double frameTicks = kOsTickRate / kFrameRate;
-    const double end = gTicks + frameTicks;
-    for (Alarm &al : gAlarms) {
-        if (!al.running) continue;
-        for (int n = 0; al.at <= end && n < 64; ++n) {
-            Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
-            if (al.period <= 0) {
-                al.running = false;
-                break;
+    // One video frame's worth of sound frames, each: due alarms, the sequences, its samples.
+    gSoundFramesDue += kSoundFrameRate / kFrameRate;
+    const double frameTicks = kOsTickRate / kSoundFrameRate;
+    for (; gSoundFramesDue >= 1.0; gSoundFramesDue -= 1.0) {
+        const double end = gTicks + frameTicks;
+        for (Alarm &al : gAlarms) {
+            if (!al.running) continue;
+            for (int n = 0; al.at <= end && n < 64; ++n) {
+                Arm7PushReply(kTagSound, (&al - gAlarms.data()) | (al.id << 8));
+                if (al.period <= 0) {
+                    al.running = false;
+                    break;
+                }
+                al.at += al.period;
             }
-            al.at += al.period;
         }
+        gTicks = end;
+        SeqFrame();
+        gSamplesDue += kSoundOutputRate / kSoundFrameRate;
+        int frames = static_cast<int>(gSamplesDue);
+        gSamplesDue -= frames;
+        MixFrame(frames);
     }
-    gTicks = end;
-    gSamplesDue += kSoundOutputRate / kFrameRate;
-    int frames = static_cast<int>(gSamplesDue);
-    gSamplesDue -= frames;
-    MixFrame(frames);
     UpdateSharedWork();
 }
 

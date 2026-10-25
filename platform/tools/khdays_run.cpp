@@ -195,7 +195,7 @@ int SoundTest() {
         khvr::PlatformTestWrite(at + 20, a3, 4);
         return at;
     };
-    const uint32_t timer = 0x10000 - 512;  // 16756991 / 512 = 32728 Hz
+    const uint32_t timer = 512;  // the divisor, as the SDK passes it: 16756991 / 512 = 32728 Hz
     cmd(0, cmds + 0x18, 0x1d, shared, 0, 0, 0);                                    // SHARED_WORK
     cmd(1, cmds + 0x30, 0x0e, 0 | timer << 16, wave, (samples / 2) | 127u << 24,   // SETUP_CHANNEL_PCM
         0 | 64u << 16 | 1u << 24 | 1u << 26);                                      //  PCM16, loop, pan 64
@@ -230,12 +230,67 @@ int SoundTest() {
     return ok ? 0 : 1;
 }
 
+// The sequence player without a ROM: a wave archive with one looped PCM16 square wave (one
+// period, 82 samples: 399 Hz at its original key 60), a bank with that one instrument, and a
+// sequence of two one-second notes, key 60 then 72, then its end.
+int SeqTest() {
+    using namespace khvr::hle;
+    khvr::PlatformInitForTests();
+    Arm7Reset();
+    auto w8 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 1); };
+    auto w16 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 2); };
+    auto w32 = [](uint32_t a, uint32_t v) { khvr::PlatformTestWrite(a, v, 4); };
+    const uint32_t arc = 0x02110000, bank = 0x02112000, seq = 0x02114000, cmds = 0x02116000, shared = 0x02117000;
+    w32(arc + 0x38, 1);                 // SWAR: one wave
+    w32(arc + 0x3c, 0x40);              //  at +0x40
+    const uint32_t wav = arc + 0x40;    // SWAV: PCM16, looped, 32768 Hz, timer 512, loop 0..41 words
+    w8(wav, 1); w8(wav + 1, 1); w16(wav + 2, 32768); w16(wav + 4, 512); w16(wav + 6, 0); w32(wav + 8, 41);
+    for (int i = 0; i < 82; ++i) w16(wav + 12 + 2 * i, i < 41 ? 0x4000 : 0xc000);
+    w32(bank + 0x18, arc);              // SBNK: wave archive 0
+    w32(bank + 0x38, 1);                //  one instrument: PCM at +0x40
+    w32(bank + 0x3c, 1 | 0x40 << 8);
+    const uint8_t inst[10] = {0, 0, 0, 0, 60, 127, 127, 127, 127, 64};  // wave 0 of arc 0, key 60, ADSR, pan
+    for (int i = 0; i < 10; ++i) w8(bank + 0x40 + i, inst[i]);
+    const uint8_t code[] = {0xfe, 0x01, 0x00, 0xc1, 0x7f, 60, 0x7f, 0x60, 72, 0x7f, 0x60, 0xff};
+    for (size_t i = 0; i < sizeof code; ++i) w8(seq + static_cast<uint32_t>(i), code[i]);
+    auto cmd = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+        uint32_t at = cmds + 0x18 * n;
+        w32(at, next); w32(at + 4, id); w32(at + 8, a0); w32(at + 12, a1); w32(at + 16, a2); w32(at + 20, a3);
+    };
+    cmd(0, cmds + 0x18, 0x1d, shared, 0, 0, 0);  // SHARED_WORK
+    cmd(1, 0, 0x00, 0, seq, 0, bank);            // START_SEQ player 0
+    Arm7OnSend(7 | (cmds << 6));
+    std::vector<int16_t> out;
+    bool statusDuring = false;
+    for (int f = 0; f < 180; ++f) {
+        SoundFrame();
+        while (Arm7HasReply()) Arm7PopReply();
+        if (f == 30) statusDuring = khvr::PlatformTestRead(shared + 4, 4) & 1;
+        int16_t buf[2 * 1024];
+        size_t n = SoundRead(buf, 802);
+        out.insert(out.end(), buf, buf + 2 * n);
+    }
+    auto crossings = [&](size_t from, size_t to) {  // per second, left channel, in output frames
+        int c = 0;
+        for (size_t i = from + 1; i < to && i < out.size() / 2; ++i)
+            if ((out[2 * i] >= 0) != (out[2 * i - 2] >= 0)) ++c;
+        return c * 48000.0 / (to - from);
+    };
+    double first = crossings(4800, 43200), second = crossings(52800, 91200), third = crossings(110000, 140000);
+    bool statusAfter = khvr::PlatformTestRead(shared + 4, 4) & 1;
+    bool ok = first > 760 && first < 840 && second > 1520 && second < 1680 && third < 20 && statusDuring && !statusAfter;
+    std::printf("seq test: %s (%.0f, %.0f, %.0f zero crossings a second; player status %d during, %d after)\n",
+                ok ? "ok" : "FAILED", first, second, third, statusDuring, statusAfter);
+    return ok ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
     if (argc >= 2 && std::string(argv[1]) == "--sound-test") return SoundTest();
+    if (argc >= 2 && std::string(argv[1]) == "--seq-test") return SeqTest();
     if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);
     khvr::PlatformConfig cfg;
     int frames = 600;

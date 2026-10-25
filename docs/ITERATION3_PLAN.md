@@ -67,8 +67,11 @@ divider, pan, timer pitch, loop modes), START/STOP_TIMER, alarms (sent back as t
 sends them), the shared work's command tag and channel status. It mixes one frame of 48 kHz
 stereo per emulated frame, so streamed music stays in step with the game's refill alarms, and
 the headset plays it through AAudio. Movie sound is decoded with the picture (`movie.cpp`).
-`NNSi_SndArcStrm_MakeWaveData`, which fills the stream ring, now compiles. Sequences (SSEQ,
-step 4) are next: until then the game's sequence commands are acknowledged and logged once.
+`NNSi_SndArcStrm_MakeWaveData`, which fills the stream ring, now compiles. The sequence player
+(`platform/src/sound_seq.cpp`, step 4) runs the SSEQ bytecode with SBNK instruments (PCM, PSG,
+noise, drum sets, key splits) from SWAR wave archives, ADSR envelopes, bend, LFO, sweep and
+portamento, channel allocation by priority, player and track parameters and the variables, at
+the driver's 192 sound frames a second. `khdays_run --seq-test` plays a hand-built sequence.
 
 1. **Audio output on the headset.** AAudio (Android's low-latency audio) through a small mixer
    thread: 48 kHz stereo, resampled from the DS's 32,768 Hz. Check: a test tone setting.

@@ -51,6 +51,7 @@ jobs:
           ./khdays_run --render-test
           ./khdays_run --pxi-test
           ./khdays_run --sound-test
+          ./khdays_run --seq-test
           # Boot a minimal fake ROM: OS, threads, interrupts, ARM7 handshakes, file system and
           # overlays must come up and reach the title scene (ov000), which then stops on purpose
           # (OS_Terminate) because the fake ROM has no font. A trap would be a platform bug.
