@@ -60,6 +60,10 @@ Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
 - [ ] Game hooks: camera read/override, player state, analog movement, room-scale step, culling
 - [ ] Calibrate **Game > World units per meter** from Roxas's model height
 - [ ] Panoramic and first person in Twilight Town
+- [ ] Loading area on the Twilight Town clock tower: the first time you reach it, the world-space
+      capture saves that scene (geometry and textures, from your own ROM as the game draws it) to
+      the KHDaysVR folder; later boots load you onto it instead of the Heart's Station, which stays
+      the fallback until then. Nothing from the game goes into the APK.
 
 ## Iteration 5 and later
 
