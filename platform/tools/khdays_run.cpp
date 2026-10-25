@@ -6,6 +6,7 @@
 // --fake-rom builds a minimal image with the right game code, an empty file system and an
 // overlay table, so the boot path (OS, threads, interrupts, ARM7 handshakes, file system set-up,
 // overlays) can be exercised without the game's data. The real game needs your own ROM.
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <unistd.h>
@@ -192,6 +193,25 @@ int GxTest() {
     frame(0x001f0080, true);
     khvr::Platform::Get().CaptureScreens(&s);
     bool tex = px(90, 96) == 0xffffff && px(166, 96) == 0x00ff00;
+    if (std::getenv("KHVR_GX_BENCH")) {
+        // 1500 textured quads of about 40 x 40 pixels, as a busy field frame might have.
+        cmd(0x10, 0); cmd(0x15, 0); cmd(0x10, 2); cmd(0x15, 0);
+        cmd(0x29, 0x001f00c0); cmd(0x2a, 7u << 26 | 1u << 16 | 1u << 17);  // the 8x8 texture, repeated cmd(0x20, 0x7fff);
+        cmd(0x40, 1);
+        for (int i = 0; i < std::atoi(std::getenv("KHVR_GX_BENCH")); ++i) {
+            double cx = -0.8 + 1.6 * ((i * 37) % 100) / 100.0, cy = -0.8 + 1.6 * ((i * 53) % 100) / 100.0;
+            cmd(0x22, 0); vtx(cx - 0.15, cy - 0.2);
+            cmd(0x22, 64 * 16); vtx(cx + 0.15, cy - 0.2);
+            cmd(0x22, 64 * 16 | (64 * 16) << 16); vtx(cx + 0.15, cy + 0.2);
+            cmd(0x22, (64 * 16) << 16); vtx(cx - 0.15, cy + 0.2);
+        }
+        cmd(0x41, 0); cmd(0x50, 0);
+        auto t0 = std::chrono::steady_clock::now();
+        const int iters = std::getenv("KHVR_GX_ITERS") ? std::atoi(std::getenv("KHVR_GX_ITERS")) : 20;
+        for (int i = 0; i < iters; ++i) khvr::Platform::Get().CaptureScreens(&s);
+        double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / iters;
+        std::printf("gx bench: %.2f ms a frame for 1500 quads\n", ms);
+    }
     std::printf("gx test: %s (triangle %d, culling %d, texture %d; pixels %06x %06x)\n",
                 tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
     return tri && culled && tex ? 0 : 1;

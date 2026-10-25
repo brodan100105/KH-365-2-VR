@@ -659,8 +659,8 @@ struct Frame {
 struct TexMem {
     std::vector<uint8_t> tex, pal;
     uint16_t Pal(uint32_t a) const {
-        a %= kTexPalSize;
-        return static_cast<uint16_t>(pal[a] | (pal[(a + 1) % kTexPalSize] << 8));
+        if (a + 1 >= kTexPalSize) return 0;
+        return static_cast<uint16_t>(pal[a] | (pal[a + 1] << 8));
     }
     uint8_t Tex8(uint32_t a) const { return tex[a % kTexVramSize]; }
     uint16_t Tex16(uint32_t a) const { return static_cast<uint16_t>(Tex8(a) | (Tex8(a + 1) << 8)); }
@@ -696,8 +696,12 @@ uint16_t Avg(uint16_t a, uint16_t b, int wa, int wb, int div) {
 
 Texel Sample(const TexMem &m, uint32_t param, uint32_t palBase, float fs, float ft) {
     const int w = 8 << ((param >> 20) & 7), h = 8 << ((param >> 23) & 7);
-    const int s = Wrap(static_cast<int>(std::floor(fs)), w, param & (1u << 16), param & (1u << 18));
-    const int t = Wrap(static_cast<int>(std::floor(ft)), h, param & (1u << 17), param & (1u << 19));
+    auto floorInt = [](float v) {
+        int i = static_cast<int>(v);
+        return i - (v < static_cast<float>(i));
+    };
+    const int s = Wrap(floorInt(fs), w, param & (1u << 16), param & (1u << 18));
+    const int t = Wrap(floorInt(ft), h, param & (1u << 17), param & (1u << 19));
     const uint32_t base = (param & 0xffff) * 8;
     const uint32_t format = (param >> 26) & 7;
     const bool zeroClear = param & (1u << 29);
@@ -775,9 +779,7 @@ struct RenderParams {
 
 void DrawPixel(Frame &f, const RenderParams &rp, const Polygon &p, int i, uint32_t depth, int vr, int vg, int vb,
                float s, float t) {
-    const uint32_t attr = p.attr;
-    const bool equal = attr & (1u << 14);
-    if (equal ? (depth > f.depth[i] + 0x200 || depth + 0x200 < f.depth[i]) : depth >= f.depth[i]) return;
+    const uint32_t attr = p.attr;  // the depth test has passed (DrawTriangle)
     const int polyAlpha = static_cast<int>((attr >> 16) & 31);
     const int mode = static_cast<int>((attr >> 4) & 3);
     int r = vr, gg = vg, b = vb, a = polyAlpha;
@@ -845,34 +847,68 @@ void DrawPixel(Frame &f, const RenderParams &rp, const Polygon &p, int i, uint32
 
 void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const ScreenVertex &v0, const ScreenVertex &v1,
                   const ScreenVertex &v2) {
-    float area = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
+    const float area = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
     if (std::fabs(area) < 1e-6f) return;
     const float inv = 1.0f / area;
-    int minX = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
-    int maxX = std::min(kW - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
-    int minY = std::max(0, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
-    int maxY = std::min(kH - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+    // Barycentric weights are linear in x along a row: w0 = a0 x + b0, w1 = a1 x + b1, and every
+    // interpolant k = k2 + w0 (k0 - k2) + w1 (k1 - k2).
+    const float a0 = (v1.y - v2.y) * inv, a1 = (v2.y - v0.y) * inv;
+    enum { kInvW, kDepth, kR, kG, kB, kS, kT, kN };
+    const float k0[kN] = {v0.invW, v0.depth, v0.r, v0.g, v0.b, v0.s, v0.t};
+    const float k1[kN] = {v1.invW, v1.depth, v1.r, v1.g, v1.b, v1.s, v1.t};
+    const float k2[kN] = {v2.invW, v2.depth, v2.r, v2.g, v2.b, v2.s, v2.t};
+    float d0[kN], d1[kN], dx[kN];
+    for (int k = 0; k < kN; ++k) {
+        d0[k] = k0[k] - k2[k];
+        d1[k] = k1[k] - k2[k];
+        dx[k] = a0 * d0[k] + a1 * d1[k];
+    }
+    const int minY = std::max(0, static_cast<int>(std::floor(std::min({v0.y, v1.y, v2.y}))));
+    const int maxY = std::min(kH - 1, static_cast<int>(std::ceil(std::max({v0.y, v1.y, v2.y}))));
+    const int boxMinX = std::max(0, static_cast<int>(std::floor(std::min({v0.x, v1.x, v2.x}))));
+    const int boxMaxX = std::min(kW - 1, static_cast<int>(std::ceil(std::max({v0.x, v1.x, v2.x}))));
+    constexpr float kEps = 1e-5f;  // shared edges leave no gaps
     for (int y = minY; y <= maxY; ++y) {
         const float py = y + 0.5f;
-        for (int x = minX; x <= maxX; ++x) {
-            const float px = x + 0.5f;
-            float w0 = ((v1.x - px) * (v2.y - py) - (v2.x - px) * (v1.y - py)) * inv;
-            float w1 = ((v2.x - px) * (v0.y - py) - (v0.x - px) * (v2.y - py)) * inv;
-            float w2 = 1.0f - w0 - w1;
-            // Inside, with a small bias so shared edges leave no gaps.
-            if (w0 < -1e-5f || w1 < -1e-5f || w2 < -1e-5f) continue;
-            float invW = w0 * v0.invW + w1 * v1.invW + w2 * v2.invW;
-            if (invW <= 0) continue;
-            float wv = 1.0f / invW;
-            float depthF = rp.wbuffer ? wv : w0 * v0.depth + w1 * v1.depth + w2 * v2.depth;
-            uint32_t depth = static_cast<uint32_t>(std::clamp(depthF, 0.0f, 16777215.0f));
-            int r = static_cast<int>((w0 * v0.r + w1 * v1.r + w2 * v2.r) * wv);
-            int gg = static_cast<int>((w0 * v0.g + w1 * v1.g + w2 * v2.g) * wv);
-            int b = static_cast<int>((w0 * v0.b + w1 * v1.b + w2 * v2.b) * wv);
-            float s = (w0 * v0.s + w1 * v1.s + w2 * v2.s) * wv;
-            float t = (w0 * v0.t + w1 * v1.t + w2 * v2.t) * wv;
-            DrawPixel(f, rp, p, y * kW + x, depth, std::clamp(r, 0, 63), std::clamp(gg, 0, 63), std::clamp(b, 0, 63), s,
-                      t);
+        const float b0 = (v1.x * (v2.y - py) - v2.x * (v1.y - py)) * inv;
+        const float b1 = (v2.x * (v0.y - py) - v0.x * (v2.y - py)) * inv;
+        // The span where w0, w1 and w2 = 1 - w0 - w1 are all >= 0.
+        float lo = -1e9f, hi = 1e9f;
+        bool empty = false;
+        auto limit = [&](float a, float b) {  // a x + b >= -eps
+            if (a > 0) lo = std::max(lo, (-kEps - b) / a);
+            else if (a < 0) hi = std::min(hi, (-kEps - b) / a);
+            else if (b < -kEps) empty = true;
+        };
+        limit(a0, b0);
+        limit(a1, b1);
+        limit(-a0 - a1, 1.0f - b0 - b1);
+        if (empty || lo > hi) continue;
+        const int x0 = std::max(boxMinX, static_cast<int>(std::ceil(lo - 0.5f)));
+        const int x1 = std::min(boxMaxX, static_cast<int>(std::floor(hi - 0.5f)));
+        if (x0 > x1) continue;
+        const float px = x0 + 0.5f;
+        const float w0 = a0 * px + b0, w1 = a1 * px + b1;
+        float v[kN];
+        for (int k = 0; k < kN; ++k) v[k] = k2[k] + w0 * d0[k] + w1 * d1[k];
+        uint32_t *depthRow = f.depth + y * kW;
+        for (int x = x0; x <= x1; ++x) {
+            const float invW = v[kInvW];
+            if (invW > 0) {
+                const float wv = 1.0f / invW;
+                const float depthF = rp.wbuffer ? wv : v[kDepth];
+                const uint32_t depth = static_cast<uint32_t>(std::clamp(depthF, 0.0f, 16777215.0f));
+                // The depth test first: most hidden pixels never get shaded.
+                const bool equal = p.attr & (1u << 14);
+                const uint32_t old = depthRow[x];
+                if (equal ? !(depth > old + 0x200 || depth + 0x200 < old) : depth < old) {
+                    int r = static_cast<int>(v[kR] * wv), gg = static_cast<int>(v[kG] * wv),
+                        b = static_cast<int>(v[kB] * wv);
+                    DrawPixel(f, rp, p, y * kW + x, depth, std::clamp(r, 0, 63), std::clamp(gg, 0, 63),
+                              std::clamp(b, 0, 63), v[kS] * wv, v[kT] * wv);
+                }
+            }
+            for (int k = 0; k < kN; ++k) v[k] += dx[k];
         }
     }
 }
