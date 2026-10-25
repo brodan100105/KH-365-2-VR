@@ -32,6 +32,8 @@ public:
     void FillRect(int x, int y, int w, int h, uint32_t color);
     void StrokeRect(int x, int y, int w, int h, uint32_t color, int thickness = 1);
     void FillCircle(int cx, int cy, int r, uint32_t color);
+    void StrokeCircle(int cx, int cy, int r, uint32_t color, int thickness = 1);
+    void DrawLine(int x0, int y0, int x1, int y1, uint32_t color, int thickness = 1);
     // Text at an integer scale of the 10x20 font cell. Returns the width drawn in pixels.
     int DrawText(int x, int y, const std::string &text, uint32_t color, int scale = 1);
     static int TextWidth(const std::string &text, int scale = 1);

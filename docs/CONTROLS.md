@@ -2,6 +2,8 @@
 
 DS buttons are named as the game names them. The defaults follow the game's **Type A** controls
 (camp menu > Config); which DS button each gesture presses can be changed on the **Controls** tab.
+In the headset, **Button guide** at the bottom of the VR settings panel shows this on a drawing of
+both controllers.
 
 ## Always
 

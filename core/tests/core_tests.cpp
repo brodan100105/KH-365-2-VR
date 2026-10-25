@@ -494,6 +494,12 @@ TEST(PanelClicksChangeSettings) {
     CHECK(p.tab() == 1);
     p.Pointer(true, 24 + 100, SettingsPanel::kHeight - 12 - 28, true, s);
     CHECK_NEAR(s.Get(SettingId::ScreenDistance), 4.5f, 1e-6f);
+    // The button guide, in the middle of the bottom row, toggles; a tab leaves it.
+    p.Pointer(true, SettingsPanel::kWidth / 2, SettingsPanel::kHeight - 12 - 28, true, s);
+    CHECK(p.guideOpen());
+    CHECK(p.Redraw(s));
+    p.Pointer(true, 24 + 200, 64 + 20, true, s);
+    CHECK(!p.guideOpen());
     p.Pointer(true, SettingsPanel::kWidth - 24 - 100, SettingsPanel::kHeight - 12 - 28, true, s);
     CHECK(!p.isOpen());
 }

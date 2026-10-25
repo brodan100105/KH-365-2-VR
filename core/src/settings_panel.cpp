@@ -1,6 +1,8 @@
 #include "khvr/settings_panel.h"
 
+#include <algorithm>
 #include <cstring>
+#include <string>
 
 namespace khvr {
 
@@ -29,6 +31,7 @@ const uint32_t kRowAlt = Rgba(255, 255, 255, 10);
 SettingsPanel::SettingsPanel() : canvas_(kWidth, kHeight) {}
 
 void SettingsPanel::SetTab(int t) {
+    guide_ = false;
     int n = static_cast<int>(SettingTabs().size());
     tab_ = ((t % n) + n) % n;
     hover_ = -1;
@@ -53,7 +56,7 @@ std::vector<SettingsPanel::Button> SettingsPanel::Layout() const {
         b.push_back({kMargin + col * (tabW + kTabGap), kTabTop + row * (kTabH + kTabGap), tabW,
                      kTabH, Button::Tab, i});
     }
-    std::vector<SettingId> ids = TabOptions(tab_);
+    std::vector<SettingId> ids = guide_ ? std::vector<SettingId>() : TabOptions(tab_);
     for (size_t r = 0; r < ids.size(); ++r) {
         int y = kRowsTop + static_cast<int>(r) * kRowH;
         int id = static_cast<int>(ids[r]);
@@ -64,7 +67,8 @@ std::vector<SettingsPanel::Button> SettingsPanel::Layout() const {
                      Button::Decrease, id});
     }
     int by = kHeight - kBottomH - 12;
-    b.push_back({kMargin, by, 220, kBottomH, Button::Defaults, 0});
+    if (!guide_) b.push_back({kMargin, by, 220, kBottomH, Button::Defaults, 0});
+    b.push_back({(kWidth - 280) / 2, by, 280, kBottomH, Button::Guide, 0});
     b.push_back({kWidth - kMargin - 220, by, 220, kBottomH, Button::Close, 0});
     return b;
 }
@@ -102,6 +106,10 @@ void SettingsPanel::Pointer(bool hit, float x, float y, bool click, Settings &s)
             s.Step(static_cast<SettingId>(btn.index), 1);
         break;
     case Button::Defaults: s.ResetTab(SettingTabs()[tab_]); break;
+    case Button::Guide:
+        guide_ = !guide_;
+        hoverOption_ = -1;
+        break;
     case Button::Close: Close(); break;
     }
     dirty_ = true;
@@ -126,8 +134,9 @@ bool SettingsPanel::Redraw(const Settings &s) {
         switch (b.kind) {
         case Button::Tab: {
             const char *name = SettingTabs()[b.index];
-            c.FillRect(b.x, b.y, b.w, b.h, b.index == tab_ ? kTabActive : (hot ? kHover : kTabIdle));
-            if (b.index == tab_) c.FillRect(b.x, b.y + b.h - 4, b.w, 4, kPanelEdge);
+            const bool current = b.index == tab_ && !guide_;
+            c.FillRect(b.x, b.y, b.w, b.h, current ? kTabActive : (hot ? kHover : kTabIdle));
+            if (current) c.FillRect(b.x, b.y + b.h - 4, b.w, 4, kPanelEdge);
             c.DrawText(b.x + (b.w - Canvas::TextWidth(name)) / 2, b.y + (b.h - Canvas::LineHeight()) / 2,
                        name, kText);
             break;
@@ -153,8 +162,11 @@ bool SettingsPanel::Redraw(const Settings &s) {
             break;
         }
         case Button::Defaults:
+        case Button::Guide:
         case Button::Close: {
-            const char *label = b.kind == Button::Close ? "Close" : "Defaults";
+            const char *label = b.kind == Button::Close  ? "Close"
+                                : b.kind == Button::Guide ? (guide_ ? "Back to settings" : "Button guide")
+                                                          : "Defaults";
             c.FillRect(b.x, b.y, b.w, b.h, hot ? kHover : kTabIdle);
             c.StrokeRect(b.x, b.y, b.w, b.h, kPanelEdge, 2);
             c.DrawText(b.x + (b.w - Canvas::TextWidth(label)) / 2,
@@ -163,6 +175,7 @@ bool SettingsPanel::Redraw(const Settings &s) {
         }
         }
     }
+    if (guide_) DrawGuide(s);
     if (hoverOption_ >= 0) {
         const char *help = DefOf(static_cast<SettingId>(hoverOption_)).help;
         int y = kHeight - kBottomH - 12 - Canvas::LineHeight() - 14;
@@ -172,6 +185,85 @@ bool SettingsPanel::Redraw(const Settings &s) {
         c.DrawText(kMargin, y, line, kDim);
     }
     return true;
+}
+
+void SettingsPanel::DrawGuide(const Settings &s) {
+    Canvas &c = canvas_;
+    const uint32_t body = Rgba(52, 56, 84), face = Rgba(30, 32, 52), key = Rgba(120, 126, 170);
+    const uint32_t line = Rgba(214, 178, 82, 200);
+    const bool weaponRight = s.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Right;
+    auto bind = [&](SettingId id) { return s.FormatValue(id); };
+
+    // A Touch controller seen from above: its ring, the face with thumbstick and two buttons, and
+    // the trigger (front) and grip (side) as tabs. `mirror` draws the right one.
+    struct Spot {
+        int x, y;
+    };
+    auto controller = [&](int cx, int cy, bool right, Spot *stick, Spot *upper, Spot *lower, Spot *menu, Spot *trigger,
+                          Spot *grip) {
+        const int sx = right ? -1 : 1;
+        c.FillRect(cx - 34, cy + 40, 68, 120, body);  // the handle
+        c.FillCircle(cx, cy + 160, 34, body);
+        c.StrokeCircle(cx, cy - 6, 92, body, 14);     // the tracking ring
+        c.FillCircle(cx, cy, 70, face);
+        c.FillRect(cx - 50, cy - 98, 100, 18, key);   // the trigger, on the front
+        c.FillRect(cx + sx * 40 - 9, cy + 60, 18, 64, key);  // the grip, on the inner side
+        *stick = {cx - sx * 22, cy - 14};
+        *upper = {cx + sx * 34, cy - 24};
+        *lower = {cx + sx * 26, cy + 24};
+        *menu = {cx - sx * 4, cy + 44};
+        *trigger = {cx, cy - 89};
+        *grip = {cx + sx * 40, cy + 92};
+        c.FillCircle(stick->x, stick->y, 22, key);
+        c.FillCircle(stick->x, stick->y, 12, face);
+        c.FillCircle(upper->x, upper->y, 13, key);
+        c.FillCircle(lower->x, lower->y, 13, key);
+        c.FillCircle(menu->x, menu->y, 7, key);
+    };
+    // A label with a leader line to its control, on the outer side of the controller.
+    auto label = [&](const Spot &at, int tx, int ty, const std::string &title, const std::string &what) {
+        int w = std::max(Canvas::TextWidth(title), Canvas::TextWidth(what));
+        bool leftSide = tx < at.x;
+        int anchorX = leftSide ? tx + w + 6 : tx - 6;
+        c.DrawLine(at.x, at.y, anchorX, ty + 10, line, 2);
+        c.FillCircle(at.x, at.y, 4, kPanelEdge);
+        c.DrawText(tx, ty, title, kPanelEdge);
+        c.DrawText(tx, ty + 20, what, kText);
+    };
+
+    const int top = kRowsTop + 4;
+    Spot st, up, lo, mn, tr, gr;
+    // Left controller.
+    controller(400, top + 140, false, &st, &up, &lo, &mn, &tr, &gr);
+    label(tr, kMargin, top, "Trigger", weaponRight ? "DS L / 1st person: cast" : "DS L / 1st person: DS L");
+    label(up, kMargin, top + 60, "Y", "DS Y");
+    label(st, kMargin, top + 120, "Thumbstick", "move / click: SELECT");
+    label(lo, kMargin, top + 180, "X", "DS X");
+    label(mn, kMargin, top + 240, "Menu", "tap: START / hold: settings");
+    label(gr, kMargin, top + 300, "Grip", weaponRight ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-");
+    // Right controller.
+    controller(624, top + 140, true, &st, &up, &lo, &mn, &tr, &gr);
+    const int rx = 772;
+    label(tr, rx, top, "Trigger", "DS R / select / touch");
+    label(up, rx, top + 60, "B", "DS B");
+    label(st, rx, top + 120, "Thumbstick", "turn / click: recenter");
+    label(lo, rx, top + 180, "A", "DS A");
+    c.DrawText(rx, top + 240, "hold stick click:", kDim);
+    c.DrawText(rx, top + 260, "switch view", kDim);
+    label(gr, rx, top + 300, "Grip", weaponRight ? "-" : "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on");
+
+    // First person's gestures.
+    int y = top + 352;
+    c.DrawText(kMargin, y, "First person, with the Keyblade in your " + std::string(weaponRight ? "right" : "left") + " hand:",
+               kPanelEdge);
+    y += 24;
+    c.DrawText(kMargin, y, "Swing: attack (" + bind(SettingId::CtrlAttackButton) + ")   Hold it level before your face: guard (" +
+                               bind(SettingId::CtrlGuardButton) + ")", kText);
+    y += 22;
+    c.DrawText(kMargin, y, "Point the other hand and pull its trigger: cast (" + bind(SettingId::CtrlMagicButton) +
+                               ")   Flick the stick: dodge (" + bind(SettingId::CtrlDodgeButton) + ")", kText);
+    y += 22;
+    c.DrawText(kMargin, y, "Aim the other hand at the touch screen and pull its trigger to touch it.", kDim);
 }
 
 }  // namespace khvr

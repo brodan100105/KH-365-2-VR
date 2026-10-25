@@ -1,5 +1,6 @@
 // The VR settings panel: tabs across the top, one row per option with < and > to change it,
-// the hovered option's help line, and "Defaults" (current tab) / "Close" at the bottom.
+// the hovered option's help line, and "Defaults" (current tab), "Button guide" and "Close" at
+// the bottom. The button guide is a drawing of both controllers with what each control does.
 // It is drawn into a Canvas; the app shows that canvas on a quad and feeds laser-pointer hits
 // in canvas pixels.
 #pragma once
@@ -32,11 +33,12 @@ public:
 
     int tab() const { return tab_; }
     void SetTab(int t);
+    bool guideOpen() const { return guide_; }
 
 private:
     struct Button {
         int x, y, w, h;
-        enum Kind { Tab, Decrease, Increase, Row, Defaults, Close } kind;
+        enum Kind { Tab, Decrease, Increase, Row, Defaults, Close, Guide } kind;
         int index;  // tab index, or option id for Decrease/Increase/Row
         bool Contains(float px, float py) const {
             return px >= x && py >= y && px < x + w && py < y + h;
@@ -44,11 +46,13 @@ private:
     };
     std::vector<SettingId> TabOptions(int tab) const;
     std::vector<Button> Layout() const;
+    void DrawGuide(const Settings &s);
 
     Canvas canvas_;
     bool open_ = false;
     bool dirty_ = true;
     int tab_ = 0;
+    bool guide_ = false;  // the button guide instead of the tab's options
     int hover_ = -1;          // index into Layout()
     int hoverOption_ = -1;    // option whose help line is shown
     unsigned drawnRevision_ = ~0u;
