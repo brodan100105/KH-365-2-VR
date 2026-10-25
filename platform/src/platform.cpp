@@ -193,6 +193,24 @@ void Platform::Heartbeat() {
             IoReg16(base + 0x16) & 0x1ff, IoReg16(base + 0x18) & 0x1ff, IoReg16(base + 0x1a) & 0x1ff,
             IoReg16(base + 0x1c) & 0x1ff, IoReg16(base + 0x1e) & 0x1ff);
     }
+    // The object registry (Obj_UpdateAll: head at [3], next at +0xc, step function at +0x14): the
+    // step function of every live object, logged when the set changes.
+    static const uint32_t objSystem = SymbolAddress("gObjSystem");
+    if (objSystem) {
+        static std::string last;
+        std::string now;
+        uint32_t obj = Read32(objSystem + 12);
+        for (int i = 0; obj && i < 48; ++i, obj = Read32(obj + 12)) {
+            uint32_t step = Read32(obj + 20);
+            const char *fn = FunctionName(step);
+            char item[64];
+            if (fn) std::snprintf(item, sizeof item, " %s", fn);
+            else std::snprintf(item, sizeof item, " %d", static_cast<int>(step));
+            now += item;
+        }
+        if (now != last) Log("  objects:%s", now.c_str());
+        last = now;
+    }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");
     if (vblankWork) {

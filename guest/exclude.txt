@@ -31,3 +31,7 @@ src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenStreams.c
 src/overlays/system/ov024_mobiclip/Ov024_TickStreamSlots.c
 src/overlays/system/ov024_mobiclip/Ov024_MobiClip_BufferedFrameCount.c
 src/overlays/system/ov024_mobiclip/Ov024_MobiClip_StopPlayback.c
+
+# Replaced by guest/runtime/trace.c: the same, logged.
+src/engine/StoreGlobalArrayEntry.c
+src/engine/Scene_RequestPending.c

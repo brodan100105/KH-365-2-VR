@@ -20,5 +20,8 @@ void khvr_host_read_rom(unsigned long offset, void *dst, unsigned long len);
 void khvr_host_start_overlay(unsigned long id);
 /* Debug output (OS_Printf and the port's own messages). */
 void khvr_host_print(const char *text);
+/* A traced event for the boot log (guest/runtime/trace.c): `b` is shown by function name when it
+ * is a guest function. */
+void khvr_host_trace(const char *what, unsigned long a, unsigned long b);
 
 #endif

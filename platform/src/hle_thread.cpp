@@ -268,6 +268,12 @@ void w2c_env_khvr_host_reset(struct w2c_env *) { PlatformReportTrap("OS_ResetSys
 
 void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
 
+void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
+    const char *fn = FunctionName(b);
+    if (fn) Log("trace: %s %u -> %s", ReadString(what).c_str(), a, fn);
+    else Log("trace: %s %u -> 0x%08x", ReadString(what).c_str(), a, b);
+}
+
 }  // extern "C"
 
 // ---- The platform's side ----
