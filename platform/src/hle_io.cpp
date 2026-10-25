@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <vector>
@@ -530,3 +531,42 @@ extern "C" void khvr_watch_hit(uint32_t addr, uint64_t value, uint32_t size) {
     Log("watch: guest stored 0x%llx (%u bytes) at 0x%08x", static_cast<unsigned long long>(value), size, addr);
     LogBacktrace("watch");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Screen snapshots: everything the 2D renderer reads (the I/O registers, the nine VRAM banks,
+// palettes and OAM), so a screen seen on the headset can be rendered again on the desktop
+// (khdays_run --render-snapshot).
+// ---------------------------------------------------------------------------------------------
+namespace khvr::hle {
+namespace {
+constexpr char kSnapMagic[8] = {'K', 'H', 'V', 'R', 'S', 'N', 'P', '1'};
+constexpr uint32_t kPalBase = 0x05000000, kOamBase = 0x07000000, kPalOamSize = 0x800;
+}  // namespace
+
+bool SnapshotWrite(const std::string &path) {
+    FILE *f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    bool ok = std::fwrite(kSnapMagic, 1, 8, f) == 8 && std::fwrite(gRegs.data(), 1, kIoSize, f) == kIoSize;
+    for (int b = 0; b < 9 && ok; ++b) ok = std::fwrite(gBanks[b].data(), 1, kBankSize[b], f) == kBankSize[b];
+    ok = ok && std::fwrite(GuestMem() + kPalBase, 1, kPalOamSize, f) == kPalOamSize &&
+         std::fwrite(GuestMem() + kOamBase, 1, kPalOamSize, f) == kPalOamSize;
+    return std::fclose(f) == 0 && ok;
+}
+
+bool SnapshotRead(const std::string &path) {
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    char magic[8];
+    bool ok = std::fread(magic, 1, 8, f) == 8 && std::memcmp(magic, kSnapMagic, 8) == 0 &&
+              std::fread(gRegs.data(), 1, kIoSize, f) == kIoSize;
+    for (int b = 0; b < 9 && ok; ++b) {
+        gBanks[b].assign(kBankSize[b], 0);
+        ok = std::fread(gBanks[b].data(), 1, kBankSize[b], f) == kBankSize[b];
+    }
+    ok = ok && std::fread(GuestMem() + kPalBase, 1, kPalOamSize, f) == kPalOamSize &&
+         std::fread(GuestMem() + kOamBase, 1, kPalOamSize, f) == kPalOamSize;
+    std::fclose(f);
+    Remap();
+    return ok;
+}
+}  // namespace khvr::hle

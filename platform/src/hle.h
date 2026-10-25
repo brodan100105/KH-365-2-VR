@@ -59,6 +59,11 @@ void VramCopyRegion(uint32_t base, uint32_t size, uint8_t *dst);
 // Extended palette slot `slot` (BG 0-3, OBJ 0) of engine 0 (A) or 1 (B), or null if unmapped.
 const uint8_t *VramExtPalette(int engine, bool obj, int slot);
 // Plain memory reads of the 2D engines' regions through the current mapping.
+// Screen snapshots (hle_io.cpp): what the 2D renderer reads, to a file and back.
+bool SnapshotWrite(const std::string &path);
+bool SnapshotRead(const std::string &path);
+// Platform: take snapshots a little after each scene request (platform.cpp).
+void SnapshotOnSceneRequest(uint32_t scene);
 // Write watch (boot log): the first writes into [addr, addr + size), with call stacks.
 void WatchSet(uint32_t addr, uint32_t size, const char *what);
 void WatchHostWrite(uint32_t addr, uint32_t len, const char *what);

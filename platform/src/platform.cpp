@@ -23,6 +23,22 @@ InputState gInput;
 std::mutex gInputMu;
 std::atomic<PlatformState> gState{PlatformState::NotStarted};
 std::atomic<uint32_t> gFrames{0};
+
+// Screen snapshots for the renderer (hle_io.cpp), next to the save: two per scene request, one
+// soon after it and one once the new scene has settled, into the last 8 of khvr_snap_N.bin.
+std::string gSnapDir;
+std::atomic<uint32_t> gSnapScene{0}, gSnapAt1{0}, gSnapAt2{0};
+uint32_t gSnapCount = 0;
+
+void SnapshotTake() {
+    if (gSnapDir.empty()) return;
+    char name[32];
+    std::snprintf(name, sizeof name, "khvr_snap_%u.bin", gSnapCount % 8);
+    std::string path = gSnapDir + name;
+    if (SnapshotWrite(path))
+        Log("snapshot: %s (#%u, scene %u, frame %u)", name, gSnapCount, gSnapScene.load(), gFrames.load());
+    ++gSnapCount;
+}
 std::string gCrash;
 std::mutex gCrashMu;
 // ARM9 cycles per frame: 263 lines x 2130 cycles.
@@ -40,6 +56,12 @@ void PlatformReportStop(const std::string &why) {
     gState = PlatformState::Crashed;
 }
 
+void SnapshotOnSceneRequest(uint32_t scene) {
+    gSnapScene = scene;
+    gSnapAt1 = gFrames + 90;
+    gSnapAt2 = gFrames + 300;
+}
+
 void PlatformReportTrap(const char *where) {
     PlatformReportStop(std::string(where) + " hit a wasm trap (" + LastTrapName() + ")");
 }
@@ -55,6 +77,9 @@ void PlatformInitForTests() {
     wasm2c_khdays_instantiate(hle::Guest(), nullptr);
     hle::IoReset();
 }
+
+bool PlatformLoadSnapshotForTests(const std::string &path) { return hle::SnapshotRead(path); }
+bool PlatformSaveSnapshotForTests(const std::string &path) { return hle::SnapshotWrite(path); }
 
 void PlatformTestWrite(uint32_t addr, uint32_t value, uint32_t size) { hle::BusWrite(addr, value, size); }
 
@@ -75,6 +100,11 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
         return false;
     }
     SaveOpen(config.savePath);
+    {
+        size_t slash = config.savePath.find_last_of('/');
+        gSnapDir = slash == std::string::npos ? std::string() : config.savePath.substr(0, slash + 1);
+        if (gSnapDir.empty() && !config.savePath.empty()) gSnapDir = "./";
+    }
     RomWriteFileList(config.fileListPath);
 
     wasm_rt_init();
@@ -89,6 +119,7 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
         uint32_t a = sym[0] == '0' ? static_cast<uint32_t>(std::strtoul(sym, nullptr, 16)) : SymbolAddress(sym);
         if (a) WatchSet(a, 4, sym);
     }
+    w2c_khdays_khvr_init_itcm_tables(Guest());
     Log("platform: printf self-test %s", w2c_khdays_khvr_printf_selftest(Guest()) ? "ok" : "FAILED");
     gState = PlatformState::Running;
     // wasm2c's instantiate set the (thread-local) stack pointer on this thread: hand its initial
@@ -113,6 +144,8 @@ bool Platform::VBlank(int timeoutMs) {
         std::lock_guard<std::mutex> lock(gInputMu);
         Arm7VBlank();
     }
+    // The guest is between frames: a consistent moment for a snapshot.
+    if (gFrames == gSnapAt1 || gFrames == gSnapAt2) SnapshotTake();
     IoVBlank(kFrameCycles);
     GxVBlank();
     ++gFrames;

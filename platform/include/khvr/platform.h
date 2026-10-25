@@ -31,6 +31,9 @@ struct PlatformScreens {
 // can poke registers and memory (PlatformTestPoke) and render (Platform::CaptureScreens).
 void PlatformInitForTests();
 void PlatformTestWrite(uint32_t addr, uint32_t value, uint32_t size);
+// After PlatformInitForTests: load a screen snapshot (khvr_snap_N.bin) for CaptureScreens.
+bool PlatformLoadSnapshotForTests(const std::string &path);
+bool PlatformSaveSnapshotForTests(const std::string &path);
 
 class Platform {
 public:

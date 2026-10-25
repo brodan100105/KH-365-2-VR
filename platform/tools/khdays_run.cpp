@@ -106,7 +106,35 @@ int RenderTest(const char *ppm) {
               (s.topHud[180 * 256 + 180] >> 24) == 0 && (s.bottom[0] & 0xffffff) == 0xffffff;
     std::printf("render test: %s (bg 0x%06x, backdrop 0x%06x, sprite 0x%06x)\n", ok ? "ok" : "FAILED",
                 at(10, 10), at(180, 10), at(203, 53));
+    // The same screen through a snapshot file: saved, the state cleared, loaded, drawn again.
+    static khvr::PlatformScreens again;
+    const char *snap = "render_test_snap.bin";
+    bool snapOk = khvr::PlatformSaveSnapshotForTests(snap);
+    khvr::PlatformInitForTests();
+    snapOk = snapOk && khvr::PlatformLoadSnapshotForTests(snap);
+    khvr::Platform::Get().CaptureScreens(&again);
+    snapOk = snapOk && std::memcmp(again.top, s.top, sizeof s.top) == 0 &&
+             std::memcmp(again.bottom, s.bottom, sizeof s.bottom) == 0;
+    std::remove(snap);
+    std::printf("snapshot test: %s\n", snapOk ? "ok" : "FAILED");
+    ok = ok && snapOk;
     return ok ? 0 : 1;
+}
+
+// Renders a screen snapshot from the headset (khvr_snap_N.bin) to <prefix>_top.ppm and
+// <prefix>_bottom.ppm.
+int RenderSnapshot(const char *path, const char *prefix) {
+    khvr::PlatformInitForTests();
+    if (!khvr::PlatformLoadSnapshotForTests(path)) {
+        std::fprintf(stderr, "cannot read snapshot %s\n", path);
+        return 1;
+    }
+    static khvr::PlatformScreens s;
+    khvr::Platform::Get().CaptureScreens(&s);
+    WritePpm((std::string(prefix) + "_top.ppm").c_str(), s.top);
+    WritePpm((std::string(prefix) + "_bottom.ppm").c_str(), s.bottom);
+    std::printf("snapshot: rendered %s to %s_top.ppm and %s_bottom.ppm\n", path, prefix, prefix);
+    return 0;
 }
 
 // The ARM7 stand-in's answers to requests exactly as the SDK sends them.
@@ -148,6 +176,7 @@ int PxiTest() {
 int main(int argc, char **argv) {
     if (argc >= 2 && std::string(argv[1]) == "--render-test") return RenderTest(argc >= 3 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "--pxi-test") return PxiTest();
+    if (argc >= 4 && std::string(argv[1]) == "--render-snapshot") return RenderSnapshot(argv[2], argv[3]);
     khvr::PlatformConfig cfg;
     int frames = 600;
     std::string screens;
