@@ -166,6 +166,9 @@ std::vector<SettingDef> BuildDefs() {
                   "also rounds diagonal edges (Scale4x) instead of showing them as steps."));
     d.push_back(F(S::PicSharpen, "Picture", "sharpen", "Sharpening", 0.3f, 0.0f, 1.0f, 0.05f, "",
                   "Sharpens the final picture."));
+    d.push_back(F(S::PicScreenSmoothing, "Picture", "screen_smoothing", "Screen smoothing", 0.4f, 0.0f, 1.0f, 0.05f, "",
+                  "Blends neighbouring DS pixels of similar colour (gradients, dithering, jagged edges) "
+                  "while leaving sharp contrast like text untouched. 0 is off."));
     d.push_back(E(S::PicFoveation, "Picture", "foveation", "Fixed foveation", 2,
                   {"off", "low", "medium", "high"}, {"Off", "Low", "Medium", "High"},
                   "Lowers resolution at the edges of the lenses to save GPU time."));

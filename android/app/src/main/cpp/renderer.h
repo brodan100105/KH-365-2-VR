@@ -53,13 +53,17 @@ public:
     void DrawQuad(GLuint texture, const Pose &pose, float w, float h, const Mat4 &viewProj,
                   float alpha = 1.0f, float curvature = 0.0f, float distance = 1.0f,
                   bool flipV = false);
+    // Edge-preserving smoothing (0..1) for the following DrawQuads, meant for DS screens only;
+    // set it back to 0 for anything else.
+    void SetScreenSmoothing(float amount) { smoothing_ = amount; }
     void DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj);
     void DrawComfortOverlay(float vignette, float blink);
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
     GLint litMvp_ = -1, litAlpha_ = -1, litLight_ = -1;
-    GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1;
+    GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1, texSmooth_ = -1, texDsPixel_ = -1;
+    float smoothing_ = 0.0f;
     GLint lineMvp_ = -1, lineColor_ = -1;
     GLint ovVignette_ = -1, ovBlink_ = -1;
     GLuint vao_ = 0, vbo_ = 0;

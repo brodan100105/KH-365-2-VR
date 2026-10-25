@@ -42,10 +42,30 @@ precision mediump float;
 in vec2 vUv;
 uniform sampler2D uTex;
 uniform float uAlpha;
+uniform float uSmooth;   // DS screens: edge-preserving smoothing, 0 = off
+uniform vec2 uDsPixel;   // one DS pixel in texture coordinates
 out vec4 oColor;
 // Fully transparent texels (the HUD's empty areas) write no depth, so they hide nothing behind.
 void main() {
     vec4 c = texture(uTex, vUv);
+    if (uSmooth > 0.0) {
+        // A 3x3 bilateral filter at DS-pixel spacing: each neighbour counts by how close its
+        // colour is to this one, so gradients, dithering and jagged edges blend while
+        // high-contrast edges (text, outlines) stay sharp. uSmooth widens what counts as close.
+        float sigma = mix(0.03, 0.22, uSmooth);
+        vec4 sum = c;
+        float weight = 1.0;
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) continue;
+                vec4 n = texture(uTex, vUv + vec2(float(dx), float(dy)) * uDsPixel * 0.75);
+                vec3 d = n.rgb - c.rgb;
+                float w = exp(-dot(d, d) / (2.0 * sigma * sigma)) * (abs(n.a - c.a) < 0.5 ? 1.0 : 0.0);
+                sum += n * w;
+                weight += w;
+            }
+        c = mix(c, sum / weight, min(1.0, uSmooth * 1.5));
+    }
     if (c.a * uAlpha < 0.02) discard;
     oColor = vec4(c.rgb, c.a * uAlpha);
 })";
@@ -182,6 +202,8 @@ bool Renderer::Init() {
     texMvp_ = glGetUniformLocation(texProgram_, "uMvp");
     texAlpha_ = glGetUniformLocation(texProgram_, "uAlpha");
     texSampler_ = glGetUniformLocation(texProgram_, "uTex");
+    texSmooth_ = glGetUniformLocation(texProgram_, "uSmooth");
+    texDsPixel_ = glGetUniformLocation(texProgram_, "uDsPixel");
     lineMvp_ = glGetUniformLocation(lineProgram_, "uMvp");
     lineColor_ = glGetUniformLocation(lineProgram_, "uColor");
     ovVignette_ = glGetUniformLocation(overlayProgram_, "uVignette");
@@ -248,6 +270,8 @@ void Renderer::DrawQuad(GLuint texture, const Pose &pose, float w, float h, cons
     glUseProgram(texProgram_);
     glUniformMatrix4fv(texMvp_, 1, GL_FALSE, viewProj.m);
     glUniform1f(texAlpha_, alpha);
+    glUniform1f(texSmooth_, smoothing_);
+    glUniform2f(texDsPixel_, 1.0f / 256.0f, 1.0f / 192.0f);
     glUniform1i(texSampler_, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);

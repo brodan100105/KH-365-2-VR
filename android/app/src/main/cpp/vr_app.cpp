@@ -664,6 +664,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
 
 void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     const ViewMode mode = lastMode_;
+    // DS screens: edge-preserving smoothing (Picture > Screen smoothing).
+    const float screenSmoothing = settings_.Get(SettingId::PicScreenSmoothing);
     const bool passthrough = settings_.Bool(SettingId::Passthrough);
     Mat4 proj = EyeProjection(in.eyes[eye].fov);
     Mat4 vpTracking = proj * ViewFromPose(in.eyes[eye].pose);
@@ -691,16 +693,20 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         float dist = settings_.Get(SettingId::ScreenDistance);
         if (game_->world().triangles.empty()) {
             // The DS's top screen exactly as the game draws it.
+            renderer_.SetScreenSmoothing(screenSmoothing);
             renderer_.DrawQuad(topTex_.id(), giantScreen_.pose, giantScreen_.width, giantScreen_.height,
                                vpTracking, 1.0f, curv, dist);
+            renderer_.SetScreenSmoothing(0.0f);
         } else {
             int view = settings_.Bool(SettingId::ScreenStereo) ? eye : 0;
             renderer_.DrawQuad(giantViews_[view].texture(), giantScreen_.pose, giantScreen_.width,
                                giantScreen_.height, vpTracking, 1.0f, curv, dist, true);
             // The 2D HUD sits on the screen surface, a few millimeters in front.
             Pose hudOnScreen = giantScreen_.pose * Pose{Quat(), {0, 0, 0.005f}};
+            renderer_.SetScreenSmoothing(screenSmoothing);
             renderer_.DrawQuad(hudTex_.id(), hudOnScreen, giantScreen_.width, giantScreen_.height,
                                vpTracking, 1.0f, curv, dist);
+            renderer_.SetScreenSmoothing(0.0f);
         }
     } else {
         // The game world, through the rig's mapping from tracking space into the world.
@@ -718,7 +724,11 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     glClear(GL_DEPTH_BUFFER_BIT);
     if (mode != ViewMode::GiantScreen &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
+    {
+        renderer_.SetScreenSmoothing(screenSmoothing);
         renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
+        renderer_.SetScreenSmoothing(0.0f);
+    }
     {
         const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
         const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
@@ -727,8 +737,10 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             // full size and opacity with a smooth ease.
             float t = handScreenShown_, e = t * t * (3.0f - 2.0f * t);
             float scale = 0.45f + 0.55f * e, alpha = 0.55f + 0.45f * e;
+            renderer_.SetScreenSmoothing(screenSmoothing);
             renderer_.DrawQuad(bottomTex_.id(), bottomPanel_.pose, bottomPanel_.width * scale,
                                bottomPanel_.height * scale, vpTracking, alpha);
+            renderer_.SetScreenSmoothing(0.0f);
         }
     }
     if (Loading() && loadingTex_.id())
