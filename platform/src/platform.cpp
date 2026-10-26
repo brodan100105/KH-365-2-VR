@@ -120,13 +120,13 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
         *error = "the game already ran in this process; restart the app";
         return false;
     }
-    started = true;
     LogOpen(config.logPath.c_str());
     Log("platform: starting (KH 358/2 Days VR, guest built from khdays-decomp)");
     if (!RomOpen(config.romPath, error)) {
         Log("platform: %s", error->c_str());
-        return false;
+        return false;  // nothing ran yet: the app may try again (another ROM, later)
     }
+    started = true;
     SaveOpen(config.savePath);
     {
         size_t slash = config.savePath.find_last_of('/');

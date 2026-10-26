@@ -5,11 +5,12 @@ A standalone **Meta Quest 3** VR port of *Kingdom Hearts 358/2 Days*, built on t
 [GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) for Super Mario Galaxy: the game's own code
 runs natively on the headset (no emulator) and is drawn in stereo from wherever your head is.
 
-> **Status: iteration 2, the game boots.** The whole decomp builds into the APK and runs on the
-> platform layer: OS, threads, interrupts, the ARM7's answers, file system and overlays come up
-> and the title scene loads. The game is shown on the giant screen (2D engines; the 3D world in VR
-> is iteration 3). It has not run with a real ROM yet: your first boot log decides what gets
-> fixed next. Without a ROM the app runs the demo arena from iteration 1 ([roadmap](docs/ROADMAP.md)).
+> **Status: iteration 4, the world in VR.** The whole decomp builds into the APK and runs natively
+> on the headset: the game plays from the title screen through the opening, the movies (with
+> sound), the music and sound effects, and its 3D, drawn by the port's own DS 3D engine at up to
+> four times the DS's resolution. The game's 3D can already be shown as real geometry on the
+> giant screen (**Screen > Game in 3D**, experimental); walking around in it comes next
+> ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
 
 ## View modes
 
@@ -23,48 +24,99 @@ Switch between panoramic and first person at any time by holding the right thumb
 
 ## Settings
 
-Hold the left **Menu** button for the VR settings panel: ten tabs (View, Screen, Camera, First
-person, Combat, Controls, Comfort, Picture, HUD, Game) with every option, each tab with its own
-**Defaults** button. The same options live in
+Hold the left **Menu** button for the VR settings panel: twelve tabs (View, Screen, Camera, First
+person, Combat, Controls, Comfort, Picture, HUD, Hand screen, Handheld, Game) with every option,
+each tab with its own **Defaults** button, and a **Button guide** that shows what every button
+does on a drawing of both controllers. The same options live in
 `/sdcard/Android/data/com.khdays.vr/files/khvr.ini`. See [docs/SETTINGS.md](docs/SETTINGS.md) for
 the full list and [docs/CONTROLS.md](docs/CONTROLS.md) for the controls.
 
-## Installing
+## Installing (with SideQuest)
 
-Every push builds an APK on GitHub Actions (**Actions > build > khdays-vr-apk**). With developer
-mode on the headset:
+You need: a Quest 3 (or 3S / Pro / 2) in developer mode, a PC, a USB-C cable, and **your own dump
+of the European cartridge** of *Kingdom Hearts 358/2 Days* (game code `YKGP`; the decompilation
+only matches that release). The ROM is never part of this project or its APK.
+
+### 1. Get the APK
+
+1. Open the repository's **Actions** tab, pick the newest **build** run with a green check, and
+   download **khdays-vr-apk** at the bottom of its page.
+2. Unzip it: inside is `app-release.apk`.
+
+### 2. One-time setup
+
+1. **Developer mode**: in the Meta Horizon app on your phone, go to **Menu > Devices > (your
+   headset) > Headset settings > Developer mode** and turn it on. Restart the headset.
+2. Install **SideQuest** (the "Advanced Installer") on your PC from
+   [sidequestvr.com](https://sidequestvr.com/setup-howto).
+3. Plug the headset into the PC. In the headset, accept **Allow USB debugging** (tick "Always
+   allow from this computer"). SideQuest's top-left dot turns green when it sees the headset.
+
+### 3. Install the app
+
+In SideQuest, click **Install APK file from folder on computer** (the box with a down arrow at
+the top) and pick `app-release.apk`, or drag the APK onto the SideQuest window. Wait for
+"Success" in SideQuest's task list.
+
+To update later, install the new APK the same way, right over the old one: your save and
+settings stay.
+
+### 4. Put your ROM on the headset
+
+1. In SideQuest, click **Manage files on the headset** (the folder icon at the top).
+2. You start in the headset's main storage (`/sdcard`). Open the **KHDaysVR** folder, or create it
+   if it isn't there yet (the app also creates it once you allow it file access).
+3. Drag your `.nds` file into **KHDaysVR**. Any file name ending in `.nds` works.
+
+It should look like this:
+
+```
+Quest storage (/sdcard)
+└── KHDaysVR/
+    ├── your-rom.nds        <- you put this here (EU release, YKGP)
+    ├── khdays.sav          <- the game's save, created when you first save
+    ├── khvr_boot.log       <- what happened while the game ran: send this with bug reports
+    ├── khvr_files.txt      <- the ROM's file list (for development)
+    ├── khvr_snap_N.bin     <- screen snapshots (for development)
+    └── khvr_world_N.bin    <- 3D captures, with Screen > Game in 3D on (for development)
+```
+
+(The `Download` folder works for the ROM too.)
+
+### 5. Start it
+
+1. In the headset, open your **Library**, set the filter to **Unknown Sources**, and start
+   **KH Days VR**.
+2. The first time, the app opens a settings page asking for **All files access** (it needs it to
+   read the ROM from the KHDaysVR folder). Turn it on for KH Days VR and go back to the app.
+3. You wait in a stained-glass loading area that says what it still needs; the game starts by
+   itself as soon as it has the access and finds the ROM. No restart needed.
+
+### If something goes wrong
+
+- **"No European ROM found"**: the ROM is missing from KHDaysVR, or it is another region's
+  cartridge (the panel names what it found). Only the EU release (`YKGP`) works.
+- **It keeps asking for access**: open the headset's **Settings > Apps > KH Days VR >
+  Permissions** (or **Special app access > All files access**) and allow it.
+- **Anything else**: copy `KHDaysVR/khvr_boot.log` off the headset with SideQuest's file manager
+  and send it along with what you saw.
+
+### With adb instead
 
 ```sh
 adb install -r app-release.apk
-```
-
-To play the game, copy your own dump of the **European** cartridge (game code `YKGP`; the
-decompilation only matches that release) into the `KHDaysVR` folder on the headset (or into
-`Download`), with SideQuest's file browser or adb:
-
-```sh
-adb push days.nds /sdcard/KHDaysVR/days.nds
-```
-
-Recent Quest system versions refuse adb writes into `Android/data`, so the app reads the ROM from
-that shared folder, which needs **All files access**. On first launch it opens the settings page
-for it; turn it on, then restart the app. Or grant it over adb:
-
-```sh
+adb push your-rom.nds /sdcard/KHDaysVR/
 adb shell appops set --uid com.khdays.vr MANAGE_EXTERNAL_STORAGE allow
 ```
 
-Any file name ending in `.nds` works. Without a ROM it shows the demo arena and says why. The game
-writes its save to `KHDaysVR/khdays.sav` and a boot log to `KHDaysVR/khvr_boot.log`: if something
-goes wrong, pull that log and send it over.
-
-The ROM is never part of the repository or the APK. Note that the APK does contain the game's code
-compiled from the decomp, so keep its download private (a private repository keeps CI artifacts
-private).
+The settings live in `/sdcard/Android/data/com.khdays.vr/files/khvr.ini`. The APK contains the
+game's code compiled from the decomp, so keep its download private (a private repository keeps
+CI artifacts private).
 
 ## Building
 
-The core (settings, view rigs, combat, input, demo game) builds and tests on any desktop:
+The core (settings, view rigs, combat, input, and the demo arena the tests use) builds and tests on
+any desktop:
 
 ```sh
 cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core

@@ -31,6 +31,10 @@ public:
     void SetSharedDir(const std::string &dir, bool hasAccess);
     // The game could not start for lack of all-files access: main.cpp opens the settings page.
     bool needsStorageAccess() const { return needsStorageAccess_; }
+    // Waiting for all-files access or a ROM: you stand in the loading area, which says what to do,
+    // and main.cpp calls RetryGame every couple of seconds until the game starts.
+    bool waitingForGame() const { return waiting_; }
+    void RetryGame(const std::string &sharedDir, bool hasAccess);
 
     bool Init(XrPlatform *xr);
     void Frame(const XrFrameInput &in);
@@ -72,7 +76,8 @@ private:
     unsigned savedRevision_ = 0;
 
     std::unique_ptr<GameSource> game_;
-    DemoGame *demo_ = nullptr;
+    DemoGame *demo_ = nullptr;  // builds without the game only
+    bool waiting_ = false;
 #ifdef KHVR_HAS_GAME
     DecompGame *decomp_ = nullptr;
 #endif

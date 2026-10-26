@@ -5,6 +5,7 @@
 #include <android_native_app_glue.h>
 #include <jni.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <string>
 
@@ -146,7 +147,14 @@ void RunApp(android_app *app) {
     if (vr.needsStorageAccess()) RequestAllFilesAccess(app);
 
     bool exit = false;
+    auto nextRetry = std::chrono::steady_clock::now();
     while (!app->destroyRequested && !state.destroyRequested && !exit) {
+        // Waiting for all-files access or a ROM: look again every two seconds, so the game starts
+        // the moment you allow access or copy the ROM in, with no restart.
+        if (vr.waitingForGame() && std::chrono::steady_clock::now() >= nextRetry) {
+            nextRetry = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            vr.RetryGame(kSharedDir, HasAllFilesAccess(app));
+        }
         // Block for events only while the session is not running, so the headset keeps its
         // frame rate the rest of the time.
         int events;

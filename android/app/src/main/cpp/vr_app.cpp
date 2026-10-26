@@ -100,51 +100,84 @@ void VrApp::SetSharedDir(const std::string &dir, bool hasAccess) {
     if (hasAccess) mkdir(dir.c_str(), 0777);
 }
 
+namespace {
+// Stands in for the game while the app waits for all-files access or a ROM: black screens, no
+// world. The loading area shows meanwhile.
+class WaitingGame : public GameSource {
+public:
+    WaitingGame() {
+        const size_t n = DsScreens::kWidth * DsScreens::kHeight;
+        screens_.top.assign(n, 0xff000000u);
+        screens_.topHud.assign(n, 0);
+        screens_.bottom.assign(n, 0xff000000u);
+        frame_.inMenu = true;
+        frame_.camera.eye = {0, 0, 1};
+    }
+    void Advance(double, const GameRequests &, uint16_t (*)(void *), void *) override {}
+    const GameFrame &frame() const override { return frame_; }
+    const WorldDrawList &world() const override { return world_; }
+    const DsScreens &screens() const override { return screens_; }
+
+private:
+    GameFrame frame_;
+    WorldDrawList world_;
+    DsScreens screens_;
+};
+}  // namespace
+
 void VrApp::StartGame() {
 #ifdef KHVR_HAS_GAME
-    if (settings_.Enum<GamePlay>(SettingId::GamePlay) == GamePlay::Auto) {
-        auto game = std::make_unique<DecompGame>();
-        std::string message;
-        // The firmware's language numbers start at 1 (English) in the settings' order.
-        int language = settings_.Int(SettingId::GameLanguage) + 1;
-        // Recent Quest system versions refuse adb writes into Android/data, so the ROM normally
-        // sits in the shared KHDaysVR (or Download) folder; files/game still works where adb can
-        // write there.
-        std::vector<std::string> romDirs;
-        if (!sharedDir_.empty()) {
-            romDirs.push_back(sharedDir_);
-            romDirs.push_back("/storage/emulated/0/Download");
-        }
-        romDirs.push_back(filesDir_ + "/game");
-        const std::string &dataDir = sharedDir_.empty() ? filesDir_ : sharedDir_;
-        if (game->Start(romDirs, dataDir, language, &message)) {
-            decomp_ = game.get();
-            game_ = std::move(game);
-            LOGI("game: %s", message.c_str());
-            return;
-        }
-        if (sharedDir_.empty()) {
-            needsStorageAccess_ = true;
-            message = "KH Days VR needs \"All files access\" to read your ROM from the KHDaysVR "
-                      "folder. Turn it on in the settings page that opened (or see the README).";
-        } else {
-            message += " Copy your own dump of the EU cartridge into the KHDaysVR folder on the "
-                       "headset (any name ending in .nds).";
-        }
-        notice_ = message;
-        LOGW("game: %s - running the demo arena", message.c_str());
+    auto game = std::make_unique<DecompGame>();
+    std::string message;
+    // The firmware's language numbers start at 1 (English) in the settings' order.
+    int language = settings_.Int(SettingId::GameLanguage) + 1;
+    // Recent Quest system versions refuse adb writes into Android/data, so the ROM normally
+    // sits in the shared KHDaysVR (or Download) folder; files/game still works where adb can
+    // write there.
+    std::vector<std::string> romDirs;
+    if (!sharedDir_.empty()) {
+        romDirs.push_back(sharedDir_);
+        romDirs.push_back("/storage/emulated/0/Download");
     }
+    romDirs.push_back(filesDir_ + "/game");
+    const std::string &dataDir = sharedDir_.empty() ? filesDir_ : sharedDir_;
+    if (game->Start(romDirs, dataDir, language, &message)) {
+        decomp_ = game.get();
+        game_ = std::move(game);
+        waiting_ = false;
+        notice_.clear();
+        LOGI("game: %s", message.c_str());
+        return;
+    }
+    if (sharedDir_.empty()) {
+        needsStorageAccess_ = true;
+        message = "Allow \"All files access\" for KH Days VR in the settings page that opened, so it "
+                  "can read your ROM from the KHDaysVR folder. The game starts as soon as you do.";
+    } else {
+        message += " Copy your own dump of the EU cartridge into the KHDaysVR folder on the headset "
+                   "(any name ending in .nds): the game starts as soon as it is there.";
+    }
+    if (notice_ != message) LOGW("game: %s - waiting", message.c_str());
+    notice_ = message;
+    waiting_ = true;
+    if (!game_) game_ = std::make_unique<WaitingGame>();
 #else
-    if (settings_.Enum<GamePlay>(SettingId::GamePlay) == GamePlay::Auto)
-        notice_ = "This build has no game (built without the decomp guest). Running the demo arena.";
-#endif
+    notice_ = "This build has no game (built without the decomp guest). Running the demo arena.";
     auto demo = std::make_unique<DemoGame>();
     demo_ = demo.get();
     game_ = std::move(demo);
+#endif
+}
+
+void VrApp::RetryGame(const std::string &sharedDir, bool hasAccess) {
+    if (!waiting_) return;
+    SetSharedDir(sharedDir, hasAccess);
+    StartGame();
 }
 
 std::vector<std::string> VrApp::StatusLines() const {
     std::vector<std::string> lines;
+    if (waiting_) return lines;  // the loading panel says what to do
     if (!notice_.empty()) {
         lines.push_back("DEMO ARENA - the game is not running");
         // Wrap the notice at the panel's width (74 characters at scale 1, inside the margins).
@@ -155,7 +188,6 @@ std::vector<std::string> VrApp::StatusLines() const {
             lines.push_back(rest.substr(0, cut));
             rest = rest.substr(cut < rest.size() && rest[cut] == ' ' ? cut + 1 : cut);
         }
-        lines.push_back("Then restart the app. (Game > Play switches between game and demo.)");
         return lines;
     }
 #ifdef KHVR_HAS_GAME
@@ -170,6 +202,7 @@ std::vector<std::string> VrApp::StatusLines() const {
 
 bool VrApp::Loading() const {
 #ifdef KHVR_HAS_GAME
+    if (waiting_) return true;
     return decomp_ && decomp_->state() == PlatformState::Running && !decomp_->hasPicture();
 #else
     return false;
@@ -283,13 +316,30 @@ void VrApp::UpdateLoading(double now) {
     c.StrokeRect(0, 0, c.width(), c.height(), Rgba(214, 178, 82), 3);
     const char *title = "KINGDOM HEARTS 358/2 Days";
     c.DrawText((c.width() - Canvas::TextWidth(title, 2)) / 2, 28, title, Rgba(236, 236, 244), 2);
+    if (waiting_) {
+        // What the game is waiting for, wrapped to the panel.
+        std::string rest = notice_;
+        int y = 80;
+        while (!rest.empty() && y + Canvas::LineHeight() <= c.height() - 8) {
+            size_t cut = rest.size() <= 74 ? rest.size() : rest.rfind(' ', 74);
+            if (cut == std::string::npos || cut == 0) cut = std::min<size_t>(74, rest.size());
+            std::string line = rest.substr(0, cut);
+            c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, y, line, Rgba(214, 178, 82));
+            rest = rest.substr(cut < rest.size() && rest[cut] == ' ' ? cut + 1 : cut);
+            y += Canvas::LineHeight() + 2;
+        }
+        loadingTex_.Upload(c.width(), c.height(), c.data(), true);
+        return;
+    }
     int dots = static_cast<int>(now * 3.0) % 4;
     std::string loading = "Loading" + std::string(static_cast<size_t>(dots), '.');
     c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 92, loading, Rgba(214, 178, 82));
 #ifdef KHVR_HAS_GAME
-    char line[96];
-    std::snprintf(line, sizeof line, "game frames: %u", decomp_->gameFrames());
-    c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 132, line, Rgba(150, 154, 180));
+    if (decomp_) {
+        char line[96];
+        std::snprintf(line, sizeof line, "game frames: %u", decomp_->gameFrames());
+        c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 132, line, Rgba(150, 154, 180));
+    }
 #endif
     loadingTex_.Upload(c.width(), c.height(), c.data(), true);
 }

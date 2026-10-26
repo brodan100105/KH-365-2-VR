@@ -146,7 +146,6 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `play` | Play | `auto`, `demo` | `auto` | Your EU ROM goes in the KHDaysVR folder on the headset. Applies on restart. |
 | `language` | Language | `english`, `french`, `german`, `italian`, `spanish` | `english` | Game text language (EU release). Applies on the next launch. |
 | `invert_turn` | Invert turning | `true` / `false` | `false` | Swap the direction of right-stick turning. |
 | `units_per_meter` | World units per meter | 0.05 to 64 | `1` | Calibration: game world units in one real meter at life size. |

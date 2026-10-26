@@ -113,7 +113,6 @@ enum class SettingId : int {
     HandScreenDsGiant,
     HandScreenDsColor,
     // Game
-    GamePlay,
     GameLanguage,
     GameInvertTurn,
     GameUnitsPerMeter,
@@ -138,7 +137,6 @@ enum class HandheldDs : int { Off = 0, Movies = 1, Always = 2 };
 enum class DsColor : int { Black = 0, White = 1, Red = 2, Blue = 3, Silver = 4 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
 enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2, Smooth = 3 };
-enum class GamePlay : int { Auto = 0, Demo = 1 };
 // Buttons a gesture can press, in the order the Controls tab lists them.
 enum class DsBinding : int { A = 0, B = 1, X = 2, Y = 3, L = 4, R = 5, None = 6 };
 
