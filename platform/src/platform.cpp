@@ -323,6 +323,22 @@ uint32_t gCountsLogged[64];
 }  // namespace
 }  // namespace hle
 
+namespace {
+// A list too long for one log line, over as many lines as it needs (split between items).
+void LogList(const char *prefix, const std::string &items) {
+    size_t at = 0;
+    while (at < items.size()) {
+        size_t end = items.size();
+        if (end - at > 400) {
+            end = items.rfind(' ', at + 400);
+            if (end == std::string::npos || end <= at) end = at + 400;
+        }
+        hle::Log("  %s%s%s", at ? "  ... " : "", at ? "" : prefix, items.substr(at, end - at).c_str());
+        at = end;
+    }
+}
+}  // namespace
+
 void Platform::Heartbeat() {
     using namespace hle;
     static uint64_t lastHalts = ~0ull;
@@ -335,7 +351,7 @@ void Platform::Heartbeat() {
             gCountsLogged[i] = n;
             changed += " " + std::string(khvr_counted_names[i]) + " " + std::to_string(n);
         }
-        if (!changed.empty()) Log("  calls:%s", changed.c_str());
+        if (!changed.empty()) LogList("calls:", changed);
     }
     // How the screens kept up since the last heartbeat (the app's driver reports them).
     if (uint32_t n = gCaptures.exchange(0); n || gSkippedCaptures) {
@@ -375,7 +391,7 @@ void Platform::Heartbeat() {
         static std::string last;
         std::string now;
         uint32_t obj = Read32(objSystem + 12);
-        for (int i = 0; obj && i < 48; ++i, obj = Read32(obj + 12)) {
+        for (int i = 0; obj && i < 96; ++i, obj = Read32(obj + 12)) {
             uint32_t step = Read32(obj + 20);
             const char *fn = FunctionName(step);
             char item[64];
@@ -383,7 +399,7 @@ void Platform::Heartbeat() {
             else std::snprintf(item, sizeof item, " %d", static_cast<int>(step));
             now += item;
         }
-        if (now != last) Log("  objects:%s", now.c_str());
+        if (now != last) LogList("objects:", now);
         last = now;
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
