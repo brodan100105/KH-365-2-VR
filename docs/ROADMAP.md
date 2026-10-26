@@ -73,3 +73,25 @@ Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
 - [ ] Wall fade in panoramic mode, cutscenes from where you stand
 - [ ] Positional (VR) sound for the game's 3D sound sources
 - [ ] Frame interpolation above the game's 30 Hz
+
+## Last step: the public release
+
+Until the game is done, nothing changes: the repository stays private, CI builds the APK on every
+push, and testers download it from Actions. Before the repository goes public:
+
+- [ ] **No prebuilt APK anywhere public.** The APK holds the game's code compiled from the decomp,
+      so the public workflow only builds and runs the tests; the APK upload stays off.
+- [ ] **Players build their own APK, in a few clicks.** The README's install guide starts with:
+      import this repository into a *private* repository of your own on GitHub (Import repository,
+      or Use this template, set to private), open its Actions tab, run **build**, and download
+      khdays-vr-apk, then the SideQuest steps as now. No tools on the player's PC. For those who
+      prefer their own machine, one command builds it in Docker (`tools/build_apk.sh`).
+- [ ] **Neutral name and branding**: an app name and icon without the game's title or logos, the
+      unofficial fan project notice in the app and the README.
+- [ ] **Legal section** in the README: own cartridge only (dump it yourself, never download a ROM),
+      no ROM links, no game data in the repository or its history (checked before publishing), no
+      money involved, the decomp is its own project.
+- [ ] **History check**: no ROM, save, snapshot, world dump or log in any commit.
+- [ ] Later, the strongest option: build the game's code on the player's side from their own ROM
+      (a static recompiler for the ARM9 code, as Zelda64Recomp does for N64 games), so neither the
+      repository nor any APK carries the game's code at all.
