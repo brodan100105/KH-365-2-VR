@@ -49,3 +49,12 @@ Ov107_ResetStanceBase
 Ov107_AiState_SendPose
 Ov107_SendPoseMessage
 Ov107_AiState_OnSyncMessage
+# Sound effects: started from the archive (menus, NPCs), positioned (battle), the listener.
+PlaySound
+PlaySoundChecked
+Slot_Spawn
+Sound_UpdateSpatial
+Camera_UpdateSoundListener
+SoundMgr_SetListener
+SoundMgr_SetSeEnabled
+Res_RequestIdPair
