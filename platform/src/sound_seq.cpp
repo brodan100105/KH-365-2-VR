@@ -74,6 +74,7 @@ struct Voice {
     bool on = false;
     int track = -1, player = -1;
     int key = 60, velocity = 127, length = -1;  // length in ticks, -1 until released
+    int updates = 0;  // sound frames it has been updated in (the boot log's sound statistics)
     int prio = 0;
     Instrument inst;
     uint32_t baseTimer = 0;
@@ -275,6 +276,12 @@ void NoteOn(int ti, int key, int velocity, int length) {
     }
     if (gVoice[ch].on) StopVoice(ch);
     ++gStats.played;
+    {
+        int dB = DecibelSquare(velocity) + DecibelSquare(p.volume) + p.extFader + DecibelSquare(t.volume) +
+                 DecibelSquare(t.volume2) + t.extFader;
+        gStats.quietest = std::min(gStats.quietest, dB);
+        gStats.loudest = std::max(gStats.loudest, dB);
+    }
     SoundChannel &c = SoundChannels()[ch];
     Voice &v = gVoice[ch];
     v = Voice();
@@ -307,6 +314,7 @@ void NoteOn(int ti, int key, int velocity, int length) {
     if (inst.type == kInstPcm || inst.type == kInstDirectPcm) {
         uint32_t w = inst.wave;
         c.format = Read8(w) & 3;
+        ++gStats.format[c.format < 3 ? c.format : 3];
         c.repeat = Read8(w + 1) ? kLoop : kOneShot;
         v.baseTimer = Read16(w + 4);
         c.loopStart = Read16(w + 6);
@@ -314,6 +322,7 @@ void NoteOn(int ti, int key, int velocity, int length) {
         c.source = w + 12;
         c.timer = v.baseTimer;
     } else {
+        ++gStats.format[3];
         c.format = kPsg;
         c.duty = inst.duty;
         v.baseTimer = kPsgBaseTimer;
@@ -328,10 +337,12 @@ void UpdateVoice(int ch) {
     SoundChannel &c = SoundChannels()[ch];
     if (!v.on) return;
     if (c.owner != ch || !c.active) {  // stolen by the ARM9, or a one-shot wave ended
+        if (v.updates == 0) ++gStats.endedAtOnce;
         v.on = false;
         if (c.owner == ch) c.owner = -1;
         return;
     }
+    ++v.updates;
     // Envelope.
     switch (v.env) {
     case kAttack:
@@ -698,7 +709,12 @@ void StartPlayer(int pn, uint32_t base, uint32_t offset, uint32_t bank, bool sta
 
 }  // namespace
 
-SeqNoteStats SeqStats() { return gStats; }
+SeqNoteStats SeqStats() {
+    SeqNoteStats s = gStats;
+    gStats.quietest = 0;
+    gStats.loudest = -100000;
+    return s;
+}
 
 void SeqReset() {
     for (int i = 0; i < kTracks; ++i) gTrackPool[i] = Track();

@@ -49,6 +49,13 @@ void SeqFrame();         // one sound frame: players step, voices update their c
 // prepared sequences started (START_PREPARED_SEQ).
 struct SeqNoteStats {
     uint32_t played = 0, missing = 0, busy = 0, startedPrepared = 0;
+    // Notes played by wave format (PCM8, PCM16, ADPCM, PSG or noise), notes whose channel was gone
+    // by their first update (a wave that ended at once, or taken by the ARM9), and the quietest
+    // and loudest starting level (velocity, player and track volumes and faders, in centibels
+    // where 0 is full and -723 silence) of the notes since the counts were last read.
+    uint32_t format[4] = {};
+    uint32_t endedAtOnce = 0;
+    int quietest = 0, loudest = -100000;
 };
 SeqNoteStats SeqStats();
 void SeqUpdateShared();  // player status and tick counters into the shared work

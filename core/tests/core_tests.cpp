@@ -483,25 +483,92 @@ TEST(PanelClicksChangeSettings) {
     p.Open();
     CHECK(p.Redraw(s));
     CHECK(!p.Redraw(s));  // nothing changed
-    // The first row of the View tab is the view mode; its ">" sits at the right edge.
-    float rowY = 174 + 23, incX = SettingsPanel::kWidth - 24 - 28;
-    p.Pointer(true, incX, rowY, true, s);
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    // Quick setup lists the view mode among the most used options; its ">" steps it.
+    CHECK(p.tab() == 0);
+    CHECK(p.Find(B::Increase, static_cast<int>(SettingId::ViewMode), &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(s.Enum<ViewMode>(SettingId::ViewMode) == ViewMode::FirstPerson);
     CHECK(p.Redraw(s));
-    // Second tab button (Screen), then its Defaults button undoes a change.
+    // The Screens page, then its Defaults button undoes a change.
     s.Set(SettingId::ScreenDistance, 8.0f);
-    p.Pointer(true, 24 + 200, 64 + 20, true, s);
+    CHECK(p.Find(B::Tab, 1, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(p.tab() == 1);
-    p.Pointer(true, 24 + 100, SettingsPanel::kHeight - 12 - 28, true, s);
+    CHECK(p.Find(B::Defaults, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK_NEAR(s.Get(SettingId::ScreenDistance), 4.5f, 1e-6f);
-    // The button guide, in the middle of the bottom row, toggles; a tab leaves it.
-    p.Pointer(true, SettingsPanel::kWidth / 2, SettingsPanel::kHeight - 12 - 28, true, s);
+    // The button guide toggles; a page leaves it.
+    CHECK(p.Find(B::Guide, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(p.guideOpen());
     CHECK(p.Redraw(s));
-    p.Pointer(true, 24 + 200, 64 + 20, true, s);
+    CHECK(p.Find(B::Tab, 1, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(!p.guideOpen());
-    p.Pointer(true, SettingsPanel::kWidth - 24 - 100, SettingsPanel::kHeight - 12 - 28, true, s);
+    CHECK(p.Find(B::Close, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(!p.isOpen());
+}
+
+TEST(PanelProfilesSetEverythingAtOnce) {
+    Settings s;
+    SettingsPanel p;
+    p.Open();
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    CHECK(CurrentProfile(s) == SettingsProfile::GiantScreen);  // the defaults
+    // "DS in your hands": passthrough, the handheld alone, held in a hand.
+    CHECK(p.Find(B::Profile, static_cast<int>(SettingsProfile::DsInHands), &x, &y));
+    p.Pointer(true, x, y, true, s);
+    CHECK(s.Bool(SettingId::Passthrough));
+    CHECK(s.Enum<HandheldDs>(SettingId::HandScreenDs) == HandheldDs::Only);
+    CHECK(s.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement) == BottomScreenPlacement::InHand);
+    CHECK(CurrentProfile(s) == SettingsProfile::DsInHands);
+    // "Both screens": no handheld, nothing in the hand, both screens on the giant screen.
+    ApplyProfile(SettingsProfile::BothScreens, s);
+    CHECK(!s.Bool(SettingId::Passthrough));
+    CHECK(s.Bool(SettingId::ScreenBoth));
+    CHECK(s.Enum<HandheldDs>(SettingId::HandScreenDs) == HandheldDs::Off);
+    CHECK(s.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement) == BottomScreenPlacement::Hidden);
+    CHECK(CurrentProfile(s) == SettingsProfile::BothScreens);
+    // Changing one of them by hand leaves the profile.
+    s.SetBool(SettingId::Passthrough, true);
+    CHECK(CurrentProfile(s) == SettingsProfile::Count);
+    ApplyProfile(SettingsProfile::GiantScreen, s);
+    CHECK(CurrentProfile(s) == SettingsProfile::GiantScreen);
+}
+
+TEST(PanelPagesScroll) {
+    Settings s;
+    SettingsPanel p;
+    p.Open();
+    p.SetTab(3);  // View: four sections, more lines than fit
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    CHECK(p.Find(B::ScrollDown, 0, &x, &y));
+    CHECK(!p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));  // far down
+    for (int i = 0; i < 40; ++i) p.Scroll(1);
+    CHECK(p.scroll() > 0);
+    CHECK(p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));
+    float before = s.Get(SettingId::ComfortSeatedHeight);
+    p.Pointer(true, x, y, true, s);
+    CHECK(s.Get(SettingId::ComfortSeatedHeight) != before);
+    p.Scroll(-1000);
+    CHECK(p.scroll() == 0);
+    // Every option is on some page.
+    for (const SettingDef &d : SettingDefs()) {
+        bool found = false;
+        for (int page = 1; page < SettingsPanel::PageCount() && !found; ++page) {
+            p.SetTab(page);
+            for (int i = 0; i < 60 && !found; ++i) {
+                found = p.Find(B::Row, static_cast<int>(d.id), &x, &y);
+                p.Scroll(1);
+            }
+        }
+        CHECK(found);
+    }
 }
 
 // ---------------------------------------------------------------- demo game

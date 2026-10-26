@@ -522,6 +522,14 @@ std::string SoundActivity() {
                       s.played - lastStats.played, s.missing - lastStats.missing, s.busy - lastStats.busy,
                       s.startedPrepared - lastStats.startedPrepared);
         out += item;
+        if (s.played != lastStats.played) {
+            std::snprintf(item, sizeof item,
+                          " | pcm8 %u pcm16 %u adpcm %u psg %u, ended at once %u, start level %d to %d cB",
+                          s.format[0] - lastStats.format[0], s.format[1] - lastStats.format[1],
+                          s.format[2] - lastStats.format[2], s.format[3] - lastStats.format[3],
+                          s.endedAtOnce - lastStats.endedAtOnce, s.quietest, s.loudest);
+            out += item;
+        }
     }
     lastStats = s;
     return out;

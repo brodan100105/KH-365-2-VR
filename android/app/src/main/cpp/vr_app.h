@@ -143,6 +143,8 @@ private:
     int heldHand_ = -1, heldHandSetting_ = -1;
     float handScreenShown_ = 0.0f;  // 0 small .. 1 full size (the grow/shrink animation)
     bool twoHanded_ = false;        // the handheld is held between both hands
+    float panelScrollWait_ = 0.0f;  // until the held thumbstick scrolls the settings again
+    bool panelScrollHeld_ = false;
     float twoHandBlend_ = 0.0f;     // 0 in one hand .. 1 between both (eased)
     bool handheld_ = false;         // the touch screen is shown as a whole DS, top screen included
     Quat handScreenLock_;           // with Face your view off: its angle relative to the controller

@@ -646,6 +646,20 @@ void VrApp::Frame(const XrFrameInput &in) {
     if (panel_.isOpen()) {
         laserOnPanel_ = Laser(in, 1, settingsPanel_, SettingsPanel::kWidth, SettingsPanel::kHeight, &px, &py, &dist);
         panel_.Pointer(laserOnPanel_, px, py, click, settings_);
+        // Either thumbstick up or down scrolls the page: a line at once, then repeating.
+        const float stick = std::fabs(in.buttons.stickY[1]) > std::fabs(in.buttons.stickY[0]) ? in.buttons.stickY[1]
+                                                                                           : in.buttons.stickY[0];
+        if (std::fabs(stick) > 0.6f) {
+            panelScrollWait_ -= dt;
+            if (panelScrollWait_ <= 0.0f) {
+                panel_.Scroll(stick > 0 ? -1 : 1);
+                panelScrollWait_ = panelScrollHeld_ ? 0.09f : 0.35f;
+                panelScrollHeld_ = true;
+            }
+        } else {
+            panelScrollWait_ = 0.0f;
+            panelScrollHeld_ = false;
+        }
         laserEnd_ = in.aim[1].position + in.aim[1].orientation.Forward() * (laserOnPanel_ ? dist : 2.0f);
         // While the panel is open the game gets no input.
         buttons = ControllerState{};

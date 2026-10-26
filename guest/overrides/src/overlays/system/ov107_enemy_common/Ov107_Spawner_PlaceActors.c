@@ -78,6 +78,13 @@ static inline int RandSpan(int lo, int span)
     return lo + RandNextScaled((span < 0 ? -span : span) + 1);
 }
 
+/* The actor placed and its spawn handler (+0x1cc), which marks it placed (event 0). */
+static void TracePlaced(Entry *entry)
+{
+    khvr_host_trace("spawner: placed actor (address, spawn handler)", (unsigned long)entry,
+                    (unsigned long)entry->onEvent);
+}
+
 void Ov107_Spawner_PlaceActors(Self *self, TargetList *list)
 {
     int total;
@@ -98,8 +105,7 @@ void Ov107_Spawner_PlaceActors(Self *self, TargetList *list)
         while (node != 0) {
             Entry *entry = *(Entry **)node;
             Ov107_MoveNodeAndRelayout((char *)entry, &self->pos);
-            khvr_host_trace("spawner: placed actor (address, spawn handler)", (unsigned long)entry,
-                            (unsigned long)entry->onEvent);
+            TracePlaced(entry);
             if (entry->onEvent)
                 entry->onEvent(entry, 0);
             node = List_Next(list);
@@ -120,6 +126,7 @@ void Ov107_Spawner_PlaceActors(Self *self, TargetList *list)
                 pos.z = self->pos.z + RandSpan(-half, span);
 
                 Ov107_MoveNodeAndRelayout((char *)entry, &pos);
+                TracePlaced(entry);
                 if (entry->onEvent)
                     entry->onEvent(entry, 0);
                 node = List_Next(list);
@@ -156,6 +163,7 @@ void Ov107_Spawner_PlaceActors(Self *self, TargetList *list)
             Ov107_MoveNodeAndRelayout((char *)entry, &start);
             VEC_Add(&start, &step, &start);
             Ov107_MoveNodeAndRelayout((char *)entry, &start);
+            TracePlaced(entry);
             if (entry->onEvent)
                 entry->onEvent(entry, 0);
             node = List_Next(list);
@@ -178,6 +186,7 @@ void Ov107_Spawner_PlaceActors(Self *self, TargetList *list)
                 pos.y = self->pos.y;
                 pos.z = self->pos.z + FX_MUL(sinv, half);
                 Ov107_MoveNodeAndRelayout((char *)entry, &pos);
+                TracePlaced(entry);
                 if (entry->onEvent)
                     entry->onEvent(entry, 0);
                 angle += 0x6488;
