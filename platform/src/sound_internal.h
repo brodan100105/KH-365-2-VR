@@ -45,6 +45,12 @@ uint32_t SoundRandom();  // SND_CalcRandom
 void SeqReset();
 bool SeqCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);  // false: not a sequence command
 void SeqFrame();         // one sound frame: players step, voices update their channels
+// Notes since boot: played, without an instrument in the bank, without a free channel; and
+// prepared sequences started (START_PREPARED_SEQ).
+struct SeqNoteStats {
+    uint32_t played = 0, missing = 0, busy = 0, startedPrepared = 0;
+};
+SeqNoteStats SeqStats();
 void SeqUpdateShared();  // player status and tick counters into the shared work
 
 }  // namespace khvr::hle

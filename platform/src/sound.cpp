@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -60,6 +61,7 @@ uint32_t gShared = 0;          // SNDSharedWork
 std::mutex gRingMu;
 bool gPrimed = false;       // the output has its cushion (SoundRead)
 uint32_t gUnderruns = 0;    // times the output ran dry
+uint32_t gCmdCount[64] = {};  // sound commands by id, for the heartbeat
 std::vector<int16_t> gRing(2 * kSoundOutputRate / 2);  // half a second
 size_t gRingRead = 0, gRingWrite = 0, gRingFill = 0;
 
@@ -258,6 +260,7 @@ void UpdateSharedWork() {
 }
 
 void RunCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+    if (id < 64) ++gCmdCount[id];
     switch (id) {
     case 0x0c:  // START_TIMER: channels, captures, alarms
         for (int i = 0; i < 16; ++i)
@@ -499,6 +502,29 @@ size_t SoundRead(int16_t *stereo, size_t frames) {
     gRingFill -= n;
     for (size_t i = n; i < frames; ++i) stereo[2 * i] = stereo[2 * i + 1] = 0;
     return n;
+}
+
+std::string SoundActivity() {
+    std::lock_guard<std::mutex> lock(gMu);
+    static uint32_t logged[64] = {};
+    static SeqNoteStats lastStats;
+    std::string out;
+    char item[128];
+    for (int i = 0; i < 64; ++i) {
+        if (gCmdCount[i] == logged[i]) continue;
+        std::snprintf(item, sizeof item, " %02x:%u", i, gCmdCount[i] - logged[i]);
+        out += item;
+        logged[i] = gCmdCount[i];
+    }
+    SeqNoteStats s = SeqStats();
+    if (!out.empty() || s.played != lastStats.played || s.missing != lastStats.missing || s.busy != lastStats.busy) {
+        std::snprintf(item, sizeof item, " | notes %u, no instrument %u, no channel %u, prepared started %u",
+                      s.played - lastStats.played, s.missing - lastStats.missing, s.busy - lastStats.busy,
+                      s.startedPrepared - lastStats.startedPrepared);
+        out += item;
+    }
+    lastStats = s;
+    return out;
 }
 
 uint32_t SoundUnderruns() {

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 
 namespace khvr::hle {
 
@@ -24,6 +25,9 @@ void SoundQueueMovie(const int16_t *samples, size_t frames, int channels, int ra
 void SoundStopMovie();
 // How often the output ran out of mixed samples (each time is a short gap).
 uint32_t SoundUnderruns();
+// What the sound engine did since the last call, for the heartbeat: commands by id (hex:count)
+// and the notes played or dropped. Empty when nothing happened.
+std::string SoundActivity();
 
 constexpr int kSoundOutputRate = 48000;
 

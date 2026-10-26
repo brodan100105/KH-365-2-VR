@@ -352,6 +352,8 @@ void Platform::Heartbeat() {
             changed += " " + std::string(khvr_counted_names[i]) + " " + std::to_string(n);
         }
         if (!changed.empty()) LogList("calls:", changed);
+        std::string sound = SoundActivity();
+        if (!sound.empty()) LogList("sound commands:", sound);
     }
     // How the screens kept up since the last heartbeat (the app's driver reports them).
     if (uint32_t n = gCaptures.exchange(0); n || gSkippedCaptures) {

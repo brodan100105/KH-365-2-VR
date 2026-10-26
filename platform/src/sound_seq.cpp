@@ -202,6 +202,8 @@ void StopVoice(int ch) {
     }
 }
 
+SeqNoteStats gStats;
+
 void ReleaseVoice(Voice &v) {
     if (v.on && v.env != kRelease) v.env = kRelease;
 }
@@ -254,6 +256,7 @@ void NoteOn(int ti, int key, int velocity, int length) {
     // Notes that cannot sound are logged (a limited number), to find sound effects that go missing.
     static int missingLogged = 0, busyLogged = 0;
     if (inst.type == kInstNull) {
+        ++gStats.missing;
         if (missingLogged++ < 40)
             Log("sound: player %d note %d: no instrument (bank 0x%08x program %d)", t.player, key, p.bank, t.prg);
         return;
@@ -261,12 +264,14 @@ void NoteOn(int ti, int key, int velocity, int length) {
     int prio = std::clamp(t.prio + p.prio - 64, 0, 255);
     int ch = AllocChannel(inst.type, t.chMask, prio);
     if (ch == kAllocNone) {
+        ++gStats.busy;
         if (busyLogged++ < 40)
             Log("sound: player %d note %d: no free channel (type %d, allowed 0x%04x, priority %d)", t.player, key,
                 inst.type, t.chMask, prio);
         return;
     }
     if (gVoice[ch].on) StopVoice(ch);
+    ++gStats.played;
     SoundChannel &c = SoundChannels()[ch];
     Voice &v = gVoice[ch];
     v = Voice();
@@ -671,6 +676,8 @@ void StartPlayer(int pn, uint32_t base, uint32_t offset, uint32_t bank, bool sta
 
 }  // namespace
 
+SeqNoteStats SeqStats() { return gStats; }
+
 void SeqReset() {
     for (int i = 0; i < kTracks; ++i) gTrackPool[i] = Track();
     for (Player &p : gPlayers) {
@@ -688,7 +695,10 @@ bool SeqCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     case 0x01: if (a0 < kPlayers) StopPlayer(static_cast<int>(a0)); return true;   // STOP_SEQ
     case 0x02: StartPlayer(static_cast<int>(a0), a1, a2, a3, false); return true;  // PREPARE_SEQ
     case 0x03:  // START_PREPARED_SEQ
-        if (a0 < kPlayers && gPlayers[a0].prepared) gPlayers[a0].active = true;
+        if (a0 < kPlayers && gPlayers[a0].prepared) {
+            gPlayers[a0].active = true;
+            ++gStats.startedPrepared;
+        }
         return true;
     case 0x04:  // PAUSE_SEQ
         if (a0 < kPlayers) {

@@ -26,3 +26,19 @@ Ov114_AiFadeInTick
 Ov114_AiEnterPursuit
 Ov114_OnHit
 Ov114_Destroy
+# Encounters: the spawners that bind the waiting enemies when Roxas comes near, the regions
+# that wake them, and the Shadow's AI from its first state to rising out of the ground.
+func_ov107_020c0ea0
+Ov107_Spawner_Run
+Ov107_Spawner_FindFreeActor
+Ov107_Spawner_PlaceActors
+Ov107_Pillar_EnterRegion
+Ov107_HandleRegionEvent
+Ov107_Region_Update
+Ov107_Region_RequestJoin
+Ov114_CreateRegistryEntryAndLink
+Ov114_InitNodeAndRegisterHandlers
+Ov114_SetVisFlagsEnterState
+Ov114_AiStep_QueueStoredActionIfActive
+Ov114_DispatchSubStateByte
+Ov114_HandleMessage
