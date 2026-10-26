@@ -24,6 +24,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `stereo` | Stereoscopic 3D | `true` / `false` | `true` | Render the game scene separately for each eye on the giant screen. |
 | `depth` | 3D depth | 0 to 2 | `1` | Strength of the stereoscopic effect on the giant screen. |
 | `game_picture` | Game picture | `ds`, `sharp`, `depth` | `sharp` | DS picture: the game's 3D as the DS draws it. Sharp: drawn again by the headset at its resolution, with the game's own textures. 3D depth: the same, seen with both eyes, with depth behind the screen. Menus and text stay as the DS draws them. |
+| `both_screens` | Both screens | `true` / `false` | `false` | The giant screen shows both DS screens, the top one above the touch screen, each 0.6 of the screen width and flat. Point at the lower one to touch it. Hand screen > Placement: Hidden then leaves nothing in your hand. |
 | `passthrough` | Passthrough | `true` / `false` | `false` | Show your room around the giant screen and panels. Costs GPU time. |
 
 ## Camera
@@ -141,7 +142,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `hinge` | Hinge angle | 90 to 175 deg | `160` | How far it is opened: the angle between the two halves (180 would be flat). |
 | `giant_screen_too` | Giant screen too | `true` / `false` | `false` | Keep the giant screen (or the top screen panel) while the handheld shows the top screen. |
 | `color` | Color | `black`, `white`, `red`, `blue`, `silver` | `black` | The handheld's shell. |
-| `two_hands` | Hold with both hands | `true` / `false` | `true` | Bring your other controller up to the handheld and it moves to sit between your two hands, as a DS is held; pull the hands apart to give it back to one hand. |
+| `two_hands` | Hold with both hands | `true` / `false` | `true` | Bring your other controller up to the handheld and it moves to sit between your two hands, as a DS is held. Pull the hands apart and it stays with the hand that stayed by it, so this also passes it from one hand to the other. While you point at the touch screen, the other hand must come much closer to take hold. |
 
 ## Game
 

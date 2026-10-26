@@ -56,6 +56,10 @@ std::vector<SettingDef> BuildDefs() {
                   "DS picture: the game's 3D as the DS draws it. Sharp: drawn again by the headset at its "
                   "resolution, with the game's own textures. 3D depth: the same, seen with both eyes, "
                   "with depth behind the screen. Menus and text stay as the DS draws them."));
+    d.push_back(B(S::ScreenBoth, "Screen", "both_screens", "Both screens", false,
+                  "The giant screen shows both DS screens, the top one above the touch screen, each "
+                  "0.6 of the screen width and flat. Point at the lower one to touch it. Hand screen > "
+                  "Placement: Hidden then leaves nothing in your hand."));
     d.push_back(B(S::Passthrough, "Screen", "passthrough", "Passthrough", false,
                   "Show your room around the giant screen and panels. Costs GPU time."));
     // ---- Camera (third person) ----
@@ -242,7 +246,9 @@ std::vector<SettingDef> BuildDefs() {
                   "The handheld's shell."));
     d.push_back(B(S::HandScreenDsTwoHands, "Handheld", "two_hands", "Hold with both hands", true,
                   "Bring your other controller up to the handheld and it moves to sit between your "
-                  "two hands, as a DS is held; pull the hands apart to give it back to one hand."));
+                  "two hands, as a DS is held. Pull the hands apart and it stays with the hand that "
+                  "stayed by it, so this also passes it from one hand to the other. While you point "
+                  "at the touch screen, the other hand must come much closer to take hold."));
     // ---- Game ----
     d.push_back(E(S::GameLanguage, "Game", "language", "Language", 0,
                   {"english", "french", "german", "italian", "spanish"},

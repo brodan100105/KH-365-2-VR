@@ -449,6 +449,13 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     giantScreen_.pose = FacingFrom(screenAt, screenAnchor_);
     giantScreen_.width = settings_.Get(SettingId::ScreenWidth);
     giantScreen_.height = giantScreen_.width * 0.75f;
+    if (BothScreens()) {
+        // The DS's two screens one above the other, about where the one screen was.
+        const Pose middle = giantScreen_.pose;
+        const float w = giantScreen_.width * 0.6f, h = w * 0.75f, half = (h + w * 0.03f) * 0.5f;
+        giantScreen_ = {middle * Pose{Quat(), {0.0f, half, 0.0f}}, w, h};
+        giantBottom_ = {middle * Pose{Quat(), {0.0f, -half, 0.0f}}, w, h};
+    }
 
     // HUD: floating panels lazily follow your heading; head-locked ones follow exactly.
     float diff = WrapAngle(headYaw - hudYaw_);
@@ -467,7 +474,13 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     // floating low left. Held and worn screens can be moved and turned along their own axes, and
     // grow in only while you look toward them.
     const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
-    handScreenSide_ = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
+    const int sideSetting = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
+    if (sideSetting != heldHandSetting_) {
+        heldHand_ = -1;  // the setting changed: it decides again
+        heldHandSetting_ = sideSetting;
+    }
+    if (handScreenSide_ != (heldHand_ >= 0 ? heldHand_ : sideSetting)) handScreenLockValid_ = false;
+    handScreenSide_ = heldHand_ >= 0 ? heldHand_ : sideSetting;
     const HandheldDs handheld = settings_.Enum<HandheldDs>(SettingId::HandScreenDs);
     handheld_ = placement != BottomScreenPlacement::Hidden && !Loading() &&
                 (handheld == HandheldDs::Always || handheld == HandheldDs::Only ||
@@ -492,8 +505,23 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                 settings_.Bool(SettingId::HandScreenDsTwoHands) && in.gripValid[other]) {
                 float toHandheld = Length(in.grip[other].position - bottomPanel_.pose.position);
                 float apart = Length(in.grip[other].position - in.grip[h].position);
-                if (!twoHanded_ && toHandheld < 0.14f) twoHanded_ = true;
-                else if (twoHanded_ && apart > 0.40f) twoHanded_ = false;
+                // While that hand points at the touch screen it comes much closer before taking
+                // hold, so the pointer stays usable right in front of the handheld.
+                const float reach = laserOnBottom_ ? 0.05f : 0.14f;
+                if (!twoHanded_ && toHandheld < reach) {
+                    twoHanded_ = true;
+                } else if (twoHanded_ && apart > 0.40f) {
+                    // Released: the hand that stayed by the handheld keeps it; the one that moved
+                    // away is free (and becomes the pointer hand).
+                    twoHanded_ = false;
+                    const Vec3 at = bottomPanel_.pose.position;
+                    const int stays = Length(in.grip[other].position - at) < Length(in.grip[h].position - at) ? other : h;
+                    if (stays != h) {
+                        heldHand_ = stays;
+                        handScreenSide_ = stays;
+                        handScreenLockValid_ = false;
+                    }
+                }
             } else {
                 twoHanded_ = false;
             }
@@ -622,9 +650,11 @@ void VrApp::Frame(const XrFrameInput &in) {
         // While the panel is open the game gets no input.
         buttons = ControllerState{};
         buttons.menu = in.buttons.menu;
-    } else if (placement != BottomScreenPlacement::Hidden && handScreenShown_ > 0.9f &&
-               settings_.Enum<TouchInput>(SettingId::HudTouchInput) == TouchInput::Laser &&
-               Laser(in, touchHand, bottomPanel_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)) {
+    } else if (settings_.Enum<TouchInput>(SettingId::HudTouchInput) == TouchInput::Laser &&
+               ((placement != BottomScreenPlacement::Hidden && handScreenShown_ > 0.9f &&
+                 Laser(in, touchHand, bottomPanel_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)) ||
+                (GiantBottomShown(mode) &&
+                 Laser(in, touchHand, giantBottom_, DsScreens::kWidth, DsScreens::kHeight, &px, &py, &dist)))) {
         laserOnBottom_ = true;
         laserHand_ = touchHand;
         laserEnd_ = in.aim[touchHand].position + in.aim[touchHand].orientation.Forward() * dist;
@@ -929,6 +959,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
         const bool world3d = World3d();
+        if (BothScreens()) curv = 0.0f;  // flat, as one surface with the touch screen below
+        if (GiantBottomShown(mode)) {
+            renderer_.SetScreenSmoothing(screenSmoothing);
+            renderer_.DrawQuad(bottomTex_.id(), giantBottom_.pose, giantBottom_.width, giantBottom_.height, vpTracking);
+            renderer_.SetScreenSmoothing(0.0f);
+        }
         if (game_->world().triangles.empty() && !world3d) {
             // The DS's top screen exactly as the game draws it.
             renderer_.SetScreenSmoothing(screenSmoothing);
