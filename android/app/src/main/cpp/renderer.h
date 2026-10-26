@@ -75,10 +75,12 @@ private:
     GLuint vao_ = 0, vbo_ = 0;
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
     GLuint worldProgram_ = 0, worldVbo_ = 0;
-    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1;
+    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1, worldCut_ = -1;
     struct WorldBatch {
         int32_t texture;  // index into the world's textures, -1 none
-        bool translucent, decal;
+        bool blend, depthWrite, decal;
+        float cut;        // texels below this alpha are not drawn
+        int cull;         // 0 both faces, 1 front faces only, 2 back faces only
         GLint first;
         GLsizei count;
     };

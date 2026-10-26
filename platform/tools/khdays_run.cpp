@@ -377,7 +377,9 @@ int RenderWorld(const char *in, const char *outPpm) {
     int behind = 0, inside = 0, outside = 0;
     float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f, minW = 1e9f, maxW = -1e9f;
     const size_t tris = w.triangleTexture.size();
-    for (size_t t = 0; t < tris; ++t) {
+    // The app's three passes (renderer.cpp): opaque; the solid texels of texture-alpha triangles;
+    // translucent ones blended in order. Faces as each polygon asks.
+    auto draw = [&](size_t t, int pass) {
         float sx[3], sy[3], sz[3], iw[3], su[3], sv[3];
         uint32_t col[3];
         bool skip = false;
@@ -404,20 +406,28 @@ int RenderWorld(const char *in, const char *outPpm) {
             col[k] = v.color;
         }
         if (skip) {
-            ++behind;
-            continue;
+            if (pass == 0) ++behind;
+            return;
         }
         bool in = false;
         for (int k = 0; k < 3; ++k) in |= sx[k] >= 0 && sx[k] < W && sy[k] >= 0 && sy[k] < H;
-        (in ? inside : outside)++;
+        if (pass == 0) (in ? inside : outside)++;
         const float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
-        if (std::fabs(area) < 1e-6f) continue;
+        if (std::fabs(area) < 1e-6f) return;
+        // Screen y runs down: counterclockwise with y up is a negative area here.
+        const uint8_t fl = w.triangleFlags[t];
+        const bool front = area < 0;
+        if (!((fl >> (front ? 0 : 1)) & 1)) return;
+        const bool translucentTri = fl & khvr::kWorldTranslucent;
+        if (pass == 0 && translucentTri) return;
+        if (pass == 1 && !(fl & khvr::kWorldTexAlpha)) return;
+        if (pass == 2 && !translucentTri) return;
+        const float cut = pass == 1 ? 0.99f : 0.02f;
         const int x0 = std::max(0, static_cast<int>(std::min({sx[0], sx[1], sx[2]})));
         const int x1 = std::min(W - 1, static_cast<int>(std::max({sx[0], sx[1], sx[2]})) + 1);
         const int y0 = std::max(0, static_cast<int>(std::min({sy[0], sy[1], sy[2]})));
         const int y1 = std::min(H - 1, static_cast<int>(std::max({sy[0], sy[1], sy[2]})) + 1);
         const int32_t tex = w.triangleTexture[t];
-        const bool translucent = w.triangleFlags[t] & khvr::kWorldTranslucent;
         for (int y = y0; y <= y1; ++y)
             for (int x = x0; x <= x1; ++x) {
                 const float qx = x + 0.5f, qy = y + 0.5f;
@@ -426,7 +436,7 @@ int RenderWorld(const char *in, const char *outPpm) {
                 float b2 = 1 - b0 - b1;
                 if (b0 < 0 || b1 < 0 || b2 < 0) continue;
                 float z = b0 * sz[0] + b1 * sz[1] + b2 * sz[2];
-                if (z < -1 || z > 1 || z >= depth[y * W + x]) continue;
+                if (z < -1 || z > 1 || z > depth[y * W + x]) continue;
                 float ww = 1.0f / (b0 * iw[0] + b1 * iw[1] + b2 * iw[2]);
                 float c[4];
                 for (int ch = 0; ch < 4; ++ch)
@@ -441,23 +451,25 @@ int RenderWorld(const char *in, const char *outPpm) {
                     uint32_t t4 = tx.rgba[static_cast<size_t>(iv) * tx.width + iu];
                     for (int ch = 0; ch < 4; ++ch) c[ch] *= ((t4 >> (8 * ch)) & 255) / 255.0f;
                 }
-                if (c[3] < 0.02f) continue;
+                if (c[3] < cut) continue;
                 for (int f = 0; f < 2; ++f) {
                     if (!w.fadeMode[f]) continue;
                     float k = w.fadeFactor[f] / 16.0f, to = w.fadeMode[f] == 1 ? 1.0f : 0.0f;
                     for (int ch = 0; ch < 3; ++ch) c[ch] += (to - c[ch]) * k;
                 }
                 uint32_t &d = px[y * W + x];
-                float a = translucent ? c[3] : 1.0f;
+                float a = pass == 2 ? c[3] : 1.0f;
                 uint32_t o = 0xff000000u;
                 for (int ch = 0; ch < 3; ++ch) {
                     float old = ((d >> (8 * ch)) & 255) / 255.0f;
                     o |= static_cast<uint32_t>(std::clamp(c[ch] * a + old * (1 - a), 0.0f, 1.0f) * 255) << (8 * ch);
                 }
                 d = o;
-                if (!translucent) depth[y * W + x] = z;
+                if (pass < 2 || (fl & khvr::kWorldDepthWrite)) depth[y * W + x] = z;
             }
-    }
+    };
+    for (int pass = 0; pass < 3; ++pass)
+        for (size_t t = 0; t < tris; ++t) draw(t, pass);
     FILE *f = std::fopen(outPpm, "wb");
     if (!f) return 1;
     std::fprintf(f, "P6 %d %d 255\n", W, H);

@@ -569,8 +569,11 @@ void VrApp::Frame(const XrFrameInput &in) {
     const float dt = in.dt;
 #ifdef KHVR_HAS_GAME
     if (decomp_) {
-        decomp_->Set3dScale(settings_.Int(SettingId::Pic3dResolution) + 1);
-        decomp_->SetWorldCapture(settings_.Bool(SettingId::ScreenWorld3d));
+        // While the headset draws the game's 3D itself, the DS picture's 3D is not shown: no need
+        // to draw it large too.
+        const bool headsetDraws3d = settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds;
+        decomp_->Set3dScale(headsetDraws3d ? 1 : settings_.Int(SettingId::Pic3dResolution) + 1);
+        decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds);
     }
 #endif
     ViewMode mode = EffectiveMode();
@@ -714,7 +717,8 @@ void VrApp::Frame(const XrFrameInput &in) {
 
 bool VrApp::World3d() const {
     const DsScreens &s = game_->screens();
-    return settings_.Bool(SettingId::ScreenWorld3d) && !game_->texturedWorld().vertices.empty() && !s.movie &&
+    return settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds &&
+           !game_->texturedWorld().vertices.empty() && !s.movie &&
            !s.topBack.empty();
 }
 
@@ -722,7 +726,9 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
     // The game's own camera, rendered at headset resolution instead of 256x192. With stereo on,
     // each eye gets its own camera, so the level has depth behind the screen.
     const GameFrame &g = game_->frame();
-    bool stereo = settings_.Bool(SettingId::ScreenStereo);
+    // Sharp: the game's 3D drawn again flat, one picture for both eyes, like the DS's.
+    bool stereo = settings_.Bool(SettingId::ScreenStereo) &&
+                  !(World3d() && settings_.Enum<GamePicture>(SettingId::ScreenPicture) == GamePicture::Sharp);
     float sep = kIpd * settings_.Get(SettingId::ScreenDepth) * settings_.Get(SettingId::GameUnitsPerMeter);
     float fovY = g.camera.fovYRad > 0 ? g.camera.fovYRad : DegToRad(55.0f);
     float ty = std::tan(fovY * 0.5f), tx = ty * 4.0f / 3.0f;
@@ -908,7 +914,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                                vpTracking, 1.0f, curv, dist);
             renderer_.SetScreenSmoothing(0.0f);
         } else {
-            int view = settings_.Bool(SettingId::ScreenStereo) ? eye : 0;
+            const bool sharpFlat = world3d && settings_.Enum<GamePicture>(SettingId::ScreenPicture) == GamePicture::Sharp;
+            int view = settings_.Bool(SettingId::ScreenStereo) && !sharpFlat ? eye : 0;
             renderer_.DrawQuad(giantViews_[view].texture(), giantScreen_.pose, giantScreen_.width,
                                giantScreen_.height, vpTracking, 1.0f, curv, dist, true);
             // The 2D HUD sits on the screen surface, a few millimeters in front.

@@ -37,7 +37,7 @@ struct WorldTexture {
     std::vector<uint32_t> rgba;
 };
 enum TexturedTriangleFlags : uint8_t {
-    kTriFront = 1, kTriBack = 2, kTriTranslucent = 4, kTriDecal = 8,
+    kTriFront = 1, kTriBack = 2, kTriTranslucent = 4, kTriDecal = 8, kTriTexAlpha = 16, kTriDepthWrite = 32,
 };
 struct TexturedWorld {
     std::vector<TexturedVertex> vertices;  // three per triangle

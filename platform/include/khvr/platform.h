@@ -53,6 +53,9 @@ enum PlatformWorldFlags : uint8_t {
     kWorldBack = 2,         // draw back faces
     kWorldTranslucent = 4,  // blended: the polygon's alpha below 31, or alpha in its texture
     kWorldDecal = 8,        // texture over the colour rather than multiplied with it
+    kWorldTexAlpha = 16,    // translucent only through its texture's alpha: its solid texels are
+                            // opaque (they hide what is behind them, as on the DS)
+    kWorldDepthWrite = 32,  // translucent, and its pixels still set depth (POLYGON_ATTR bit 11)
 };
 struct PlatformWorldTexture {
     uint64_t key = 0;  // its parameters, texels and palette: equal keys are the same image

@@ -51,10 +51,11 @@ std::vector<SettingDef> BuildDefs() {
                   "Render the game scene separately for each eye on the giant screen."));
     d.push_back(F(S::ScreenDepth, "Screen", "depth", "3D depth", 1.0f, 0.0f, 2.0f, 0.1f, "",
                   "Strength of the stereoscopic effect on the giant screen."));
-    d.push_back(B(S::ScreenWorld3d, "Screen", "world_3d", "Game in 3D (experimental)", false,
-                  "Draws the game's 3D world on the giant screen as real geometry: at the headset's "
-                  "resolution, seen with both eyes, with depth behind the screen. Menus and text stay "
-                  "as the DS draws them."));
+    d.push_back(E(S::ScreenPicture, "Screen", "game_picture", "Game picture", 1, {"ds", "sharp", "depth"},
+                  {"DS picture", "Sharp", "3D depth (experimental)"},
+                  "DS picture: the game's 3D as the DS draws it. Sharp: drawn again by the headset at its "
+                  "resolution, with the game's own textures. 3D depth: the same, seen with both eyes, "
+                  "with depth behind the screen. Menus and text stay as the DS draws them."));
     d.push_back(B(S::Passthrough, "Screen", "passthrough", "Passthrough", false,
                   "Show your room around the giant screen and panels. Costs GPU time."));
     // ---- Camera (third person) ----

@@ -23,7 +23,7 @@ close the panel. Each tab is an INI section; values out of range are clamped.
 | `curvature` | Curvature | 0 to 1 | `0.2` | 0 is flat; 1 wraps the screen around you. |
 | `stereo` | Stereoscopic 3D | `true` / `false` | `true` | Render the game scene separately for each eye on the giant screen. |
 | `depth` | 3D depth | 0 to 2 | `1` | Strength of the stereoscopic effect on the giant screen. |
-| `world_3d` | Game in 3D (experimental) | `true` / `false` | `false` | Draws the game's 3D world on the giant screen as real geometry: at the headset's resolution, seen with both eyes, with depth behind the screen. Menus and text stay as the DS draws them. |
+| `game_picture` | Game picture | `ds`, `sharp`, `depth` | `sharp` | DS picture: the game's 3D as the DS draws it. Sharp: drawn again by the headset at its resolution, with the game's own textures. 3D depth: the same, seen with both eyes, with depth behind the screen. Menus and text stay as the DS draws them. |
 | `passthrough` | Passthrough | `true` / `false` | `false` | Show your room around the giant screen and panels. Costs GPU time. |
 
 ## Camera

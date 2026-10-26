@@ -1277,6 +1277,15 @@ void GxCaptureWorld(PlatformWorld *out) {
     VramTexture(mem.tex.data(), mem.pal.data());
     const bool texturesOn = IoReg16(0x060) & 1;
     std::unordered_map<uint64_t, int32_t> byParams;
+    // Decoded textures by their parameters, kept while texture memory stays the same (most
+    // frames): decoding them all again each frame costs milliseconds on the headset.
+    static std::unordered_map<uint64_t, PlatformWorldTexture> decoded;
+    static uint64_t decodedVram = 0;
+    const uint64_t vram = Fnv(mem.pal.data(), mem.pal.size(), Fnv(mem.tex.data(), mem.tex.size()));
+    if (vram != decodedVram || decoded.size() > 4096) {
+        decoded.clear();
+        decodedVram = vram;
+    }
     auto texture = [&](uint32_t param, uint32_t palBase) -> int32_t {
         const uint32_t format = (param >> 26) & 7;
         if (!texturesOn || format == 0) return -1;
@@ -1284,6 +1293,13 @@ void GxCaptureWorld(PlatformWorld *out) {
         const uint64_t id = (static_cast<uint64_t>(param) << 13) | palBase;
         auto it = byParams.find(id);
         if (it != byParams.end()) return it->second;
+        auto known = decoded.find(id);
+        if (known != decoded.end()) {
+            out->textures.push_back(known->second);
+            int32_t index = static_cast<int32_t>(out->textures.size() - 1);
+            byParams[id] = index;
+            return index;
+        }
         PlatformWorldTexture t;
         t.width = 8 << ((param >> 20) & 7);
         t.height = 8 << ((param >> 23) & 7);
@@ -1300,6 +1316,7 @@ void GxCaptureWorld(PlatformWorld *out) {
                 t.rgba[static_cast<size_t>(y) * t.width + x] = r | (gg << 8) | (b << 16) | (a << 24);
             }
         t.key = Fnv(t.rgba.data(), t.rgba.size() * 4, Fnv(&id, sizeof id));
+        decoded[id] = t;
         out->textures.push_back(std::move(t));
         int32_t index = static_cast<int32_t>(out->textures.size() - 1);
         byParams[id] = index;
@@ -1320,6 +1337,8 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (w.attr & 0x80) flags |= kWorldFront;
         if (w.attr & 0x40) flags |= kWorldBack;
         if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+        if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
+        if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
         PlatformWorldVertex pv[4];
         for (int i = 0; i < w.n; ++i) {

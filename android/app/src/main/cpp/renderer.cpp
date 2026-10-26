@@ -57,6 +57,7 @@ uniform int uUseTex;
 uniform int uDecal;
 // The DS's fades of its 3D layer: (target, amount) twice; target 1 white, 0 black.
 uniform vec4 uFade;
+uniform float uCut;
 out vec4 oColor;
 void main() {
     vec4 c = vColor;
@@ -65,7 +66,7 @@ void main() {
         if (uDecal == 1) c = vec4(mix(c.rgb, t.rgb, t.a), c.a);
         else c *= t;
     }
-    if (c.a < 0.02) discard;
+    if (c.a < uCut) discard;
     c.rgb = mix(c.rgb, vec3(uFade.x), uFade.y);
     c.rgb = mix(c.rgb, vec3(uFade.z), uFade.w);
     oColor = c;
@@ -253,6 +254,7 @@ bool Renderer::Init() {
     worldDecal_ = glGetUniformLocation(worldProgram_, "uDecal");
     worldSampler_ = glGetUniformLocation(worldProgram_, "uTex");
     worldFade_ = glGetUniformLocation(worldProgram_, "uFade");
+    worldCut_ = glGetUniformLocation(worldProgram_, "uCut");
     glGenBuffers(1, &worldVbo_);
     litMvp_ = glGetUniformLocation(litProgram_, "uMvp");
     litAlpha_ = glGetUniformLocation(litProgram_, "uAlpha");
@@ -305,35 +307,51 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     ++worldFrames_;
     if (world.revision != worldRevision_) {
         worldRevision_ = world.revision;
-        // Regroup the triangles: opaque batches first, then translucent ones, each by texture.
+        // Regroup the triangles in three passes, as the DS draws them:
+        //   1. opaque triangles, by texture;
+        //   2. the solid texels of triangles translucent only through their texture (hair,
+        //      leaves): drawn as opaque, so they hide what lies behind them;
+        //   3. translucent triangles in the game's order (it sorts them), blended, setting depth
+        //      only when the polygon asks; the soft texels of pass 2's triangles among them.
         const size_t triangles = world.vertices.size() / 3;
-        std::vector<size_t> order(triangles);
-        for (size_t i = 0; i < triangles; ++i) order[i] = i;
-        auto keyOf = [&](size_t t) {
-            const uint8_t f = world.triangleFlags[t];
-            return (static_cast<int64_t>((f & kTriTranslucent) ? 1 : 0) << 40) |
-                   (static_cast<int64_t>((f & kTriDecal) ? 1 : 0) << 39) | (world.triangleTexture[t] + 1);
-        };
-        std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-            // Translucent triangles keep the game's order (it sorts them itself).
-            const bool ta = world.triangleFlags[a] & kTriTranslucent, tb = world.triangleFlags[b] & kTriTranslucent;
-            if (ta != tb) return !ta;
-            if (ta) return false;
-            return keyOf(a) < keyOf(b);
-        });
         std::vector<TexturedVertex> sorted;
-        sorted.reserve(world.vertices.size());
+        sorted.reserve(world.vertices.size() * 2);
         worldBatches_.clear();
-        for (size_t n = 0; n < order.size(); ++n) {
-            const size_t t = order[n];
+        auto cullOf = [&](size_t t) {
+            const uint8_t f = world.triangleFlags[t];
+            const bool front = f & kTriFront, back = f & kTriBack;
+            return front && !back ? 1 : back && !front ? 2 : 0;
+        };
+        auto add = [&](size_t t, bool blend, bool depthWrite, float cut) {
             const int32_t tex = world.triangleTexture[t];
-            const bool translucent = world.triangleFlags[t] & kTriTranslucent, decal = world.triangleFlags[t] & kTriDecal;
-            if (worldBatches_.empty() || worldBatches_.back().texture != tex ||
-                worldBatches_.back().translucent != translucent || worldBatches_.back().decal != decal)
-                worldBatches_.push_back({tex, translucent, decal, static_cast<GLint>(sorted.size()), 0});
+            const bool decal = world.triangleFlags[t] & kTriDecal;
+            const int cull = cullOf(t);
+            WorldBatch *b = worldBatches_.empty() ? nullptr : &worldBatches_.back();
+            if (!b || b->texture != tex || b->blend != blend || b->depthWrite != depthWrite || b->decal != decal ||
+                b->cut != cut || b->cull != cull)
+                worldBatches_.push_back({tex, blend, depthWrite, decal, cut, cull, static_cast<GLint>(sorted.size()), 0});
             for (int k = 0; k < 3; ++k) sorted.push_back(world.vertices[t * 3 + k]);
             worldBatches_.back().count += 3;
+        };
+        std::vector<size_t> pass1, pass2, pass3;
+        for (size_t t = 0; t < triangles; ++t) {
+            const uint8_t f = world.triangleFlags[t];
+            if (!(f & kTriTranslucent)) {
+                pass1.push_back(t);
+            } else {
+                if (f & kTriTexAlpha) pass2.push_back(t);
+                pass3.push_back(t);
+            }
         }
+        auto byKey = [&](size_t a, size_t b) {
+            if (world.triangleTexture[a] != world.triangleTexture[b]) return world.triangleTexture[a] < world.triangleTexture[b];
+            return cullOf(a) < cullOf(b);
+        };
+        std::stable_sort(pass1.begin(), pass1.end(), byKey);
+        std::stable_sort(pass2.begin(), pass2.end(), byKey);
+        for (size_t t : pass1) add(t, false, true, 0.02f);
+        for (size_t t : pass2) add(t, false, true, 0.99f);
+        for (size_t t : pass3) add(t, true, (world.triangleFlags[t] & kTriDepthWrite) != 0, 0.02f);
         glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
         glBufferData(GL_ARRAY_BUFFER, sorted.size() * sizeof(TexturedVertex), sorted.data(), GL_STREAM_DRAW);
         // Textures: reuse what the GPU has by key, upload the new ones.
@@ -391,10 +409,19 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TexturedVertex),
                           reinterpret_cast<void *>(offsetof(TexturedVertex, color)));
     glEnable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);  // both faces: the VR viewpoint is not the DS camera's
+    // Equal depths pass: pass 3 draws pass 2's triangles again over themselves.
+    glDepthFunc(GL_LEQUAL);
+    glFrontFace(GL_CCW);  // the DS's front faces are counterclockwise too
     for (const WorldBatch &b : worldBatches_) {
-        SetBlend(b.translucent);
-        glDepthMask(b.translucent ? GL_FALSE : GL_TRUE);
+        SetBlend(b.blend);
+        glDepthMask(b.depthWrite ? GL_TRUE : GL_FALSE);
+        glUniform1f(worldCut_, b.cut);
+        if (b.cull == 0) {
+            glDisable(GL_CULL_FACE);
+        } else {
+            glEnable(GL_CULL_FACE);
+            glCullFace(b.cull == 1 ? GL_BACK : GL_FRONT);
+        }
         const bool textured = b.texture >= 0 && static_cast<size_t>(b.texture) < worldTextureIds_.size();
         glUniform1i(worldUseTex_, textured ? 1 : 0);
         glUniform1i(worldDecal_, b.decal ? 1 : 0);
@@ -405,6 +432,8 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         glDrawArrays(GL_TRIANGLES, b.first, b.count);
     }
     glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_CULL_FACE);
     SetBlend(false);
     glDisableVertexAttribArray(2);
 }

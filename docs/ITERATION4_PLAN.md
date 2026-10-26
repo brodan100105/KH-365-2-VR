@@ -19,11 +19,13 @@ and into VR as real geometry around you.
       flip and colour-0 rules, keyed by its parameters and a hash of its texels and palette so the
       app uploads it to the GPU only when it changes.
 - [x] **VR renderer**: textured, vertex-coloured, unlit triangles (the DS already lit them),
-      alpha test and blending as the polygon asks. Both faces are drawn for now (culling by the
-      polygon's own front/back bits needs the winding checked on the headset).
-- [x] **Screen > Game in 3D** (experimental, off until it has been seen right on the headset): the giant
-      screen shows the captured world from the game's camera at headset resolution, one camera per
-      eye, so the level has depth behind the screen. The DS's 2D behind its 3D layer fills the
+      alpha test and blending as the polygon asks, each face drawn as the polygon's front/back
+      bits ask. Solid texels of alpha-tested textures (hair, leaves) write depth before the
+      translucent pass, so the model's own layers hide each other as on the DS.
+- [x] **Screen > Game picture**: *DS picture* (the DS's own pixels), *Sharp* (the default: the
+      captured world drawn from the game's camera at headset resolution, flat like the DS
+      picture) or *3D depth* (experimental: one camera per eye, so the level has depth behind
+      the screen). The DS's 2D behind its 3D layer fills the
       view first; the 2D in front of it, with the orthographic 3D pieces, lies on the screen.
 - [x] Desktop test: a textured quad drawn through `NNS_G3dGlb` with a camera, captured back in
       world space with the right camera and texture.

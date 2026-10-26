@@ -9,7 +9,8 @@ runs natively on the headset (no emulator) and is drawn in stereo from wherever 
 > on the headset: the game plays from the title screen through the opening, the movies (with
 > sound), the music and sound effects, and its 3D, drawn by the port's own DS 3D engine at up to
 > four times the DS's resolution. The game's 3D can already be shown as real geometry on the
-> giant screen (**Screen > Game in 3D**, experimental); walking around in it comes next
+> giant screen at headset resolution (**Screen > Game picture**: *Sharp*, the default, or
+> *3D depth*, experimental); walking around in it comes next
 > ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
 
 ## View modes
@@ -78,7 +79,7 @@ Quest storage (/sdcard)
     ├── khvr_boot.log       <- what happened while the game ran: send this with bug reports
     ├── khvr_files.txt      <- the ROM's file list (for development)
     ├── khvr_snap_N.bin     <- screen snapshots (for development)
-    └── khvr_world_N.bin    <- 3D captures, with Screen > Game in 3D on (for development)
+    └── khvr_world_N.bin    <- 3D captures, with Screen > Game picture on Sharp or 3D depth (for development)
 ```
 
 (The `Download` folder works for the ROM too.)
