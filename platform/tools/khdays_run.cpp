@@ -703,9 +703,36 @@ int SeqTest() {
     };
     double first = crossings(4800, 43200), second = crossings(52800, 91200), third = crossings(110000, 140000);
     bool statusAfter = khvr::PlatformTestRead(shared + 4, 4) & 1;
-    bool ok = first > 760 && first < 840 && second > 1520 && second < 1680 && third < 20 && statusDuring && !statusAfter;
-    std::printf("seq test: %s (%.0f, %.0f, %.0f zero crossings a second; player status %d during, %d after)\n",
-                ok ? "ok" : "FAILED", first, second, third, statusDuring, statusAfter);
+    // A sequence that allocates a second track and opens it later: muting that track between
+    // PREPARE_SEQ and START_PREPARED_SEQ (as the game's sound effects set their tracks up) keeps
+    // it silent, so the track must exist from the moment the sequence is prepared.
+    const uint32_t seq2 = 0x02115000, cmds2 = 0x02116800;
+    const uint8_t code2[] = {0xfe, 0x03, 0x00, 0x93, 0x01, 0x10, 0x00, 0x00, 0x80, 0x81, 0x00, 0xff};
+    for (size_t i = 0; i < sizeof code2; ++i) w8(seq2 + static_cast<uint32_t>(i), code2[i]);
+    const uint8_t track1[] = {0xc1, 0x7f, 60, 0x7f, 0x60, 0xff};
+    for (size_t i = 0; i < sizeof track1; ++i) w8(seq2 + 0x10 + static_cast<uint32_t>(i), track1[i]);
+    auto cmd2 = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+        uint32_t at = cmds2 + 0x18 * n;
+        w32(at, next); w32(at + 4, id); w32(at + 8, a0); w32(at + 12, a1); w32(at + 16, a2); w32(at + 20, a3);
+    };
+    cmd2(0, cmds2 + 0x18, 0x02, 1, seq2, 0, bank);  // PREPARE_SEQ player 1
+    cmd2(1, cmds2 + 0x30, 0x08, 1, 0x2, 1, 0);       // MUTE_TRACK player 1, track 1
+    cmd2(2, 0, 0x03, 1, 0, 0, 0);                    // START_PREPARED_SEQ player 1
+    Arm7OnSend(7 | (cmds2 << 6));
+    out.clear();
+    for (int f = 0; f < 40; ++f) {
+        SoundFrame();
+        while (Arm7HasReply()) Arm7PopReply();
+        int16_t buf[2 * 1024];
+        size_t n = SoundRead(buf, 802);
+        out.insert(out.end(), buf, buf + 2 * n);
+    }
+    double muted = crossings(4800, 28800);
+    bool ok = first > 760 && first < 840 && second > 1520 && second < 1680 && third < 20 && statusDuring && !statusAfter &&
+              muted < 20;
+    std::printf("seq test: %s (%.0f, %.0f, %.0f zero crossings a second; player status %d during, %d after; "
+                "muted track before start %.0f)\n",
+                ok ? "ok" : "FAILED", first, second, third, statusDuring, statusAfter, muted);
     return ok ? 0 : 1;
 }
 

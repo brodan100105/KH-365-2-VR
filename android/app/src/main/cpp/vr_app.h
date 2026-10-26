@@ -103,6 +103,8 @@ private:
     Texture frontTex_, backTex_;  // Screen > Game in 3D: the 2D in front of and behind the world
     // Screen > Game in 3D is on and the game gave a world to draw this frame.
     bool World3d() const;
+    // Handheld > Handheld DS is "DS only": the handheld alone, without the giant screen.
+    bool DsOnly() const { return settings_.Enum<HandheldDs>(SettingId::HandScreenDs) == HandheldDs::Only; }
     struct Mote {
         Vec3 position;
         float size, alpha;
@@ -129,6 +131,8 @@ private:
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     float handScreenShown_ = 0.0f;  // 0 small .. 1 full size (the grow/shrink animation)
+    bool twoHanded_ = false;        // the handheld is held between both hands
+    float twoHandBlend_ = 0.0f;     // 0 in one hand .. 1 between both (eased)
     bool handheld_ = false;         // the touch screen is shown as a whole DS, top screen included
     Quat handScreenLock_;           // with Face your view off: its angle relative to the controller
     bool handScreenLockValid_ = false;

@@ -221,11 +221,13 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::HandScreenRoll, "Hand screen", "roll", "Roll", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
                   "Rolls the screen clockwise or counterclockwise."));
     // ---- Handheld ----
-    d.push_back(E(S::HandScreenDs, "Handheld", "show", "Handheld DS", 0, {"off", "movies", "always"},
-                  {"Off (touch screen only)", "For movies", "Always"},
+    d.push_back(E(S::HandScreenDs, "Handheld", "show", "Handheld DS", 0, {"off", "movies", "always", "only"},
+                  {"Off (touch screen only)", "For movies", "Always", "DS only"},
                   "Holds a whole DS: the top screen above the touch screen on a small handheld, "
                   "opened on its hinge, where the touch screen is (Hand screen > Placement). It grows, "
-                  "shrinks and fades as one. For movies: only while a movie plays."));
+                  "shrinks and fades as one. For movies: only while a movie plays. DS only: the "
+                  "handheld is all there is, no giant screen, always at full size (with Screen > "
+                  "Passthrough, a DS in your real room)."));
     d.push_back(F(S::HandScreenDsSize, "Handheld", "size", "Size", 0.20f, 0.10f, 0.50f, 0.01f, "m",
                   "Width of the whole handheld, screens and all (a real DS Lite: 0.13 m)."));
     d.push_back(F(S::HandScreenDsScreenScale, "Handheld", "screen_scale", "Screen size", 100.0f, 60.0f, 140.0f,
@@ -238,6 +240,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HandScreenDsColor, "Handheld", "color", "Color", 0,
                   {"black", "white", "red", "blue", "silver"}, {"Black", "White", "Red", "Blue", "Silver"},
                   "The handheld's shell."));
+    d.push_back(B(S::HandScreenDsTwoHands, "Handheld", "two_hands", "Hold with both hands", true,
+                  "Bring your other controller up to the handheld and it moves to sit between your "
+                  "two hands, as a DS is held; pull the hands apart to give it back to one hand."));
     // ---- Game ----
     d.push_back(E(S::GameLanguage, "Game", "language", "Language", 0,
                   {"english", "french", "german", "italian", "spanish"},

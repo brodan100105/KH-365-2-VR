@@ -310,7 +310,8 @@ void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", Read
 void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
     if (ReadString(what) == "scene request") SnapshotOnSceneRequest(a);
     const char *fn = FunctionName(b);
-    if (fn) Log("trace: %s %u -> %s", ReadString(what).c_str(), a, fn);
+    // A small number can be both a value and a function's table index: the value is shown too.
+    if (fn) Log("trace: %s %u -> %s (0x%08x)", ReadString(what).c_str(), a, fn, b);
     else Log("trace: %s %u -> 0x%08x", ReadString(what).c_str(), a, b);
 }
 

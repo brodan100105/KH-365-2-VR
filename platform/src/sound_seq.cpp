@@ -40,6 +40,9 @@ struct Instrument {
 
 struct Track {
     bool active = false, noteWait = true, mute = false, tie = false, porta = false, cmp = true;
+    // Allocated when the sequence was prepared (its 0xfe command) but not yet given its data by
+    // the 0x93 that opens it: the game's track settings apply to it, but it does not play yet.
+    bool opened = true;
     int player = -1;
     uint32_t base = 0, pc = 0;
     int wait = 0;
@@ -514,6 +517,11 @@ bool StepTrack(int ti) {
                 if (n < kTracksPerPlayer && p.track[n] < 0) {
                     int nt = NewTrack(t.player, t.base, t.base + off);
                     if (nt >= 0) p.track[n] = nt;
+                } else if (n < kTracksPerPlayer && !gTrackPool[p.track[n]].opened) {
+                    Track &o = gTrackPool[p.track[n]];
+                    o.base = t.base;
+                    o.pc = t.base + off;
+                    o.opened = true;
                 }
             } else if (cmd == 0x94) {
                 uint32_t off = Read24(t);
@@ -638,7 +646,7 @@ void TickPlayer(int pn) {
     bool any = false;
     for (int i = 0; i < kTracksPerPlayer; ++i) {
         int ti = p.track[i];
-        if (ti < 0) continue;
+        if (ti < 0 || !gTrackPool[ti].opened) continue;
         if (StepTrack(ti)) any = true;
         else {
             FreeTrack(ti);
@@ -670,6 +678,20 @@ void StartPlayer(int pn, uint32_t base, uint32_t offset, uint32_t bank, bool sta
     int ti = NewTrack(pn, base, base + offset);
     if (ti < 0) return;
     p.track[0] = ti;
+    // As the DS's SND_PrepareSeq: a sequence that starts by allocating tracks (0xfe and a mask of
+    // them) gets them now, so the settings the game sends between preparing and starting it
+    // (track volume, the channels a track may use, muting) reach every track, not only the first.
+    uint32_t pc = base + offset;
+    if (Read8(pc) == 0xfe) {
+        uint32_t mask = Read8(pc + 1) | static_cast<uint32_t>(Read8(pc + 2)) << 8;
+        for (int i = 1; i < kTracksPerPlayer; ++i) {
+            if (!(mask & (1u << i))) continue;
+            int nt = NewTrack(pn, base, 0);
+            if (nt < 0) break;
+            gTrackPool[nt].opened = false;
+            p.track[i] = nt;
+        }
+    }
     p.prepared = true;
     p.active = start;
 }

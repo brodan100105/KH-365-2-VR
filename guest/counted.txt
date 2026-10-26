@@ -42,3 +42,10 @@ Ov114_SetVisFlagsEnterState
 Ov114_AiStep_QueueStoredActionIfActive
 Ov114_DispatchSubStateByte
 Ov114_HandleMessage
+# What should make a placed Shadow active: the spawn event (0) and the despawn check (2) of its
+# +0x1cc handler, the stance reset, and the pose message that copies the stance into the flags.
+func_ov107_020c73a0
+Ov107_ResetStanceBase
+Ov107_AiState_SendPose
+Ov107_SendPoseMessage
+Ov107_AiState_OnSyncMessage

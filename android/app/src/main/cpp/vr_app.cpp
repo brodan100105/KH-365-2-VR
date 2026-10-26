@@ -470,7 +470,8 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     handScreenSide_ = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
     const HandheldDs handheld = settings_.Enum<HandheldDs>(SettingId::HandScreenDs);
     handheld_ = placement != BottomScreenPlacement::Hidden && !Loading() &&
-                (handheld == HandheldDs::Always || (handheld == HandheldDs::Movies && game_->screens().movie));
+                (handheld == HandheldDs::Always || handheld == HandheldDs::Only ||
+                 (handheld == HandheldDs::Movies && game_->screens().movie));
     if (placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist) {
         bottomPanel_.width = handheld_ ? settings_.Get(SettingId::HandScreenDsSize) / 2.15f *
                                              settings_.Get(SettingId::HandScreenDsScreenScale) / 100.0f
@@ -484,6 +485,25 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             Vec3 anchor = placement == BottomScreenPlacement::InHand
                               ? in.grip[h].position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
                               : in.grip[h].Transform({0.0f, -0.02f, 0.13f});
+            // Held with both hands: the other controller brought up to the handheld takes it to
+            // the middle of the two hands; it goes back to one hand once they are pulled apart.
+            const int other = 1 - h;
+            if (handheld_ && placement == BottomScreenPlacement::InHand &&
+                settings_.Bool(SettingId::HandScreenDsTwoHands) && in.gripValid[other]) {
+                float toHandheld = Length(in.grip[other].position - bottomPanel_.pose.position);
+                float apart = Length(in.grip[other].position - in.grip[h].position);
+                if (!twoHanded_ && toHandheld < 0.14f) twoHanded_ = true;
+                else if (twoHanded_ && apart > 0.40f) twoHanded_ = false;
+            } else {
+                twoHanded_ = false;
+            }
+            twoHandBlend_ = Clamp(twoHandBlend_ + (twoHanded_ ? 1.0f : -1.0f) * in.dt / 0.2f, 0.0f, 1.0f);
+            if (twoHandBlend_ > 0.0f) {
+                Vec3 middle = (in.grip[h].position + in.grip[other].position) * 0.5f +
+                              Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f};
+                float e = twoHandBlend_ * twoHandBlend_ * (3.0f - 2.0f * twoHandBlend_);
+                anchor = anchor + (middle - anchor) * e;
+            }
             Quat turn = Quat::AxisAngle({0, 1, 0}, DegToRad(settings_.Get(SettingId::HandScreenTurn))) *
                         Quat::AxisAngle({1, 0, 0}, DegToRad(settings_.Get(SettingId::HandScreenTilt))) *
                         Quat::AxisAngle({0, 0, 1}, -DegToRad(settings_.Get(SettingId::HandScreenRoll)));
@@ -504,7 +524,8 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             bottomPanel_.pose = Pose{face * turn, anchor} * Pose{Quat(), move};
         }
         // Shown while you look toward it (wider to keep it than to bring it up), or always.
-        bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_;
+        bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_ ||
+                      (handheld_ && handheld == HandheldDs::Only) || twoHanded_;
         if (!wanted && in.gripValid[h]) {
             Vec3 to = bottomPanel_.pose.position - head.position;
             float dist = Length(to);
@@ -707,7 +728,8 @@ void VrApp::Frame(const XrFrameInput &in) {
     UpdateStatus(in.time);
     if (!in.shouldRender) return;
     // The game's own picture needs no 3D re-render until the geometry capture exists.
-    if (mode == ViewMode::GiantScreen && (!game_->world().triangles.empty() || World3d())) RenderGiantScreenViews(in);
+    if (mode == ViewMode::GiantScreen && (!game_->world().triangles.empty() || World3d()) && !(handheld_ && DsOnly()))
+        RenderGiantScreenViews(in);
     for (int eye = 0; eye < 2; ++eye) {
         xr_->AcquireEye(eye);
         RenderEye(in, eye);
@@ -901,7 +923,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                 renderer_.DrawQuad(glowTex_.id(), FacingFrom(m->position, eyePos), m->size, m->size, vpTracking,
                                    m->alpha);
         glDepthMask(GL_TRUE);
-    } else if (mode == ViewMode::GiantScreen && handheld_ && !settings_.Bool(SettingId::HandScreenDsGiant)) {
+    } else if (mode == ViewMode::GiantScreen && handheld_ && (!settings_.Bool(SettingId::HandScreenDsGiant) || DsOnly())) {
         // The handheld shows the top screen instead.
     } else if (mode == ViewMode::GiantScreen) {
         float curv = settings_.Get(SettingId::ScreenCurvature);
@@ -939,7 +961,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     // Panels float in front of the world: never let a pillar, the floor or the character cut into
     // them. They still sort against each other and the laser.
     glClear(GL_DEPTH_BUFFER_BIT);
-    if (mode != ViewMode::GiantScreen && (!handheld_ || settings_.Bool(SettingId::HandScreenDsGiant)) &&
+    if (mode != ViewMode::GiantScreen && (!handheld_ || (settings_.Bool(SettingId::HandScreenDsGiant) && !DsOnly())) &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
     {
         renderer_.SetScreenSmoothing(screenSmoothing);
