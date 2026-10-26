@@ -137,9 +137,17 @@ int RenderSnapshot(const char *path, const char *prefix) {
         return 1;
     }
     static khvr::PlatformScreens s;
+    khvr::Platform::Get().SetWorldCapture(true);  // the split around the 3D layer too
     khvr::Platform::Get().CaptureScreens(&s);
     WritePpm((std::string(prefix) + "_top.ppm").c_str(), s.top);
     WritePpm((std::string(prefix) + "_bottom.ppm").c_str(), s.bottom);
+    if (s.split) {
+        WritePpm((std::string(prefix) + "_front.ppm").c_str(), s.topFront);
+        WritePpm((std::string(prefix) + "_back.ppm").c_str(), s.topBack);
+        int opaque = 0;
+        for (uint32_t p : s.topFront) opaque += (p >> 24) == 255;
+        std::printf("snapshot: in front of the 3D layer, %d of %d pixels are opaque\n", opaque, 256 * 192);
+    }
     std::printf("snapshot: rendered %s to %s_top.ppm and %s_bottom.ppm\n", path, prefix, prefix);
     return 0;
 }
@@ -334,12 +342,15 @@ int WorldTest() {
             RenderWorld("khvr_world_test.bin", "khvr_world_test.ppm") == 0;
     }
     // Around the captured world: the HUD quad (orthographic) in front, the backdrop behind.
+    // The rear plane opaque blue, as the field has it opaque black: it must end up behind the world,
+    // never in front of it.
+    w32(0x04000350, 0x001f7c00);
     khvr::Platform::Get().SetWorldCapture(true);
     static khvr::PlatformScreens s;
     khvr::Platform::Get().CaptureScreens(&s);
     const int mid = 96 * 256 + 128, corner = 4 * 256 + 4;
     bool split = s.split && (s.topFront[mid] >> 24) == 255 && (s.topFront[corner] >> 24) == 0 &&
-                 (s.topBack[corner] >> 24) == 255;
+                 s.topBack[corner] == 0xffff0000u;
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d)\n",
                 a && b && split ? "ok" : "FAILED", a && b, split);
     return a && b && split ? 0 : 1;

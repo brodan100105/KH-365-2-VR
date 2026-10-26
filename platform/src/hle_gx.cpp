@@ -1178,6 +1178,8 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
     const uint16_t clearDepth = IoReg16(0x354) & 0x7fff;
     const uint32_t depth24 = clearDepth * 0x200u + ((clearDepth + 1u) / 0x8000u) * 0x1ffu;
     Texel cc = FromRgb15(static_cast<uint16_t>(clear & 0x7fff), static_cast<int>((clear >> 16) & 31));
+    // The HUD pieces alone go over the captured world: on nothing, not on the rear plane's colour.
+    if (hudOnly) cc.a = 0;
     f.Resize(rp.scale);
     std::fill(f.r.begin(), f.r.end(), static_cast<uint8_t>(cc.r));
     std::fill(f.gch.begin(), f.gch.end(), static_cast<uint8_t>(cc.g));

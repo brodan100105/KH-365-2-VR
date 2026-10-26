@@ -327,6 +327,10 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
     if (s3 > 1) recipe.assign(static_cast<size_t>(kScreenW) * kScreenH, Recipe());
 
     const uint32_t masterMode = master >> 14, masterFactor = std::min<uint32_t>(master & 31, 16);
+    // The 3D engine's rear plane (CLEAR_COLOR): what its layer shows where no polygon is.
+    const uint32_t clearReg = IoReg32(0x350);
+    const uint16_t rearColor = static_cast<uint16_t>(clearReg & 0x7fff);
+    const int rearAlpha = static_cast<int>((clearReg >> 16) & 31);
     // Colour effects and master brightness for the front-most layer `c`.
     auto finish = [&](uint16_t c, int topId, uint32_t second, int secondId, bool semi, int a3d, bool fx) {
         bool firstTarget = (bldcnt >> topId) & 1, secondTarget = (bldcnt >> (8 + secondId)) & 1;
@@ -405,18 +409,21 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
                         st.second = c; st.secondId = id; secondPrio = prio;
                     }
                 };
+                // with3d 3: only what lies behind the 3D layer (it and what is in front of it left out).
+                const int prio3d = IoReg16(e.io + 0x08) & 3;
                 for (int b = 3; b >= 0; --b) {
                     if (!on[b] || !((mask >> b) & 1)) continue;
                     uint32_t c = bgl[b].c[x];
+                    if (with3d == 3 && bg0is3d && b > 0 && (IoReg16(e.io + 0x08 + 2 * b) & 3) < prio3d) continue;
                     if (b == 0 && bg0is3d) {
-                        if (with3d == 0 || (with3d == 1 && c == kTransparent)) continue;
+                        if (with3d == 0 || with3d == 3 || (with3d == 1 && c == kTransparent)) continue;
                         if (with3d == 2) c = 0;
                     } else if (c == kTransparent) {
                         continue;
                     }
                     consider(c, b, IoReg16(e.io + 0x08 + 2 * b) & 3);
                 }
-                if (objOn && (mask & 0x10) && objl.c[x] != kTransparent) {
+                if (objOn && (mask & 0x10) && objl.c[x] != kTransparent && !(with3d == 3 && bg0is3d && objl.prio[x] <= prio3d)) {
                     consider(objl.c[x], 4, objl.prio[x]);
                     st.semi = st.topId == 4 && objl.semi[x];
                 }
@@ -439,10 +446,34 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
                 } else {
                     // In front of the 3D layer: the 2D that wins over it even where it has a pixel.
                     const Stack forced = stack(2);
-                    front[i] = forced.topId != 0 && st.topId != 5 ? ToRgba(c) : 0;
-                    const Stack under = stack(0);
-                    back[i] = ToRgba(finish(static_cast<uint16_t>(under.top), under.topId, under.second, under.secondId,
-                                            under.semi, 31, fx));
+                    if (forced.topId == 0 || forced.topId == 5) {
+                        front[i] = 0;
+                    } else if (forced.secondId == 0 &&
+                               (((bldcnt >> 8) & 1) &&
+                                ((forced.semi) || (fx && effect == 1 && ((bldcnt >> forced.topId) & 1))))) {
+                        // It is blended with the 3D layer right behind it (a tint or a fade layer,
+                        // often all but invisible): its share of the blend becomes its opacity.
+                        uint16_t t = static_cast<uint16_t>(forced.top);
+                        if (masterMode == 1) t = Bright(t, masterFactor, true);
+                        else if (masterMode == 2) t = Bright(t, masterFactor, false);
+                        front[i] = eva ? ToRgba(t, static_cast<uint8_t>(std::min<uint32_t>(eva, 16) * 255 / 16)) : 0;
+                    } else {
+                        front[i] = ToRgba(finish(static_cast<uint16_t>(forced.top), forced.topId, forced.second,
+                                                 forced.secondId, forced.semi, 31, fx));
+                    }
+                    // Behind it: the 2D behind the 3D layer, under the 3D engine's rear plane where
+                    // that is opaque (the colour the DS shows wherever no polygon is).
+                    const Stack under = stack(3);
+                    uint16_t b = finish(static_cast<uint16_t>(under.top), under.topId, under.second, under.secondId,
+                                        under.semi, 31, fx);
+                    if (rearAlpha > 0) {
+                        uint16_t rear = rearColor;
+                        if (masterMode == 1) rear = Bright(rear, masterFactor, true);
+                        else if (masterMode == 2) rear = Bright(rear, masterFactor, false);
+                        const uint32_t a = rearAlpha >= 31 ? 16 : static_cast<uint32_t>(rearAlpha + 1) / 2;
+                        b = Blend(rear, b, a, 16 - a);
+                    }
+                    back[i] = ToRgba(b);
                 }
             }
             if (s3 > 1) {
