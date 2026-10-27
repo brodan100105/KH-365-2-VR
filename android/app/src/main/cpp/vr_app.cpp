@@ -200,32 +200,47 @@ std::vector<std::string> VrApp::StatusLines() const {
     return lines;
 }
 
-// A lock-on sight of our own around `centre` (game units, world space), across the view (`right`,
-// `up`): four blue arrowheads pointing in, as the game's own sight is blue, turning slowly and
-// breathing in and out.
-static WorldDrawList LockOnSight(const Vec3 &centre, const Vec3 &right, const Vec3 &up, float time) {
+// The field's cursor around `centre` (game units, world space), across the view (`right`, `up`),
+// as the game draws them: on an enemy four arcs with a hook each, turning clockwise, yellow while
+// it is only targeted and blue once locked on; on a person to talk to or a thing to use, four
+// green corner marks, breathing in and out.
+static WorldDrawList FieldCursor(const Vec3 &centre, const Vec3 &right, const Vec3 &up, float time, int kind,
+                                 bool locked) {
     WorldDrawList out;
     const Vec3 lit = Normalize(Vec3{0.4f, 0.8f, 0.45f});  // the lit shader's light: full brightness
-    const float radius = 0.55f + 0.06f * std::sin(time * 4.0f);
-    const float spin = time * 0.8f;
-    const uint32_t light = Rgba(150, 215, 255), deep = Rgba(40, 110, 235);
-    auto at = [&](float a, float r) { return centre + right * (r * std::cos(a)) + up * (r * std::sin(a)); };
-    auto tri = [&](const Vec3 &a, const Vec3 &b, const Vec3 &c, uint32_t ca, uint32_t cb, uint32_t cc) {
+    auto at = [&](float x, float y) { return centre + right * x + up * y; };
+    auto quad = [&](const Vec3 &a, const Vec3 &b, const Vec3 &c, const Vec3 &d, uint32_t ca, uint32_t cb) {
         // Both windings, so it shows whichever way it ends up facing.
-        out.triangles.push_back({a, lit, ca});
-        out.triangles.push_back({b, lit, cb});
-        out.triangles.push_back({c, lit, cc});
-        out.triangles.push_back({a, lit, ca});
-        out.triangles.push_back({c, lit, cc});
-        out.triangles.push_back({b, lit, cb});
+        const Vec3 v[6] = {a, b, c, a, c, d};
+        const uint32_t col[6] = {ca, cb, cb, ca, cb, ca};
+        for (int i = 0; i < 6; ++i) out.triangles.push_back({v[i], lit, col[i]});
+        for (int i = 5; i >= 0; --i) out.triangles.push_back({v[i], lit, col[i]});
     };
+    if (kind == 2) {
+        const uint32_t light = Rgba(150, 255, 180), deep = Rgba(40, 190, 100);
+        const float h = 0.3f + 0.03f * std::sin(time * 3.0f), len = 0.12f, w = 0.04f;
+        for (int i = 0; i < 4; ++i) {
+            const float sx = (i & 1) ? 1.0f : -1.0f, sy = (i & 2) ? 1.0f : -1.0f;
+            // An L at each corner: one stroke along x, one along y.
+            quad(at(sx * h, sy * h), at(sx * (h - len), sy * h), at(sx * (h - len), sy * (h - w)), at(sx * h, sy * (h - w)), light, deep);
+            quad(at(sx * h, sy * h), at(sx * h, sy * (h - len)), at(sx * (h - w), sy * (h - len)), at(sx * (h - w), sy * h), light, deep);
+        }
+        return out;
+    }
+    const uint32_t light = locked ? Rgba(170, 220, 255) : Rgba(255, 238, 120);
+    const uint32_t deep = locked ? Rgba(40, 110, 235) : Rgba(230, 165, 30);
+    const float r0 = 0.40f, r1 = 0.47f, spin = -time * 1.6f;  // clockwise as you look at it
+    auto ring = [&](float a, float r) { return at(r * std::cos(a), r * std::sin(a)); };
     for (int i = 0; i < 4; ++i) {
-        const float a = spin + i * kPi / 2;
-        const Vec3 tip = at(a, radius * 0.62f);
-        const Vec3 l = at(a - 0.32f, radius), r = at(a + 0.32f, radius);
-        const Vec3 notch = at(a, radius * 0.86f);
-        tri(tip, l, notch, light, deep, deep);
-        tri(tip, notch, r, light, deep, deep);
+        const float a0 = spin + i * kPi / 2, a1 = a0 + DegToRad(62.0f);
+        const int steps = 8;
+        for (int k = 0; k < steps; ++k) {
+            const float b0 = a0 + (a1 - a0) * k / steps, b1 = a0 + (a1 - a0) * (k + 1) / steps;
+            quad(ring(b0, r1), ring(b1, r1), ring(b1, r0), ring(b0, r0), light, deep);
+        }
+        // The hook at the arc's leading end, pointing in.
+        const float a = a0;
+        quad(ring(a, r1 + 0.02f), ring(a + 0.12f, r1), ring(a + 0.04f, r0 - 0.10f), ring(a - 0.05f, r0 - 0.06f), light, deep);
     }
     return out;
 }
@@ -510,14 +525,19 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     // Filling the view: the DS's screen as wide as HUD > View it fills, centred on your eyes, so
     // its corners (health, commands) sit at the edges of your view. Otherwise a panel.
     const bool fill = settings_.Bool(SettingId::HudFillView);
-    // Filling the view it is an arc round your head at the panel distance, spanning the angle.
-    hudPanel_.width = fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale;
-    hudPanel_.height = hudPanel_.width * 0.75f;
-    const float hudHeight = fill ? 0.0f : settings_.Get(SettingId::HudHeight);
+    // Filling the view it is an arc round your head at the panel distance, spanning the angle;
+    // HUD > Width and Height stretch it, Left / right and Up / down move it (degrees of your view).
+    hudPanel_.width = (fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale) *
+                      settings_.Get(SettingId::HudScaleX);
+    hudPanel_.height = (fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale) * 0.75f *
+                       settings_.Get(SettingId::HudScaleY);
+    const float offX = DegToRad(settings_.Get(SettingId::HudOffsetX));
+    const float offY = DegToRad(settings_.Get(SettingId::HudOffsetY));
+    const float hudHeight = (fill ? 0.0f : settings_.Get(SettingId::HudHeight)) + hudDist * std::tan(offY);
     if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
-        hudPanel_.pose = head * Pose{Quat(), {0, hudHeight, -hudDist}};
+        hudPanel_.pose = head * Pose{Quat::Yaw(-offX), Quat::Yaw(-offX).Rotate(Vec3{0, hudHeight, -hudDist})};
     } else {
-        Vec3 fwd = Quat::Yaw(hudYaw_).Forward();
+        Vec3 fwd = Quat::Yaw(hudYaw_ - offX).Forward();
         Vec3 at = head.position + fwd * hudDist + Vec3{0, hudHeight, 0};
         hudPanel_.pose = FacingFrom(at, head.position);
     }
@@ -678,6 +698,7 @@ void VrApp::Frame(const XrFrameInput &in) {
         const bool standInWorld = settings_.Bool(SettingId::ViewStandInWorld);
         decomp_->SetStandInWorld(standInWorld);
         decomp_->SetDrawAll(standInWorld && settings_.Bool(SettingId::ViewDrawAll));
+        decomp_->SetOwnCursors(standInWorld);
         decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
         decomp_->SetHidePlayer(lastMode_ == ViewMode::FirstPerson &&
                                settings_.Enum<BodyDisplay>(SettingId::FpShowBody) != BodyDisplay::FullBody);
@@ -1075,26 +1096,14 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             motion.up = Normalize(Cross(motion.right, f));
             renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
                                         filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
-            // The lock-on sight: the game draws it in 2D where the enemy is on its own screen. Here
-            // the same sprites, cut from that screen each frame, hang at the enemy in the world, at
-            // the size the game shows them, facing you, over everything.
+            // The field's cursor at its target, facing you, over everything (the game's own are
+            // left out while you stand in the world).
             const TexturedWorld &tw = game_->texturedWorld();
-            if (tw.lockOn && !tw.lockOnSprite.empty() && tw.lockOnPixel > 0.0f) {
-                if (tw.lockOnSpriteRevision != lockOnSpriteRevision_) {
-                    lockOnTex_.Upload(TexturedWorld::kLockOnSprite, TexturedWorld::kLockOnSprite, tw.lockOnSprite.data(),
-                                      !(filter == TextureFilter::Nearest || filter == TextureFilter::Sharp));
-                    lockOnSpriteRevision_ = tw.lockOnSpriteRevision;
-                }
-                const float size = TexturedWorld::kLockOnSprite * tw.lockOnPixel;
-                const Vec3 centre = tw.lockOnAt + motion.up * (tw.lockOnRaise * tw.lockOnPixel);
-                const Vec3 eyeWorld = rig_.trackingToWorld.Transform(in.head.position);
-                renderer_.DrawQuad(lockOnTex_.id(), FacingFrom(centre, eyeWorld), size, size, vpWorld, 1.0f, 0.0f,
-                                   1.0f, false, true);
-            } else if (tw.lockOn) {
-                // Until the game has drawn its sight once (the enemy off its screen): one of ours.
-                WorldDrawList sight = LockOnSight(tw.lockOnAt, motion.right, motion.up,
-                                                  static_cast<float>(std::fmod(in.time, 1000.0)));
-                renderer_.DrawTriangles(sight, vpWorld, 0.9f, true);
+            if (tw.lockOn) {
+                WorldDrawList cursor = FieldCursor(tw.lockOnAt, motion.right, motion.up,
+                                                   static_cast<float>(std::fmod(in.time, 1000.0)), tw.lockOnKind,
+                                                   tw.lockOnLocked);
+                renderer_.DrawTriangles(cursor, vpWorld, 0.95f, true);
             }
         }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||

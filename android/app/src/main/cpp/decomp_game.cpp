@@ -352,73 +352,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         }
         t.lockOn = w.lockOn;
         t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
-        if (w.lockOn && w.lockOnScreen[0] >= 0 && w.hasCamera) {
-            // The game's sight as it drew it this frame: its sprites around that pixel.
-            const int n = TexturedWorld::kLockOnSprite, sx = w.lockOnScreen[0], sy = w.lockOnScreen[1];
-            const int W = PlatformScreens::kWidth, H = PlatformScreens::kHeight;
-            t.lockOnSprite.assign(static_cast<size_t>(n) * n, 0u);
-            for (int y = 0; y < n; ++y)
-                for (int x = 0; x < n; ++x) {
-                    const int px = sx - n / 2 + x, py = sy - n / 2 + y;
-                    if (px < 0 || py < 0 || px >= W || py >= H) continue;
-                    t.lockOnSprite[static_cast<size_t>(y) * n + x] = latest_->topObj[py * W + px];
-                }
-            // The game draws the sight's pieces around that pixel: a patch of sprite pixels centred
-            // on it (the ring) or lying within a circle around it (the turning corners) is the
-            // sight; others there (the HUD's portrait, the command menu) go.
-            std::vector<int> label(static_cast<size_t>(n) * n, -1), stack, patch;
-            int kept = 0, dropped = 0;
-            for (int start = 0; start < n * n; ++start) {
-                if (label[start] >= 0 || !(t.lockOnSprite[start] >> 24)) continue;
-                patch.clear();
-                stack.assign(1, start);
-                label[start] = start;
-                int x0 = n, x1 = -1, y0 = n, y1 = -1;
-                float farthest = 0;
-                while (!stack.empty()) {
-                    const int i = stack.back();
-                    stack.pop_back();
-                    patch.push_back(i);
-                    const int cx = i % n, cy = i / n;
-                    x0 = std::min(x0, cx); x1 = std::max(x1, cx);
-                    y0 = std::min(y0, cy); y1 = std::max(y1, cy);
-                    const float dx = cx - n / 2 + 0.5f, dy = cy - n / 2 + 0.5f;
-                    farthest = std::max(farthest, dx * dx + dy * dy);
-                    const int next[4] = {cx > 0 ? i - 1 : -1, cx + 1 < n ? i + 1 : -1, cy > 0 ? i - n : -1, cy + 1 < n ? i + n : -1};
-                    for (int j : next)
-                        if (j >= 0 && label[j] < 0 && (t.lockOnSprite[j] >> 24)) {
-                            label[j] = start;
-                            stack.push_back(j);
-                        }
-                }
-                const float mx = (x0 + x1) / 2.0f - n / 2 + 0.5f, my = (y0 + y1) / 2.0f - n / 2 + 0.5f;
-                const bool sight = mx * mx + my * my <= 12.0f * 12.0f || farthest <= 44.0f * 44.0f;
-                if (sight) {
-                    kept += static_cast<int>(patch.size());
-                } else {
-                    dropped += static_cast<int>(patch.size());
-                    for (int i : patch) t.lockOnSprite[i] = 0;
-                }
-            }
-            Platform::Get().NoteLockOnCut(kept, dropped);
-            // Standing in the world the sight shows around the enemy, not on the HUD panel.
-            if (frame_.inGameplay)
-                for (int y = 0; y < n; ++y)
-                    for (int x = 0; x < n; ++x) {
-                        const int px = sx - n / 2 + x, py = sy - n / 2 + y;
-                        if ((t.lockOnSprite[static_cast<size_t>(y) * n + x] >> 24) && px >= 0 && py >= 0 && px < W && py < H)
-                            screens_.topHud[static_cast<size_t>(py) * W + px] = 0;
-                    }
-            ++t.lockOnSpriteRevision;
-            // Its size: a DS pixel at the enemy's depth before the game's camera. The game draws
-            // the sight 8 pixels above the enemy (Ov022_ProjectToScreen).
-            const Vec3 eye{w.eye[0], w.eye[1], w.eye[2]}, look{w.target[0], w.target[1], w.target[2]};
-            const float depth = Dot(t.lockOnAt - eye, Normalize(look - eye));
-            if (depth > 1e-3f && w.fovY > 0.0f) {
-                t.lockOnPixel = 2.0f * depth * std::tan(w.fovY / 2) / H;
-                t.lockOnRaise = 8.0f;
-            }
-        }
+        t.lockOnKind = w.lockOnKind;
+        t.lockOnLocked = w.lockOnLocked;
         std::copy(w.viewport, w.viewport + 4, t.viewport);
         std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
         std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);

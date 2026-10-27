@@ -33,8 +33,10 @@ void khvr_host_watch(const void *addr, unsigned long size);
 void khvr_host_movie_open(const char *path);
 void khvr_host_movie_frame(unsigned long frame);
 void khvr_host_movie_close(void);
-/* An enemy is locked on, at this world position (VecFx32), this frame; the game's sight is drawn
- * around this top-screen pixel (-1, -1 when the enemy is off the screen). */
-void khvr_host_lock_on(const void *position, long screenX, long screenY);
+/* The field's cursor is on a target at this world position (VecFx32) this frame: `kind` 1 or 3 an
+ * enemy, 2 one of the field's entries (a person to talk to, a thing to use); `locked` when locked on. */
+void khvr_host_lock_on(const void *position, long kind, long locked);
+/* Nonzero when the headset draws the field's cursors itself (standing in the world). */
+int khvr_host_own_cursors(void);
 
 #endif

@@ -51,17 +51,12 @@ struct TexturedWorld {
     // face the viewer), 2 upright (turned about the vertical only). kBillboardFloats, or empty.
     static constexpr int kBillboardFloats = 6;
     std::vector<float> billboard;
-    // An enemy is locked on here (world). The game's own sight, cut from its screen (the sprites
-    // only), kLockOnSprite pixels square centred on where the game drew it, which is
-    // lockOnRaise DS pixels above the enemy; lockOnPixel: game units a DS pixel spans at the
-    // enemy's distance from the game's camera. The last cut stays while the enemy is off the
-    // game's screen; empty until the game has drawn it once.
-    static constexpr int kLockOnSprite = 96;
+    // The field's cursor is on a target here (world): kind 1 or 3 an enemy, 2 a person to talk to
+    // or a thing to use; locked when locked on. The headset draws the cursor itself.
     bool lockOn = false;
     Vec3 lockOnAt;
-    std::vector<uint32_t> lockOnSprite;
-    uint32_t lockOnSpriteRevision = 0;
-    float lockOnPixel = 0.0f, lockOnRaise = 0.0f;
+    int lockOnKind = 0;
+    bool lockOnLocked = false;
     uint32_t revision = 0;  // bumped with every new frame of it
     // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
     // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.

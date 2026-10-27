@@ -253,7 +253,18 @@ void NoteFrameSwapped() {
     gSwapPlayer = now;
     gSwapPlayerValid = true;
 }
+
+bool SwapPlayerPosition(float out[3]) {
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    if (!gSwapPlayerValid || !gSwapPlayer.valid) return false;
+    std::copy(gSwapPlayer.position, gSwapPlayer.position + 3, out);
+    return true;
+}
+
+std::atomic<bool> gOwnCursors{false};
 }  // namespace hle
+
+void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
 
 bool Platform::ReadPlayer(PlatformPlayer *out) {
     {

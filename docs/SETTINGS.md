@@ -126,7 +126,11 @@ hands, DS + giant screen) and the options changed most.
 | `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
 | `height` | Panel height | -1 to 0.4 m | `-0.4` | How far below your eyes (negative) or above them the HUD panel sits, so the health bar and commands stay out of the way. Menus are on the giant screen. |
 | `fill_view` | Fill your view | `true` / `false` | `true` | The HUD as large as your view, centred on it, so the health bar and commands sit at its edges as on the DS's screen. Off: a panel of Panel scale at Panel height. |
-| `fill_angle` | View it fills | 40 to 110 deg | `80` | How wide the HUD spans when it fills your view. |
+| `fill_angle` | View it fills | 30 to 110 deg | `60` | How wide the HUD spans when it fills your view. |
+| `offset_x` | Left / right | -40 to 40 deg | `0` | Moves the HUD across your view: negative left, positive right. |
+| `offset_y` | Up / down | -45 to 30 deg | `-12` | Moves the HUD up or down your view: negative down, so the portrait and commands sit below Roxas. |
+| `scale_x` | Width | 0.5 to 2 x | `1` | Stretches the HUD across. |
+| `scale_y` | Height | 0.5 to 2 x | `1` | Stretches the HUD up and down. |
 | `follow_angle` | Follow after turning | 5 to 60 deg | `20` | How far you can look away from the floating HUD before it comes back in front of you. |
 | `follow_delay` | Follow delay | 0 to 10 s | `2.5` | How long you look away before the HUD glides back in front of you, so glancing around does not move it. |
 | `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the floating HUD panels. |

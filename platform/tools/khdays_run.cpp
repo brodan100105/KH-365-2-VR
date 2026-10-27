@@ -505,7 +505,7 @@ int WorldTest() {
     {
         const uint32_t at = 0x02300000;
         w32(at, fx(1.5)); w32(at + 4, fx(0.75)); w32(at + 8, fx(-2));
-        khvr::hle::GxNoteLockOn(at, 100, 60);
+        khvr::hle::GxNoteLockOn(at, 2, true);
         quad();
         cmd(0x50, 0);
         static khvr::PlatformWorld w, after;
@@ -514,7 +514,7 @@ int WorldTest() {
         cmd(0x50, 0);
         khvr::Platform::Get().CaptureWorld(&after);
         lockOn = w.lockOn && std::fabs(w.lockOnAt[0] - 1.5f) < 1e-3f && std::fabs(w.lockOnAt[1] - 0.75f) < 1e-3f &&
-                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && w.lockOnScreen[0] == 100 && w.lockOnScreen[1] == 60 &&
+                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && w.lockOnKind == 2 && w.lockOnLocked &&
                  !after.lockOn;
     }
     // A HUD piece drawn in 3D in front of the camera: where the world moves across the view as the

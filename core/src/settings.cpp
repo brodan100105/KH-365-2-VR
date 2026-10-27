@@ -220,8 +220,17 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::HudFillView, "HUD", "fill_view", "Fill your view", true,
                   "The HUD as large as your view, centred on it, so the health bar and commands sit at "
                   "its edges as on the DS's screen. Off: a panel of Panel scale at Panel height."));
-    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 80.0f, 40.0f, 110.0f, 5.0f, "deg",
+    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 60.0f, 30.0f, 110.0f, 5.0f, "deg",
                   "How wide the HUD spans when it fills your view."));
+    d.push_back(F(S::HudOffsetX, "HUD", "offset_x", "Left / right", 0.0f, -40.0f, 40.0f, 1.0f, "deg",
+                  "Moves the HUD across your view: negative left, positive right."));
+    d.push_back(F(S::HudOffsetY, "HUD", "offset_y", "Up / down", -12.0f, -45.0f, 30.0f, 1.0f, "deg",
+                  "Moves the HUD up or down your view: negative down, so the portrait and commands sit "
+                  "below Roxas."));
+    d.push_back(F(S::HudScaleX, "HUD", "scale_x", "Width", 1.0f, 0.5f, 2.0f, 0.05f, "x",
+                  "Stretches the HUD across."));
+    d.push_back(F(S::HudScaleY, "HUD", "scale_y", "Height", 1.0f, 0.5f, 2.0f, 0.05f, "x",
+                  "Stretches the HUD up and down."));
     d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 20.0f, 5.0f, 60.0f, 5.0f,
                   "deg", "How far you can look away from the floating HUD before it comes back in front "
                   "of you."));

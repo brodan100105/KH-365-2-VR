@@ -42,9 +42,9 @@ struct GxWorldStats {
 extern GxWorldStats gWorldStats;
 // BOX_TEST answers "visible" always (Platform::SetDrawAll).
 extern std::atomic<bool> gDrawAll;
-// The game has an enemy locked on at this guest VecFx32 this frame (khvr_host_lock_on).
-// `screenX`, `screenY`: the top-screen pixel its sight is drawn around, -1 when off the screen.
-void GxNoteLockOn(uint32_t position, int screenX, int screenY);
+// The field's cursor is on a target at this guest VecFx32 this frame (khvr_host_lock_on): its
+// kind (1, 3 enemies, 2 the field's entries) and whether it is locked on.
+void GxNoteLockOn(uint32_t position, int kind, bool locked);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

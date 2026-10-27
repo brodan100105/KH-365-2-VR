@@ -116,13 +116,16 @@ struct Gx {
     // HUD pieces the game draws in 3D, in front of its camera (the mission's heart counter): per
     // worldShown polygon, 1 when it is one (ClassifyHud). They stay in the DS picture and on the HUD.
     std::vector<uint8_t> hudShown;
-    std::unordered_set<uint64_t> prevKeys, hudKeys, hudLooks;
+    std::unordered_set<uint64_t> prevKeys, hudKeys;
+    struct HudPlace { uint32_t texParam, palBase; double c[3]; };
+    std::vector<HudPlace> hudPlaces;  // last frame's HUD pieces: texture and middle (camera space)
     Mat4d prevCamera{};
-    // The lock-on sight's target (world), as the game placed it while drawing a frame, and for the
-    // shown frame.
+    // The field cursor's target (world), its kind and lock, as the game had them while drawing a
+    // frame, and for the shown frame.
     bool lockOnPending = false, lockOnShown = false;
     float lockOnPendingAt[3] = {}, lockOnShownAt[3] = {};
-    int lockOnPendingScreen[2] = {-1, -1}, lockOnShownScreen[2] = {-1, -1};
+    int lockOnPendingKind = 0, lockOnShownKind = 0;
+    bool lockOnPendingLocked = false, lockOnShownLocked = false;
     // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
     bool sceneKnown = false;
     bool sceneHasCamera = false;  // the scene's camera is the game's (not an event scene's stand-in)
@@ -338,16 +341,17 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
 }
 
 // Which polygons of the shown list are HUD pieces drawn in 3D: fixed in front of the game's
-// camera, they lie at the same place in camera space from frame to frame while the camera moves
+// camera, they lie at the same place in camera space from frame to frame while the camera turns
 // (the world's polygons move across its view then). A polygon seen exactly so once stays a HUD
 // piece while it keeps that place, the camera still or not; one that changes (a counter's digit)
-// is one too when its texture and depth match a HUD piece's.
+// is one too when it has a HUD piece's texture right where one was. Never what is near Roxas or
+// the cursor's target: a camera turning round them (a soft lock) keeps them in place too.
 void ClassifyHud(const std::vector<WorldPoly> &polys) {
     g.hudShown.assign(polys.size(), 0);
     if (!g.sceneHasCamera) {
         g.prevKeys.clear();
         g.hudKeys.clear();
-        g.hudLooks.clear();
+        g.hudPlaces.clear();
         return;
     }
     // The camera turned: a camera that only travels (following Roxas) keeps what moves with it
@@ -356,11 +360,18 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
     for (int r = 0; r < 3 && !moved; ++r)
         for (int c = 0; c < 3 && !moved; ++c) moved = std::fabs(g.sceneCamera[r * 4 + c] - g.prevCamera[r * 4 + c]) > 2e-3;
     g.prevCamera = g.sceneCamera;
-    // Each polygon of the scene: its place in camera space (key) and its texture and depth (look).
+    // The world points HUD pieces keep away from.
+    std::vector<std::array<double, 3>> away;
+    float player[3];
+    if (SwapPlayerPosition(player)) away.push_back({player[0], player[1] + 0.8, player[2]});
+    if (g.lockOnShown)
+        away.push_back({g.lockOnShownAt[0], g.lockOnShownAt[1], g.lockOnShownAt[2]});
     struct Seen {
         size_t index;
-        uint64_t key, look;
-        bool same;  // at the same place in camera space as in the last frame
+        uint64_t key;
+        bool same;   // at the same place in camera space as in the last frame
+        bool clear;  // away from Roxas and the target
+        double c[3];  // middle, camera space
     };
     std::vector<Seen> seen;
     seen.reserve(polys.size());
@@ -368,49 +379,66 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
     for (size_t k = 0; k < polys.size(); ++k) {
         const WorldPoly &w = polys[k];
         if (w.proj >= g.inSceneShown.size() || !g.inSceneShown[w.proj]) continue;
-        const Mat4d &m = g.toCameraShown[w.proj];
+        const Mat4d &m = g.toCameraShown[w.proj], &mw = g.toWorldShown[w.proj];
         uint64_t key = Fnv(&w.texParam, 4, Fnv(&w.palBase, 4, Fnv(&w.attr, 4)));
-        double depth = 0;
+        Seen s{k, 0, false, true, {0, 0, 0}};
+        double world[3] = {0, 0, 0};
         for (int i = 0; i < w.n; ++i) {
             const double x = w.v[i].px / 4096.0, y = w.v[i].py / 4096.0, z = w.v[i].pz / 4096.0;
-            const int32_t c[3] = {
-                static_cast<int32_t>(std::lround((x * m[0] + y * m[4] + z * m[8] + m[12]) * 256)),
-                static_cast<int32_t>(std::lround((x * m[1] + y * m[5] + z * m[9] + m[13]) * 256)),
-                static_cast<int32_t>(std::lround((x * m[2] + y * m[6] + z * m[10] + m[14]) * 256))};
-            depth += c[2];
-            key = Fnv(c, sizeof c, key);
+            double cam[3];
+            for (int j = 0; j < 3; ++j) {
+                cam[j] = x * m[j] + y * m[4 + j] + z * m[8 + j] + m[12 + j];
+                s.c[j] += cam[j] / w.n;
+                world[j] += (x * mw[j] + y * mw[4 + j] + z * mw[8 + j] + mw[12 + j]) / w.n;
+            }
+            const int32_t q[3] = {static_cast<int32_t>(std::lround(cam[0] * 256)), static_cast<int32_t>(std::lround(cam[1] * 256)),
+                                  static_cast<int32_t>(std::lround(cam[2] * 256))};
+            key = Fnv(q, sizeof q, key);
         }
-        const int32_t look[3] = {static_cast<int32_t>(w.texParam), static_cast<int32_t>(w.palBase),
-                                 static_cast<int32_t>(std::lround(depth / w.n / 16))};
-        const bool same = g.prevKeys.count(key) != 0;
-        sameCount += same;
-        seen.push_back({k, key, Fnv(look, sizeof look), same});
+        for (const auto &a : away) {
+            const double dx = world[0] - a[0], dy = world[1] - a[1], dz = world[2] - a[2];
+            if (dx * dx + dy * dy + dz * dz < 2.0 * 2.0) s.clear = false;
+        }
+        s.key = key;
+        s.same = g.prevKeys.count(key) != 0;
+        sameCount += s.same;
+        seen.push_back(s);
     }
-    // The camera moved for real only when most of the scene moved across its view: a slight turn
+    // The camera turned for real only when most of the scene moved across its view: a slight turn
     // leaves far polygons in place to the rounding, and those are not HUD pieces.
     const bool sceneMoved = moved && sameCount * 10 < seen.size() * 3;
-    std::unordered_set<uint64_t> keys, hud, looks;
+    std::unordered_set<uint64_t> keys, hud;
+    std::vector<Gx::HudPlace> places;
     keys.reserve(seen.size());
-    size_t hudCount = 0;
     for (const Seen &s : seen) {
         keys.insert(s.key);
-        const bool isHud = (s.same && (sceneMoved || g.hudKeys.count(s.key))) || (!s.same && g.hudLooks.count(s.look));
+        if (!s.clear) continue;
+        const WorldPoly &w = polys[s.index];
+        bool isHud = s.same && (sceneMoved || g.hudKeys.count(s.key));
+        if (!isHud && !s.same) {
+            for (const Gx::HudPlace &p : g.hudPlaces) {
+                const double dx = p.c[0] - s.c[0], dy = p.c[1] - s.c[1], dz = p.c[2] - s.c[2];
+                if (p.texParam == w.texParam && p.palBase == w.palBase && dx * dx + dy * dy + dz * dz < 0.25 * 0.25) {
+                    isHud = true;
+                    break;
+                }
+            }
+        }
         if (isHud) {
             g.hudShown[s.index] = 1;
             hud.insert(s.key);
-            looks.insert(s.look);
-            ++hudCount;
+            places.push_back({w.texParam, w.palBase, {s.c[0], s.c[1], s.c[2]}});
         }
     }
     // A HUD is a small part of the picture: more than that is the scene itself, mistaken.
-    if (hudCount * 4 > seen.size()) {
+    if (places.size() * 4 > seen.size()) {
         std::fill(g.hudShown.begin(), g.hudShown.end(), 0);
         hud.clear();
-        looks.clear();
+        places.clear();
     }
     g.prevKeys.swap(keys);
     g.hudKeys.swap(hud);
-    g.hudLooks.swap(looks);
+    g.hudPlaces.swap(places);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -866,16 +894,17 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.glbList.clear();
         g.lockOnShown = g.lockOnPending;
         std::copy(g.lockOnPendingAt, g.lockOnPendingAt + 3, g.lockOnShownAt);
-        std::copy(g.lockOnPendingScreen, g.lockOnPendingScreen + 2, g.lockOnShownScreen);
+        g.lockOnShownKind = g.lockOnPendingKind;
+        g.lockOnShownLocked = g.lockOnPendingLocked;
         g.lockOnPending = false;
         g.projRecorded = 0;
         SceneOf(g.projShown, g.worldShown);
+        NoteFrameSwapped();  // the player, for the HUD pieces and the viewer
         ClassifyHud(g.worldShown);
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
         g.shownVp = {g.vpX1, g.vpY1, g.vpX2, g.vpY2};
-        NoteFrameSwapped();
         break;
     }
     case 0x60:
@@ -1598,13 +1627,12 @@ void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &piec
     }
 }
 
-void GxNoteLockOn(uint32_t position, int screenX, int screenY) {
+void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
     // The game's thread alone writes the pending sight (and moves it to the shown one at the swap).
     for (int k = 0; k < 3; ++k) g.lockOnPendingAt[k] = static_cast<int32_t>(Read32(position + 4 * k)) / 4096.0f;
-    const bool on = screenX >= 0 && screenY >= 0 && screenX < 256 && screenY < 192;
-    g.lockOnPendingScreen[0] = on ? screenX : -1;
-    g.lockOnPendingScreen[1] = on ? screenY : -1;
+    g.lockOnPendingKind = kind;
+    g.lockOnPendingLocked = locked;
     g.lockOnPending = true;
     ++gWorldStats.lockOns;
 }
@@ -1613,7 +1641,8 @@ void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
     out->lockOn = g.lockOnShown;
     std::copy(g.lockOnShownAt, g.lockOnShownAt + 3, out->lockOnAt);
-    std::copy(g.lockOnShownScreen, g.lockOnShownScreen + 2, out->lockOnScreen);
+    out->lockOnKind = g.lockOnShownKind;
+    out->lockOnLocked = g.lockOnShownLocked;
     out->vertices.clear();
     out->triangleTexture.clear();
     out->triangleFlags.clear();

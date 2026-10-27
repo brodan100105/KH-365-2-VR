@@ -2,6 +2,8 @@
 // hardware's behaviour as the game's code sees it, not its circuits).
 #pragma once
 
+#include <atomic>
+
 #include <cstdarg>
 #include <cstdint>
 #include <string>
@@ -14,6 +16,10 @@ void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs);
 // SWAP_BUFFERS: the game finished a frame's 3D (hle_gx.cpp). The player is read now, with the
 // polygons it is drawn with, so the two never come from different frames.
 void NoteFrameSwapped();
+// The player's feet as NoteFrameSwapped read them (world, game units); false without a player.
+bool SwapPlayerPosition(float out[3]);
+// Standing in the world: the headset draws the field's cursors (khvr_host_own_cursors).
+extern std::atomic<bool> gOwnCursors;
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

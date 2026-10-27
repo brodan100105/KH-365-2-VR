@@ -104,11 +104,14 @@ struct PlatformWorld {
     // and its kind (1 facing, 2 upright), so a viewer can turn the sprite to face itself.
     // kWorldBillboardFloats floats a vertex (zero for the other triangles), or empty. Not in files.
     std::vector<float> billboard;
-    // The game's lock-on sight is over a target at this world position (its own sight is 2D
-    // sprites placed for its camera; a viewer draws one of its own here). Not in files.
+    // The field's cursor is on a target at this world position (the game's cursors are 2D sprites
+    // placed for its camera, or marks in front of it; a viewer draws its own here). Its kind: 1 or
+    // 3 an enemy, 2 one of the field's entries (a person to talk to, a thing to use); locked when
+    // locked on. Not in files.
     bool lockOn = false;
     float lockOnAt[3] = {0, 0, 0};
-    int lockOnScreen[2] = {-1, -1};  // the top-screen pixel the game's sight is drawn around, or -1
+    int lockOnKind = 0;
+    bool lockOnLocked = false;
 };
 
 // A captured world to a file and back (world_file.cpp).
@@ -153,6 +156,8 @@ public:
     // The game asks the 3D engine whether a model's box is in its camera's view (BOX_TEST) before
     // drawing it: on, the answer is always yes, so it draws what lies around you too.
     void SetDrawAll(bool on);
+    // The viewer draws the field's cursors at their targets itself: the game leaves its own out.
+    void SetOwnCursors(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or

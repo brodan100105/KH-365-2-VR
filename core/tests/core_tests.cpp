@@ -180,12 +180,12 @@ TEST(SettingsStepAndFormat) {
 }
 
 TEST(SettingsEveryTabHasOptions) {
-    // The panel has two rows of six tabs, and room for eleven options on a tab.
+    // Twelve sections, each with options (the panel's pages scroll, so any number fits).
     CHECK(SettingTabs().size() == 12);
     for (const char *tab : SettingTabs()) {
         int n = 0;
         for (const SettingDef &d : SettingDefs()) n += std::strcmp(d.tab, tab) == 0;
-        CHECK(n >= 1 && n <= 11);
+        CHECK(n >= 1);
     }
     for (const SettingDef &d : SettingDefs()) {
         CHECK(d.help && *d.help);

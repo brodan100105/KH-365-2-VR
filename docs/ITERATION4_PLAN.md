@@ -61,12 +61,12 @@ and into VR as real geometry around you.
 - [x] Sprites (munny, orbs, effects) face you: polygons flat across the game camera's view are
       sprites, turned to face the viewer. Flat markers drawn with their own projection are
       placed in the world in front of what they mark.
-- [x] The lock-on sight: the game's is 2D sprites placed for its own camera
-      (Ov022_UpdateSelectionMarker); for an enemy's lock-on (not the field's interactable
-      entries) it reports the target's world position and where the sight is on the screen
-      (khvr_host_lock_on). The headset cuts the sight's sprites from the top screen (sprites only)
-      each frame and hangs them at the enemy, at the size the game shows them, facing you, over
-      everything; a blue sight of its own until the game has drawn one.
+- [x] The field's cursors: the game's are 2D sprites placed for its own camera (enemies,
+      Ov022_DrawSelectionMarkers) or corner marks drawn in front of it (people and things,
+      Ov022_UpdateUiSelectionMarker). Ov022_UpdateSelectionMarker reports the target, its kind and
+      lock (khvr_host_lock_on) and, standing in the world, leaves the game's own out
+      (khvr_host_own_cursors); the headset draws them at the target: yellow arcs turning clockwise
+      on an enemy, blue once locked on, green corner marks on people and things.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera: what lies behind it is not submitted at all). First part in: **View > Draw what the
       game's camera does not see** answers the game's BOX_TESTs "visible" (the heartbeat counts
@@ -75,9 +75,9 @@ and into VR as real geometry around you.
       visibility messages, Ov107_AiState_SetVisible; func_ov022_0208ffe8 skips only nodes within
       0.8 of the camera; Ov002_IsPointOnScreen serves the camera).
 - [x] HUD pieces the game draws in 3D in front of its camera (the mission's heart counter) stay
-      on the HUD: polygons that keep their place in camera space while most of the scene moves
-      across the view (a slight turn rounds far polygons in place), and never more than a quarter
-      of the picture.
+      on the HUD: polygons that keep their place in camera space while the camera turns and most
+      of the scene moves across the view, away from Roxas and the cursor's target (a camera
+      turning round them keeps them in place too), never more than a quarter of the picture.
 - [x] Upright sprites (trees) turn to face you about the vertical.
 - [ ] Analog movement and room-scale steps through the game's collision.
 

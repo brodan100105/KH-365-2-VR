@@ -1,10 +1,7 @@
 /* Updates the lock-on marker for the current selection type: projects the target to the screen and
  * draws the markers, or clears the selection when the target is gone.
  *
- * khvr: an enemy's lock-on (types 1 and 3, the sight sprites of Ov022_DrawSelectionMarkers; type 2
- * is the field's interactable entries, with a marker of their own) also goes to the platform with
- * the target's world position and where the sight is on the screen (-1 when off it): the headset
- * shows the game's sight, cut from the screen, around the enemy in the world. */
+ * khvr: also reports the target to the platform (below). */
 
 #include "nitro/types.h"
 #include "game/engine.h"
@@ -112,14 +109,17 @@ void Ov022_UpdateSelectionMarker(void)
     if (target == 0) {
         return;
     }
-    {
-        const int onScreen = Ov022_ProjectToScreen(target, &point) != -1;
-        if (context->type8 == 1 || context->type8 == 3) {
-            khvr_host_lock_on(target, onScreen ? point.x >> 12 : -1, onScreen ? point.y >> 12 : -1);
-        }
-        if (!onScreen) {
-            return;
-        }
+    /* khvr: the target goes to the platform, on or off the game's screen, with its kind (1 and 3
+     * enemies, 2 the field's entries: people to talk to, things to use) and whether it is locked
+     * on. Standing in the world the headset draws the cursors at the target itself, so the game's
+     * own (2D sprites placed for its camera, and the entries' corner marks drawn in front of it)
+     * are left out. */
+    khvr_host_lock_on(target, context->type8, (context->flags0 & 4) != 0);
+    if (khvr_host_own_cursors()) {
+        return;
+    }
+    if (Ov022_ProjectToScreen(target, &point) == -1) {
+        return;
     }
 
     switch (context->type8) {
