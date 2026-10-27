@@ -42,6 +42,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::ViewSmoothMotion, "View", "smooth_motion", "Smooth camera motion", true,
                   "Standing in the world, the view follows Roxas smoothly between the game's frames "
                   "instead of in its steps, which shake most when he changes direction."));
+    d.push_back(B(S::ViewDrawAll, "View", "draw_all", "Draw what the game's camera does not see", true,
+                  "Standing in the world, the game draws enemies and effects around you even where its "
+                  "own camera does not look (it skips those for the DS). Costs some speed."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
                   "Watch in-engine cutscenes on the giant screen, or from where you stand."));

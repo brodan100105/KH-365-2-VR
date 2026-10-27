@@ -8,6 +8,7 @@
 // The VR view will later take the same polygons as world-space draw lists (docs/ROADMAP.md).
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 #include "khvr/platform.h"
@@ -35,10 +36,15 @@ struct GxWorldStats {
     uint32_t captures = 0, triangles = 0, textures = 0, leftOut = 0;
     uint32_t markers = 0;  // flat markers placed in the world since the last heartbeat
     uint32_t lockOns = 0;  // frames the game placed its lock-on sight since then
+    uint32_t hudPieces = 0;  // polygons kept on the HUD as fixed in front of the game's camera
+    uint32_t boxesInView = 0, boxesOutOfView = 0;  // BOX_TEST answers the camera's view gave
 };
 extern GxWorldStats gWorldStats;
-// The game placed its lock-on sight over the target at this guest VecFx32 (khvr_host_lock_on).
-void GxNoteLockOn(uint32_t position);
+// BOX_TEST answers "visible" always (Platform::SetDrawAll).
+extern std::atomic<bool> gDrawAll;
+// The game has an enemy locked on at this guest VecFx32 this frame (khvr_host_lock_on).
+// `screenX`, `screenY`: the top-screen pixel its sight is drawn around, -1 when off the screen.
+void GxNoteLockOn(uint32_t position, int screenX, int screenY);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

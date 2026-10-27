@@ -460,14 +460,38 @@ int WorldTest() {
         };
         khvr::PlatformWorld facing = small(0), turned = small(0.6);
         bool flagged = facing.triangleFlags.size() == 2 && (facing.triangleFlags[0] & khvr::kWorldBillboard) &&
-                       (facing.triangleFlags[1] & khvr::kWorldBillboard) && facing.billboard.size() == 6 * 5;
+                       (facing.triangleFlags[1] & khvr::kWorldBillboard) && facing.billboard.size() == 6 * khvr::kWorldBillboardFloats;
         if (flagged) {
             const float *b = &facing.billboard[0];  // the first corner: (-0.25, -0.25) from (1, 2, 0)
             flagged = std::fabs(b[0] - 1) < 0.02 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.02 &&
                       std::fabs(b[3] + 0.25) < 0.02 && std::fabs(b[4] + 0.25) < 0.02;
         }
         sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
-                  turned.billboard.empty();
+                  turned.billboard.empty() && facing.billboard[5] == 1.0f;
+        // Upright: a see-through tree (alpha 16), 4 wide and 6 tall, standing square to the camera.
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        cmd(0x10, 2);
+        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);
+        cmd(0x1b, fx(2)); cmd(0x1b, fx(3)); cmd(0x1b, fx(1));
+        quad(0x001000c0);
+        cmd(0x50, 0);
+        static khvr::PlatformWorld tree;
+        khvr::Platform::Get().CaptureWorld(&tree);
+        bool upright = tree.triangleFlags.size() == 2 && (tree.triangleFlags[0] & khvr::kWorldBillboard) &&
+                       tree.billboard.size() == 6 * khvr::kWorldBillboardFloats;
+        if (upright) {
+            const float *b = &tree.billboard[0];  // the first corner: (-2, -3) from (1, 2, 0)
+            upright = b[5] == 2.0f && std::fabs(b[0] - 1) < 0.02 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.02 &&
+                      std::fabs(b[3] + 2) < 0.02 && std::fabs(b[4] + 3) < 0.02;
+        }
+        std::printf("  sprites: facing %d, turned away %d, upright %d (%zu triangles, flags %d, %zu floats", flagged,
+                    !turned.billboard.size(), upright, tree.triangleFlags.size(),
+                    tree.triangleFlags.empty() ? -1 : tree.triangleFlags[0], tree.billboard.size());
+        for (size_t i = 0; i < tree.billboard.size() && i < 6; ++i) std::printf(" %.2f", tree.billboard[i]);
+        std::printf(")\n");
+        sprites = sprites && upright;
     }
     // The lock-on sight's target, reported while a frame is drawn, comes with that frame's
     // capture (and not with the next one's when the game no longer reports it).
@@ -475,7 +499,7 @@ int WorldTest() {
     {
         const uint32_t at = 0x02300000;
         w32(at, fx(1.5)); w32(at + 4, fx(0.75)); w32(at + 8, fx(-2));
-        khvr::hle::GxNoteLockOn(at);
+        khvr::hle::GxNoteLockOn(at, 100, 60);
         quad();
         cmd(0x50, 0);
         static khvr::PlatformWorld w, after;
@@ -484,12 +508,43 @@ int WorldTest() {
         cmd(0x50, 0);
         khvr::Platform::Get().CaptureWorld(&after);
         lockOn = w.lockOn && std::fabs(w.lockOnAt[0] - 1.5f) < 1e-3f && std::fabs(w.lockOnAt[1] - 0.75f) < 1e-3f &&
-                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && !after.lockOn;
+                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && w.lockOnScreen[0] == 100 && w.lockOnScreen[1] == 60 &&
+                 !after.lockOn;
     }
-    const bool all = a && b && split && scrolled && event && wire && sprites && lockOn;
+    // A HUD piece drawn in 3D in front of the camera: where the world moves across the view as the
+    // camera turns, it stays put; it is kept out of the world from then on.
+    bool hudPiece = false;
+    {
+        auto frame = [&](double turn, khvr::PlatformWorld *w) {
+            const double c = std::cos(turn), s = std::sin(turn);
+            const double turned[12] = {c, 0, -s, 0, 1, 0, s, 0, c, 0, -2, -10};
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(turned[i]));
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(turned[i]));
+            quad();  // the world: the quad at the origin
+            cmd(0x15, 0);  // the HUD piece: in camera space, 5 in front
+            cmd(0x1c, fx(-0.5)); cmd(0x1c, fx(0.5)); cmd(0x1c, fx(-5));
+            cmd(0x1b, fx(0.25)); cmd(0x1b, fx(0.25)); cmd(0x1b, fx(1));
+            quad();
+            cmd(0x50, 0);
+            khvr::Platform::Get().CaptureWorld(w);
+        };
+        static khvr::PlatformWorld w0, w1, w2;
+        frame(0.0, &w0);
+        frame(0.1, &w1);
+        frame(0.1, &w2);  // the camera still: it stays on the HUD
+        hudPiece = w0.triangleFlags.size() == 4 && w1.triangleFlags.size() == 2 && w1.polygonsLeftOut == 1 &&
+                   w2.triangleFlags.size() == 2;
+        std::printf("  HUD piece: %zu, %zu, %zu triangles in the world\n", w0.triangleFlags.size(), w1.triangleFlags.size(),
+                    w2.triangleFlags.size());
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+    }
+    const bool all = a && b && split && scrolled && event && wire && sprites && lockOn && hudPiece;
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
-                "event scene %d, wireframe %d, sprites %d, lock-on %d)\n",
-                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites, lockOn);
+                "event scene %d, wireframe %d, sprites %d, lock-on %d, HUD piece %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites, lockOn, hudPiece);
     return all ? 0 : 1;
 }
 

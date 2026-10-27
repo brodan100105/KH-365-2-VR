@@ -33,7 +33,8 @@ void khvr_host_watch(const void *addr, unsigned long size);
 void khvr_host_movie_open(const char *path);
 void khvr_host_movie_frame(unsigned long frame);
 void khvr_host_movie_close(void);
-/* The lock-on sight is over the target at this world position (VecFx32) this frame. */
-void khvr_host_lock_on(const void *position);
+/* An enemy is locked on, at this world position (VecFx32), this frame; the game's sight is drawn
+ * around this top-screen pixel (-1, -1 when the enemy is off the screen). */
+void khvr_host_lock_on(const void *position, long screenX, long screenY);
 
 #endif

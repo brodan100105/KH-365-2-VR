@@ -232,6 +232,8 @@ std::atomic<bool> gWorldCapture{false};
 }
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
+void Platform::SetDrawAll(bool on) { hle::gDrawAll = on; }
+
 void Platform::SetWorldCapture(bool on) {
     gWorldCapture = on;
     hle::gWorldCaptureOn = on;
@@ -352,6 +354,7 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     out->movie = hle::MovieCopyPicture(out->top);
     if (out->movie) {
         std::memcpy(out->topHud, out->top, sizeof out->top);
+        std::memset(out->topObj, 0, sizeof out->topObj);
         out->topScale = 1;
         out->split = false;
     }
@@ -469,11 +472,15 @@ void Platform::Heartbeat() {
     }
     if (GxWorldStats &w = gWorldStats; w.captures) {
         Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture, "
-            "%u markers placed in the world, lock-on sight in %u frames",
-            w.captures, w.triangles, w.textures, w.leftOut, w.markers, w.lockOns);
+            "%u markers placed in the world, lock-on sight in %u frames, %u HUD pieces in front of the camera, "
+            "box tests %u in view and %u out of it%s",
+            w.captures, w.triangles, w.textures, w.leftOut, w.markers, w.lockOns, w.hudPieces, w.boxesInView,
+            w.boxesOutOfView, hle::gDrawAll ? " (drawn anyway)" : "");
         w.captures = 0;
         w.markers = 0;
         w.lockOns = 0;
+        w.hudPieces = 0;
+        w.boxesInView = w.boxesOutOfView = 0;
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has

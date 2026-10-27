@@ -62,10 +62,18 @@ and into VR as real geometry around you.
       sprites, turned to face the viewer. Flat markers drawn with their own projection are
       placed in the world in front of what they mark.
 - [x] The lock-on sight: the game's is 2D sprites placed for its own camera
-      (Ov022_UpdateSelectionMarker); Ov022_ProjectToScreen reports the target's world position
-      (khvr_host_lock_on) and the headset draws a blue sight of its own around it, over everything.
+      (Ov022_UpdateSelectionMarker); for an enemy's lock-on (not the field's interactable
+      entries) it reports the target's world position and where the sight is on the screen
+      (khvr_host_lock_on). The headset cuts the sight's sprites from the top screen (sprites only)
+      each frame and hangs them at the enemy, at the size the game shows them, facing you, over
+      everything; a blue sight of its own until the game has drawn one.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
-      camera now: what lies behind it is not submitted at all).
+      camera: what lies behind it is not submitted at all). First part in: **View > Draw what the
+      game's camera does not see** answers the game's BOX_TESTs "visible" (the heartbeat counts
+      the boxes out of view); culling the game does on the CPU is still to find.
+- [x] HUD pieces the game draws in 3D in front of its camera (the mission's heart counter) stay
+      on the HUD: polygons that keep their place in camera space while the camera moves.
+- [x] Upright sprites (trees) turn to face you about the vertical.
 - [ ] Analog movement and room-scale steps through the game's collision.
 
 ## Step 4: in-engine cutscenes from where you stand

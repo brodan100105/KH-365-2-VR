@@ -18,6 +18,7 @@ hands, DS + giant screen) and the options changed most.
 | `mode` | View mode | `third_person`, `first_person`, `giant_screen` | `third_person` | Panoramic: stand around Roxas in 6DoF. First person: you are the character. |
 | `stand_in_world` | Stand in the world (experimental) | `true` / `false` | `false` | In gameplay, the game's 3D around you instead of on the giant screen, in the view mode above. For now you see what the game's own camera sees; menus and event scenes stay on the giant screen. |
 | `smooth_motion` | Smooth camera motion | `true` / `false` | `true` | Standing in the world, the view follows Roxas smoothly between the game's frames instead of in its steps, which shake most when he changes direction. |
+| `draw_all` | Draw what the game's camera does not see | `true` / `false` | `true` | Standing in the world, the game draws enemies and effects around you even where its own camera does not look (it skips those for the DS). Costs some speed. |
 | `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or from where you stand. |
 | `mode_switch_button` | Quick mode switch | `true` / `false` | `true` | Hold the right thumbstick click to swap panoramic and first person. |
 

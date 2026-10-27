@@ -36,7 +36,8 @@ void main() { oColor = vec4(vColor.rgb, vColor.a * uAlpha); })";
 
 // In-between frames and sprites: each vertex glides from its previous game frame's position
 // (aPrev) by uBlend; a sprite's vertex sits at its offset (aSprite.xy) from the sprite's centre
-// (aPrevCentre to aCentre) along uRight and uUp, the viewer's, when uSprites is on.
+// (aPrevCentre to aCentre) along uRight and uUp, the viewer's, when uSprites is on; an upright
+// sprite's along uRight (level) and straight up.
 const char *kWorldVs = R"(#version 300 es
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUv;
@@ -44,7 +45,7 @@ layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec3 aPrev;
 layout(location = 4) in vec3 aPrevCentre;
 layout(location = 5) in vec3 aCentre;
-layout(location = 6) in vec3 aSprite;  // offset right, offset up, 1 for a sprite's vertex
+layout(location = 6) in vec3 aSprite;  // offset right, offset up; 1 facing sprite, 2 upright
 uniform mat4 uMvp;
 uniform float uBlend;
 uniform int uSprites;
@@ -56,7 +57,9 @@ void main() {
     vUv = aUv;
     vColor = aColor;
     vec3 p = mix(aPrev, aPos, uBlend);
-    if (uSprites == 1 && aSprite.z > 0.5)
+    if (uSprites == 1 && aSprite.z > 1.5)
+        p = mix(aPrevCentre, aCentre, uBlend) + aSprite.x * uRight + vec3(0.0, aSprite.y, 0.0);
+    else if (uSprites == 1 && aSprite.z > 0.5)
         p = mix(aPrevCentre, aCentre, uBlend) + aSprite.x * uRight + aSprite.y * uUp;
     gl_Position = uMvp * vec4(p, 1.0);
 })";
@@ -337,7 +340,8 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         revisionTime_ = now;
         // Where each vertex was in the previous frame, when that frame held the same triangles.
         const size_t triangleCount = world.vertices.size() / 3;
-        const bool sprites = world.billboard.size() == world.vertices.size() * 5;
+        constexpr size_t kB = TexturedWorld::kBillboardFloats;
+        const bool sprites = world.billboard.size() == world.vertices.size() * kB;
         std::vector<uint64_t> signature(triangleCount);
         for (size_t t = 0; t < triangleCount; ++t) {
             const int32_t tex = world.triangleTexture[t];
@@ -347,7 +351,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         motionMatched_ = signature == prevTriangles_ && prevPositions_.size() == world.vertices.size();
         std::vector<Vec3> centres(world.vertices.size());
         for (size_t i = 0; i < world.vertices.size(); ++i)
-            centres[i] = sprites ? Vec3{world.billboard[i * 5], world.billboard[i * 5 + 1], world.billboard[i * 5 + 2]}
+            centres[i] = sprites ? Vec3{world.billboard[i * kB], world.billboard[i * kB + 1], world.billboard[i * kB + 2]}
                                  : world.vertices[i].position;
         std::vector<float> motionData;
         motionData.reserve(world.vertices.size() * 2 * 12);
@@ -384,8 +388,9 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
                 const Vec3 &p = motionMatched_ ? prevPositions_[i] : world.vertices[i].position;
                 const Vec3 &pc = motionMatched_ ? prevCenters_[i] : centres[i];
                 const Vec3 &c = centres[i];
-                const float sx = sprite ? world.billboard[i * 5 + 3] : 0.0f, sy = sprite ? world.billboard[i * 5 + 4] : 0.0f;
-                motionData.insert(motionData.end(), {p.x, p.y, p.z, pc.x, pc.y, pc.z, c.x, c.y, c.z, sx, sy, sprite ? 1.0f : 0.0f});
+                const float sx = sprite ? world.billboard[i * kB + 3] : 0.0f, sy = sprite ? world.billboard[i * kB + 4] : 0.0f;
+                const float kind = sprite ? world.billboard[i * kB + 5] : 0.0f;
+                motionData.insert(motionData.end(), {p.x, p.y, p.z, pc.x, pc.y, pc.z, c.x, c.y, c.z, sx, sy, kind});
             }
             worldBatches_.back().count += n;
         };
@@ -520,7 +525,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
 }
 
 void Renderer::DrawQuad(GLuint texture, const Pose &pose, float w, float h, const Mat4 &viewProj,
-                        float alpha, float curvature, float distance, bool flipV) {
+                        float alpha, float curvature, float distance, bool flipV, bool onTop) {
     // Curved screens are split into vertical strips along an arc of radius distance/curvature.
     const int strips = curvature > 0.01f ? 32 : 1;
     const float radius = curvature > 0.01f ? distance / curvature : 0.0f;
@@ -562,8 +567,10 @@ void Renderer::DrawQuad(GLuint texture, const Pose &pose, float w, float h, cons
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
                           reinterpret_cast<void *>(3 * sizeof(float)));
     SetBlend(true);
-    glEnable(GL_DEPTH_TEST);
+    if (onTop) glDisable(GL_DEPTH_TEST);
+    else glEnable(GL_DEPTH_TEST);
     glDrawArrays(GL_TRIANGLES, 0, strips * 6);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void Renderer::DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj) {

@@ -672,6 +672,7 @@ void VrApp::Frame(const XrFrameInput &in) {
         decomp_->Set3dScale(headsetDraws3d ? 1 : settings_.Int(SettingId::Pic3dResolution) + 1);
         const bool standInWorld = settings_.Bool(SettingId::ViewStandInWorld);
         decomp_->SetStandInWorld(standInWorld);
+        decomp_->SetDrawAll(standInWorld && settings_.Bool(SettingId::ViewDrawAll));
         decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
         decomp_->SetHidePlayer(lastMode_ == ViewMode::FirstPerson &&
                                settings_.Enum<BodyDisplay>(SettingId::FpShowBody) != BodyDisplay::FullBody);
@@ -1069,10 +1070,23 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             motion.up = Normalize(Cross(motion.right, f));
             renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
                                         filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
-            // The lock-on sight: the game's is 2D, placed for its own camera; ours is around the
-            // target in the world, facing you, over everything.
+            // The lock-on sight: the game draws it in 2D where the enemy is on its own screen. Here
+            // the same sprites, cut from that screen each frame, hang at the enemy in the world, at
+            // the size the game shows them, facing you, over everything.
             const TexturedWorld &tw = game_->texturedWorld();
-            if (tw.lockOn) {
+            if (tw.lockOn && !tw.lockOnSprite.empty() && tw.lockOnPixel > 0.0f) {
+                if (tw.lockOnSpriteRevision != lockOnSpriteRevision_) {
+                    lockOnTex_.Upload(TexturedWorld::kLockOnSprite, TexturedWorld::kLockOnSprite, tw.lockOnSprite.data(),
+                                      !(filter == TextureFilter::Nearest || filter == TextureFilter::Sharp));
+                    lockOnSpriteRevision_ = tw.lockOnSpriteRevision;
+                }
+                const float size = TexturedWorld::kLockOnSprite * tw.lockOnPixel;
+                const Vec3 centre = tw.lockOnAt + motion.up * (tw.lockOnRaise * tw.lockOnPixel);
+                const Vec3 eyeWorld = rig_.trackingToWorld.Transform(in.head.position);
+                renderer_.DrawQuad(lockOnTex_.id(), FacingFrom(centre, eyeWorld), size, size, vpWorld, 1.0f, 0.0f,
+                                   1.0f, false, true);
+            } else if (tw.lockOn) {
+                // Until the game has drawn its sight once (the enemy off its screen): one of ours.
                 WorldDrawList sight = LockOnSight(tw.lockOnAt, motion.right, motion.up,
                                                   static_cast<float>(std::fmod(in.time, 1000.0)));
                 renderer_.DrawTriangles(sight, vpWorld, 0.9f, true);

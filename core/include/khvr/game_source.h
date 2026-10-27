@@ -46,12 +46,22 @@ struct TexturedWorld {
     std::vector<int32_t> triangleTexture;  // index into textures, -1 for none
     std::vector<uint8_t> triangleFlags;
     std::vector<WorldTexture> textures;
-    // Per vertex, when any triangle has kTriBillboard: its sprite's centre (x, y, z) and the
-    // vertex's offset from it along the game camera's right and up. Five floats, or empty.
+    // Per vertex, when any triangle has kTriBillboard: its sprite's centre (x, y, z), the vertex's
+    // offset from it along the sprite's right and up, and its kind: 1 facing the camera (turned to
+    // face the viewer), 2 upright (turned about the vertical only). kBillboardFloats, or empty.
+    static constexpr int kBillboardFloats = 6;
     std::vector<float> billboard;
-    // The game's lock-on sight is over a target here (world): the headset draws its own sight.
+    // An enemy is locked on here (world). The game's own sight, cut from its screen (the sprites
+    // only), kLockOnSprite pixels square centred on where the game drew it, which is
+    // lockOnRaise DS pixels above the enemy; lockOnPixel: game units a DS pixel spans at the
+    // enemy's distance from the game's camera. The last cut stays while the enemy is off the
+    // game's screen; empty until the game has drawn it once.
+    static constexpr int kLockOnSprite = 96;
     bool lockOn = false;
     Vec3 lockOnAt;
+    std::vector<uint32_t> lockOnSprite;
+    uint32_t lockOnSpriteRevision = 0;
+    float lockOnPixel = 0.0f, lockOnRaise = 0.0f;
     uint32_t revision = 0;  // bumped with every new frame of it
     // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
     // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.

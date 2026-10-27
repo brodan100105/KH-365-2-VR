@@ -310,7 +310,9 @@ void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", Read
 
 void w2c_env_khvr_host_watch(struct w2c_env *, u32 addr, u32 size) { WatchSet(addr, size, "asked by the guest"); }
 
-void w2c_env_khvr_host_lock_on(struct w2c_env *, u32 position) { GxNoteLockOn(position); }
+void w2c_env_khvr_host_lock_on(struct w2c_env *, u32 position, u32 x, u32 y) {
+    GxNoteLockOn(position, static_cast<int32_t>(x), static_cast<int32_t>(y));
+}
 
 void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
     if (ReadString(what) == "scene request") SnapshotOnSceneRequest(a);

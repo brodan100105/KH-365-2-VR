@@ -25,6 +25,7 @@ struct PlatformScreens {
     static constexpr int kWidth = 256, kHeight = 192;
     uint32_t top[kWidth * kHeight];
     uint32_t topHud[kWidth * kHeight];  // top screen 2D layers only: alpha 0 where nothing is drawn
+    uint32_t topObj[kWidth * kHeight];  // the top screen's sprites where they show: alpha 0 elsewhere
     uint32_t bottom[kWidth * kHeight];
     bool top3d = false;                 // the top screen's BG0 shows the 3D engine
     bool movie = false;                 // the top screen shows a movie's picture
@@ -60,6 +61,7 @@ enum PlatformWorldFlags : uint8_t {
                             // vertex to its second (the third repeats the second)
     kWorldBillboard = 128,  // part of a sprite drawn facing the game's camera (PlatformWorld::billboard)
 };
+constexpr int kWorldBillboardFloats = 6;
 struct PlatformWorldTexture {
     uint64_t key = 0;  // its parameters, texels and palette: equal keys are the same image
     int width = 0, height = 0;
@@ -96,15 +98,17 @@ struct PlatformWorld {
     int viewport[4] = {0, 0, 255, 191};
     int fadeMode[2] = {0, 0}, fadeFactor[2] = {0, 0};
     uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
-    // Sprites (munny, orbs, effects) face the game's camera: their polygons lie flat across its
-    // view. Per vertex, when any triangle has kWorldBillboard: the sprite's centre (world) and the
-    // vertex's offset from it along the camera's right and up, so a viewer can turn the sprite to
-    // face itself. Five floats a vertex (zero for the other triangles), or empty. Not in files.
+    // Sprites face the game's camera: flat across its view (munny, orbs, effects), or upright and
+    // turned to it about the vertical (trees). Per vertex, when any triangle has kWorldBillboard:
+    // the sprite's centre (world), the vertex's offset from it along the sprite's right and up,
+    // and its kind (1 facing, 2 upright), so a viewer can turn the sprite to face itself.
+    // kWorldBillboardFloats floats a vertex (zero for the other triangles), or empty. Not in files.
     std::vector<float> billboard;
     // The game's lock-on sight is over a target at this world position (its own sight is 2D
     // sprites placed for its camera; a viewer draws one of its own here). Not in files.
     bool lockOn = false;
     float lockOnAt[3] = {0, 0, 0};
+    int lockOnScreen[2] = {-1, -1};  // the top-screen pixel the game's sight is drawn around, or -1
 };
 
 // A captured world to a file and back (world_file.cpp).
@@ -146,6 +150,9 @@ public:
     bool ReadPlayerNow(PlatformPlayer *out);  // from the game's memory right now
     // CaptureScreens also fills topFront / topBack.
     void SetWorldCapture(bool on);
+    // The game asks the 3D engine whether a model's box is in its camera's view (BOX_TEST) before
+    // drawing it: on, the answer is always yes, so it draws what lies around you too.
+    void SetDrawAll(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or

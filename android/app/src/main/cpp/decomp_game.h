@@ -45,6 +45,8 @@ public:
     // First person without the full body: the game's own Roxas (his model and what he holds,
     // the polygons right around his feet) is left out of the captured world.
     void SetHidePlayer(bool on) { hidePlayer_ = on; }
+    // The game draws what lies outside its own camera's view too (Platform::SetDrawAll).
+    void SetDrawAll(bool on) { Platform::Get().SetDrawAll(on); }
     // Screen > Game picture (Sharp, 3D depth) or standing in the world: capture the game's 3D
     // world each frame.
     void SetWorldCapture(bool on) {

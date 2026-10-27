@@ -25,6 +25,7 @@ enum class SettingId : int {
     ViewMode,
     ViewStandInWorld,
     ViewSmoothMotion,
+    ViewDrawAll,
     CutsceneView,
     ModeSwitchButton,
     // Screen (the giant screen used for cutscenes, menus and "Giant screen" mode)

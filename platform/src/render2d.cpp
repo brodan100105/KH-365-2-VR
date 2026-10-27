@@ -288,7 +288,8 @@ uint16_t Bright(uint16_t a, uint32_t evy, bool up) {
 // Renders one engine. `hud` makes the backdrop and the 3D layer transparent. With `hi`, a 3D
 // layer is also composed at `hiScale` times the resolution into it; returns whether it was.
 bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_t *hi = nullptr, int hiScale = 1,
-                  uint32_t *front = nullptr, uint32_t *back = nullptr) {
+                  uint32_t *front = nullptr, uint32_t *back = nullptr, uint32_t *obj = nullptr) {
+    if (obj) std::fill(obj, obj + kScreenW * kScreenH, 0u);
     Engine e;
     e.index = index;
     e.io = index ? 0x1000 : 0;
@@ -472,6 +473,7 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
             // The HUD image leaves the 3D layer out: what is behind it instead.
             if (hud) hud[i] = top3dPixel ? (st.secondId == 5 ? 0 : ToRgba(static_cast<uint16_t>(st.second)))
                                          : (st.topId == 5 ? 0 : ToRgba(c));
+            if (obj && st.topId == 4) obj[i] = ToRgba(c);  // a sprite shows here
             if (front) {
                 if (!bg0is3d) {
                     front[i] = hud ? hud[i] : 0;
@@ -525,16 +527,20 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
         }
     }
     if (front && bg0is3d) {
-        // The flat 3D pieces the world capture leaves out (orthographic HUD elements) go in front.
+        // The 3D pieces the world capture leaves out (HUD elements, flat or in front of the game's
+        // camera) go in front, and on the HUD image (the HUD panel when standing in the world).
         static uint16_t hudColor[kScreenW * kScreenH];
         static uint8_t hudAlpha[kScreenW * kScreenH];
         const auto t0 = std::chrono::steady_clock::now();
         GxRender(hudColor, hudAlpha, 1, true);
         NoteCaptureTimes(0, std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count(), 0);
         Shift3d(hudColor, hudAlpha, kScreenW, kScreenH, Bg0Scroll3d());
-        for (int i = 0; i < kScreenW * kScreenH; ++i)
-            if (hudAlpha[i] && !(front[i] >> 24))
-                front[i] = ToRgba(hudColor[i], static_cast<uint8_t>(hudAlpha[i] * 255 / 31));
+        for (int i = 0; i < kScreenW * kScreenH; ++i) {
+            if (!hudAlpha[i]) continue;
+            const uint32_t c = ToRgba(hudColor[i], static_cast<uint8_t>(hudAlpha[i] * 255 / 31));
+            if (!(front[i] >> 24)) front[i] = c;
+            if (hud && !(hud[i] >> 24)) hud[i] = c;
+        }
     }
     if (s3 <= 1) return false;
     // The large picture: the 3D layer's own pixels where it is in front, the DS's 2D picture
@@ -569,11 +575,11 @@ void Render2D(PlatformScreens *out, int scale3d, bool split) {
         scale3d = std::clamp(scale3d, 1, kMax3dScale);
         if (scale3d > 1) out->topHi.resize(static_cast<size_t>(kScreenW * scale3d) * kScreenH * scale3d);
         if (RenderEngine(0, out->top, out->topHud, &has3d, scale3d > 1 ? out->topHi.data() : nullptr, scale3d,
-                         split ? out->topFront : nullptr, split ? out->topBack : nullptr))
+                         split ? out->topFront : nullptr, split ? out->topBack : nullptr, out->topObj))
             out->topScale = scale3d;
         RenderEngine(1, out->bottom, nullptr, nullptr);
     } else {
-        RenderEngine(1, out->top, out->topHud, nullptr);
+        RenderEngine(1, out->top, out->topHud, nullptr, nullptr, 1, nullptr, nullptr, out->topObj);
         RenderEngine(0, out->bottom, nullptr, &has3d);
         has3d = false;  // 3D on the bottom screen: the VR view shows the top
     }

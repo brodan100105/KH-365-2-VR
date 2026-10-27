@@ -65,7 +65,7 @@ public:
     // `flipV` is for textures rendered by GL (bottom row first) rather than uploaded images.
     void DrawQuad(GLuint texture, const Pose &pose, float w, float h, const Mat4 &viewProj,
                   float alpha = 1.0f, float curvature = 0.0f, float distance = 1.0f,
-                  bool flipV = false);
+                  bool flipV = false, bool onTop = false);
     // Edge-preserving smoothing (0..1) for the following DrawQuads, meant for DS screens only;
     // set it back to 0 for anything else.
     void SetScreenSmoothing(float amount) { smoothing_ = amount; }

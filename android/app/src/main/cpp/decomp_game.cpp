@@ -324,7 +324,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         t.triangleTexture.clear();
         t.triangleFlags.clear();
         t.billboard.clear();
-        const bool sprites = w.billboard.size() == w.vertices.size() * 5;
+        constexpr size_t kB = TexturedWorld::kBillboardFloats;
+        static_assert(TexturedWorld::kBillboardFloats == kWorldBillboardFloats, "one layout");
+        const bool sprites = w.billboard.size() == w.vertices.size() * kB;
         t.vertices.reserve(w.vertices.size());
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
@@ -333,7 +335,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             t.triangleTexture.push_back(w.triangleTexture[tri]);
             t.triangleFlags.push_back(w.triangleFlags[tri]);  // the same bits (kTriFront ...)
             if (sprites)
-                t.billboard.insert(t.billboard.end(), w.billboard.begin() + tri * 15, w.billboard.begin() + tri * 15 + 15);
+                t.billboard.insert(t.billboard.end(), w.billboard.begin() + tri * 3 * kB, w.billboard.begin() + (tri + 1) * 3 * kB);
         }
         t.textures.resize(w.textures.size());
         for (size_t i = 0; i < w.textures.size(); ++i) {
@@ -350,6 +352,30 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         }
         t.lockOn = w.lockOn;
         t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
+        if (w.lockOn && w.lockOnScreen[0] >= 0 && w.hasCamera) {
+            // The game's sight as it drew it this frame: its sprites around that pixel.
+            const int n = TexturedWorld::kLockOnSprite, sx = w.lockOnScreen[0], sy = w.lockOnScreen[1];
+            const int W = PlatformScreens::kWidth, H = PlatformScreens::kHeight;
+            t.lockOnSprite.assign(static_cast<size_t>(n) * n, 0u);
+            for (int y = 0; y < n; ++y)
+                for (int x = 0; x < n; ++x) {
+                    const int px = sx - n / 2 + x, py = sy - n / 2 + y;
+                    if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                    const uint32_t c = latest_->topObj[py * W + px];
+                    t.lockOnSprite[static_cast<size_t>(y) * n + x] = c;
+                    // Standing in the world it shows around the enemy, not on the HUD panel.
+                    if ((c >> 24) && frame_.inGameplay) screens_.topHud[static_cast<size_t>(py) * W + px] = 0;
+                }
+            ++t.lockOnSpriteRevision;
+            // Its size: a DS pixel at the enemy's depth before the game's camera. The game draws
+            // the sight 8 pixels above the enemy (Ov022_ProjectToScreen).
+            const Vec3 eye{w.eye[0], w.eye[1], w.eye[2]}, look{w.target[0], w.target[1], w.target[2]};
+            const float depth = Dot(t.lockOnAt - eye, Normalize(look - eye));
+            if (depth > 1e-3f && w.fovY > 0.0f) {
+                t.lockOnPixel = 2.0f * depth * std::tan(w.fovY / 2) / H;
+                t.lockOnRaise = 8.0f;
+            }
+        }
         std::copy(w.viewport, w.viewport + 4, t.viewport);
         std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
         std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);
