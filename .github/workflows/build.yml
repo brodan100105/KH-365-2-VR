@@ -2,8 +2,15 @@ name: build
 
 on:
   push:
+    # A change to the docs alone builds nothing.
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same branch cancels the older build still running.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   core-tests:
@@ -30,18 +37,35 @@ jobs:
           wasm2c --version
       - name: Build the game as the guest module
         run: python3 guest/build_guest.py --jobs 4
+      - name: Guest data laid out as on the DS
+        # Code reads past one data symbol into the next; the port must keep DS neighbours together.
+        run: |
+          python3 guest/check_data_layout.py | tee layout.txt | tail -5
+          bad=$(tail -1 layout.txt | cut -d' ' -f1)
+          test "$bad" -le 30
       - name: Platform tests on the desktop
         run: |
           cmake -S platform -B build/platform -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           cmake --build build/platform -j4
           cd build/platform
           ./khdays_run --render-test
+          ./khdays_run --pxi-test
+          ./khdays_run --sound-test
+          ./khdays_run --seq-test
+          ./khdays_run --stream-test
+          ./khdays_run --gx-test
+          ./khdays_run --world-test
           # Boot a minimal fake ROM: OS, threads, interrupts, ARM7 handshakes, file system and
           # overlays must come up and reach the title scene (ov000), which then stops on purpose
           # (OS_Terminate) because the fake ROM has no font. A trap would be a platform bug.
           ./khdays_run --fake-rom --frames 120 --log boot.log | tee run.txt
           grep -q "overlay: start ov000" boot.log
+          grep -q "printf self-test ok" boot.log
           ! grep -q "^trap:" boot.log
+          # "Return to title" resets the DS: the guest must boot a second time from scratch.
+          ./khdays_run --fake-rom --frames 120 --restart --log restart.log > /dev/null
+          test "$(grep -c 'overlay: start ov000' restart.log)" -eq 2
+          ! grep -q "^trap:" restart.log
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

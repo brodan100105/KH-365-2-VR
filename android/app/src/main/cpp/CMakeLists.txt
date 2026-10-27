@@ -29,13 +29,14 @@ find_package(OpenXR REQUIRED CONFIG)
 add_library(khdaysvr SHARED
     main.cpp
     renderer.cpp
+    station_art.cpp
     vr_app.cpp
     xr_platform.cpp
 )
 if(KHVR_HAS_GAME)
     target_sources(khdaysvr PRIVATE decomp_game.cpp)
     target_compile_definitions(khdaysvr PRIVATE KHVR_HAS_GAME=1)
-    target_link_libraries(khdaysvr PRIVATE khvr_platform)
+    target_link_libraries(khdaysvr PRIVATE khvr_platform aaudio)
 endif()
 # {XR_TYPE_...} initializers leave `next` to zero on purpose (the OpenXR idiom).
 target_compile_options(khdaysvr PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)

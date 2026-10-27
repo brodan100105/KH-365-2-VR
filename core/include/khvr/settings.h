@@ -31,6 +31,8 @@ enum class SettingId : int {
     ScreenCurvature,
     ScreenStereo,
     ScreenDepth,
+    ScreenPicture,
+    ScreenBoth,
     Passthrough,
     // Camera (third-person panoramic)
     TpWorldScale,
@@ -84,16 +86,35 @@ enum class SettingId : int {
     PicMsaa,
     PicTextureFilter,
     PicSharpen,
+    PicScreenSmoothing,
+    Pic3dResolution,
     PicFoveation,
     PicDrawDistance,
     // HUD
     HudTopScreen,
-    HudBottomScreen,
     HudDistance,
     HudScale,
     HudTouchInput,
+    // Hand screen (the DS touch screen held in or worn on a hand)
+    HandScreenPlacement,
+    HandScreenSide,
+    HandScreenAutoShow,
+    HandScreenFollowView,
+    HandScreenSize,
+    HandScreenOffsetX,
+    HandScreenOffsetY,
+    HandScreenOffsetZ,
+    HandScreenTilt,
+    HandScreenTurn,
+    HandScreenRoll,
+    HandScreenDs,
+    HandScreenDsSize,
+    HandScreenDsScreenScale,
+    HandScreenDsHinge,
+    HandScreenDsGiant,
+    HandScreenDsColor,
+    HandScreenDsTwoHands,
     // Game
-    GamePlay,
     GameLanguage,
     GameInvertTurn,
     GameUnitsPerMeter,
@@ -113,10 +134,12 @@ enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
-enum class BottomScreenPlacement : int { LeftWrist = 0, Floating = 1, Hidden = 2 };
+enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
+enum class GamePicture : int { Ds = 0, Sharp = 1, Depth = 2 };
+enum class HandheldDs : int { Off = 0, Movies = 1, Always = 2, Only = 3 };
+enum class DsColor : int { Black = 0, White = 1, Red = 2, Blue = 3, Silver = 4 };
 enum class TouchInput : int { Laser = 0, DirectTouch = 1 };
-enum class TextureFilter : int { Nearest = 0, Bilinear = 1 };
-enum class GamePlay : int { Auto = 0, Demo = 1 };
+enum class TextureFilter : int { Nearest = 0, Bilinear = 1, Sharp = 2, Smooth = 3 };
 // Buttons a gesture can press, in the order the Controls tab lists them.
 enum class DsBinding : int { A = 0, B = 1, X = 2, Y = 3, L = 4, R = 5, None = 6 };
 

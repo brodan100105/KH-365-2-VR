@@ -2,6 +2,7 @@
 // area, and overlay resets.
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -65,6 +66,93 @@ bool RomOpen(const std::string &path, std::string *error) {
 }
 
 uint32_t RomSize() { return static_cast<uint32_t>(gRomSize); }
+
+namespace {
+uint32_t RomU32(size_t off) { return off + 4 <= gRomSize ? gRom[off] | gRom[off + 1] << 8 | gRom[off + 2] << 16 | static_cast<uint32_t>(gRom[off + 3]) << 24 : 0; }
+uint16_t RomU16(size_t off) { return off + 2 <= gRomSize ? static_cast<uint16_t>(gRom[off] | gRom[off + 1] << 8) : 0; }
+
+// One NitroFS directory of the file name table, recursively: "path size" per file.
+void ListDir(FILE *out, uint32_t fnt, uint32_t fat, uint16_t dir, const std::string &prefix, int depth) {
+    if (depth > 16) return;
+    size_t entry = fnt + (dir & 0x0fff) * 8u;
+    size_t p = fnt + RomU32(entry);
+    uint16_t fileId = RomU16(entry + 4);
+    while (p < gRomSize) {
+        uint8_t len = gRom[p++];
+        if (len == 0) break;
+        std::string name(reinterpret_cast<const char *>(gRom + p), std::min<size_t>(len & 0x7f, gRomSize - p));
+        p += len & 0x7f;
+        if (len & 0x80) {
+            uint16_t sub = RomU16(p);
+            p += 2;
+            ListDir(out, fnt, fat, sub, prefix + name + "/", depth + 1);
+        } else {
+            uint32_t start = RomU32(fat + fileId * 8u), end = RomU32(fat + fileId * 8u + 4);
+            std::fprintf(out, "%s%s %u\n", prefix.c_str(), name.c_str(), end > start ? end - start : 0);
+            ++fileId;
+        }
+    }
+}
+}  // namespace
+
+namespace {
+bool SameNameNoCase(const uint8_t *a, size_t n, const std::string &b) {
+    if (n != b.size()) return false;
+    for (size_t i = 0; i < n; ++i)
+        if (std::tolower(a[i]) != std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    return true;
+}
+}  // namespace
+
+const uint8_t *RomFindFile(const std::string &path, uint32_t *size) {
+    if (!gRom) return nullptr;
+    uint32_t fnt = RomU32(0x40), fat = RomU32(0x48);
+    uint16_t dir = 0xf000;
+    size_t at = 0;
+    while (at < path.size() && path[at] == '/') ++at;
+    while (at < path.size()) {
+        size_t slash = path.find('/', at);
+        bool last = slash == std::string::npos;
+        std::string part = path.substr(at, last ? std::string::npos : slash - at);
+        at = last ? path.size() : slash + 1;
+        size_t entry = fnt + (dir & 0x0fff) * 8u;
+        size_t p = fnt + RomU32(entry);
+        uint16_t fileId = RomU16(entry + 4);
+        bool found = false;
+        while (p < gRomSize && !found) {
+            uint8_t len = gRom[p++];
+            if (len == 0) break;
+            size_t n = std::min<size_t>(len & 0x7f, gRomSize - p);
+            bool match = SameNameNoCase(gRom + p, n, part);
+            p += len & 0x7f;
+            if (len & 0x80) {
+                uint16_t sub = RomU16(p);
+                p += 2;
+                if (match && !last) dir = sub, found = true;
+            } else {
+                if (match && last) {
+                    uint32_t start = RomU32(fat + fileId * 8u), end = RomU32(fat + fileId * 8u + 4);
+                    if (end < start || end > gRomSize) return nullptr;
+                    *size = end - start;
+                    return gRom + start;
+                }
+                ++fileId;
+            }
+        }
+        if (!found) return nullptr;
+    }
+    return nullptr;
+}
+
+void RomWriteFileList(const std::string &path) {
+    if (!gRom || path.empty()) return;
+    FILE *out = std::fopen(path.c_str(), "w");
+    if (!out) return;
+    // Names and sizes only, from the file name table (header 0x40) and allocation table (0x48).
+    ListDir(out, RomU32(0x40), RomU32(0x48), 0xf000, "/", 0);
+    std::fclose(out);
+    Log("rom: file list written to %s", path.c_str());
+}
 
 void RomRead(uint32_t offset, void *dst, uint32_t len) {
     if (offset >= gRomSize) {
@@ -209,6 +297,7 @@ void w2c_env_khvr_host_read_rom(struct w2c_env *, u32 offset, u32 dst, u32 len) 
         Log("rom: read 0x%x bytes to bad address 0x%08x", len, dst);
         return;
     }
+    WatchHostWrite(dst, len, "ROM read");
     RomRead(offset, GuestMem() + dst, len);
 }
 

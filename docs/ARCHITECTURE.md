@@ -84,7 +84,7 @@ What the game touches, and what replaces it:
 | DS hardware / SDK | Port |
 |---|---|
 | Main RAM, DTCM, ITCM, shared work RAM | Regions of the guest's linear memory at their DS addresses |
-| ROM file system (`FS_*`, `CARD_*`) | Reads the user's own ROM image from `/sdcard/Android/data/com.khdays.vr/files/game/` |
+| ROM file system (`FS_*`, `CARD_*`) | Reads the user's own ROM image from `/sdcard/KHDaysVR/` (or `Download/`) |
 | Overlays (`FS_LoadOverlay`) | All overlays are linked in; loading one only runs its static initializers. Overlays that share a load address get their own copies (each player/enemy overlay is already its own directory) |
 | 3D engine (GX geometry FIFO, `G3_*`, NNS G3D) | The I/O stores are trapped and decoded into a geometry stream: matrices, vertices, textures, polygon attributes. Instead of rasterizing at 256x192, the stream becomes a `WorldDrawList` in world space (below) |
 | 2D engines (BG, OAM, VRAM banks) | A software 2D compositor produces the HUD layers and the touch screen as textures |

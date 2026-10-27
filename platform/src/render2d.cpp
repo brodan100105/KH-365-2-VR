@@ -6,6 +6,7 @@
 
 #include "guest.h"
 #include "hle.h"
+#include "hle_gx.h"
 
 namespace khvr::hle {
 
@@ -254,8 +255,10 @@ uint16_t Bright(uint16_t a, uint32_t evy, bool up) {
     return static_cast<uint16_t>(out);
 }
 
-// Renders one engine. `hud` makes the backdrop and the 3D layer transparent.
-void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
+// Renders one engine. `hud` makes the backdrop and the 3D layer transparent. With `hi`, a 3D
+// layer is also composed at `hiScale` times the resolution into it; returns whether it was.
+bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_t *hi = nullptr, int hiScale = 1,
+                  uint32_t *front = nullptr, uint32_t *back = nullptr) {
     Engine e;
     e.index = index;
     e.io = index ? 0x1000 : 0;
@@ -272,7 +275,7 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             rgba[i] = 0xffffffff;
             if (hud) hud[i] = 0;
         }
-        return;
+        return false;
     }
     if (index == 0 && displayMode == 2) {  // VRAM display: a LCDC bank shown as is (movies)
         const uint8_t *bank = VramBank(static_cast<int>((e.dispcnt >> 18) & 3));
@@ -280,7 +283,7 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             rgba[i] = ToRgba(static_cast<uint16_t>(bank[2 * i] | (bank[2 * i + 1] << 8)));
             if (hud) hud[i] = 0;
         }
-        return;
+        return false;
     }
     e.bg.resize(index ? 0x20000 : 0x80000);
     e.obj.resize(index ? 0x20000 : 0x40000);
@@ -298,6 +301,55 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
     uint16_t master = IoReg16(e.io + 0x6c);
     uint16_t backdrop = Pal(e.bgPal, 0);
 
+    // The 3D layer, when BG0 shows it: rendered once for the whole screen, at `hiScale` times the
+    // DS's resolution when the caller wants a large picture too (the 2D layers keep theirs).
+    const bool draw3d = bg0is3d && (e.dispcnt & 0x100);
+    const int s3 = hi && draw3d ? std::clamp(hiScale, 1, kMax3dScale) : 1;
+    const size_t w3 = static_cast<size_t>(kScreenW) * s3;
+    static std::vector<uint16_t> color3d;
+    static std::vector<uint8_t> alpha3d;
+    if (draw3d) {
+        color3d.resize(w3 * kScreenH * s3);
+        alpha3d.resize(w3 * kScreenH * s3);
+        GxRender(color3d.data(), alpha3d.data(), s3);
+    }
+    // The 3D sample that stands for DS pixel (x, y): the centre one of its s3 x s3.
+    auto at3d = [&](int x, int y) { return (static_cast<size_t>(y) * s3 + s3 / 2) * w3 + static_cast<size_t>(x) * s3 + s3 / 2; };
+
+    // For the large picture, per DS pixel: whether the 3D layer is in front when it has a pixel
+    // there, what lies behind it (to blend with), and the picture without it.
+    struct Recipe {
+        bool wins3d = false, fx = false;
+        uint8_t secondId = 5;
+        uint16_t second = 0, under = 0;
+    };
+    static std::vector<Recipe> recipe;
+    if (s3 > 1) recipe.assign(static_cast<size_t>(kScreenW) * kScreenH, Recipe());
+
+    const uint32_t masterMode = master >> 14, masterFactor = std::min<uint32_t>(master & 31, 16);
+    // The 3D engine's rear plane (CLEAR_COLOR): what its layer shows where no polygon is.
+    const uint32_t clearReg = IoReg32(0x350);
+    const uint16_t rearColor = static_cast<uint16_t>(clearReg & 0x7fff);
+    const int rearAlpha = static_cast<int>((clearReg >> 16) & 31);
+    // Colour effects and master brightness for the front-most layer `c`.
+    auto finish = [&](uint16_t c, int topId, uint32_t second, int secondId, bool semi, int a3d, bool fx) {
+        bool firstTarget = (bldcnt >> topId) & 1, secondTarget = (bldcnt >> (8 + secondId)) & 1;
+        if (topId == 0 && bg0is3d && a3d < 31 && secondTarget) {
+            // The 3D layer blends with what is behind it by its own alpha.
+            uint32_t a = static_cast<uint32_t>(a3d + 1) / 2;
+            c = Blend(c, static_cast<uint16_t>(second), a, 16 - a);
+        } else if (semi && secondTarget) {
+            c = Blend(c, static_cast<uint16_t>(second), eva, evb);
+        } else if (fx && firstTarget) {
+            if (effect == 1 && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
+            else if (effect == 2) c = Bright(c, evy, true);
+            else if (effect == 3) c = Bright(c, evy, false);
+        }
+        if (masterMode == 1) c = Bright(c, masterFactor, true);
+        else if (masterMode == 2) c = Bright(c, masterFactor, false);
+        return c;
+    };
+
     Line bgl[4];
     ObjLine objl;
     for (int y = 0; y < kScreenH; ++y) {
@@ -306,7 +358,10 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
             on[b] = (e.dispcnt >> (8 + b)) & 1;
             if (!on[b]) continue;
             if (b == 0 && bg0is3d) {
-                for (int x = 0; x < kScreenW; ++x) bgl[0].c[x] = kTransparent;
+                for (int x = 0; x < kScreenW; ++x) {
+                    size_t j = at3d(x, y);
+                    bgl[0].c[x] = draw3d && alpha3d[j] ? color3d[j] : kTransparent;
+                }
                 continue;
             }
             bool affine = (b == 2 && (bgMode == 2 || bgMode == 4)) || (b == 3 && (bgMode == 1 || bgMode == 2));
@@ -334,55 +389,152 @@ void RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d) {
                     if (inX && inY) mask = (winIn >> (8 * w)) & 0x3f;
                 }
             }
-            // The two front-most layers: (colour, layer id 0-3 BG, 4 OBJ, 5 backdrop).
-            uint32_t top = backdrop, second = backdrop;
-            int topId = 5, secondId = 5, topPrio = 4, secondPrio = 4;
-            bool semi = false;
-            // Layers come back to front (BG3 .. BG0, then sprites), so on equal priority the
-            // later one is in front: a lower BG number, and sprites over BGs.
-            auto consider = [&](uint32_t c, int id, int prio) {
-                if (prio <= topPrio) {
-                    second = top; secondId = topId; secondPrio = topPrio;
-                    top = c; topId = id; topPrio = prio;
-                } else if (prio <= secondPrio) {
-                    second = c; secondId = id; secondPrio = prio;
-                }
+            // The two front-most layers: (colour, layer id 0-3 BG, 4 OBJ, 5 backdrop). The 3D
+            // layer as drawn (with3d 1), left out (0), or as if it had a pixel here (2).
+            struct Stack {
+                uint32_t top, second;
+                int topId, secondId;
+                bool semi;
             };
-            for (int b = 3; b >= 0; --b) {
-                if (!on[b] || !((mask >> b) & 1) || bgl[b].c[x] == kTransparent) continue;
-                consider(bgl[b].c[x], b, IoReg16(e.io + 0x08 + 2 * b) & 3);
-            }
-            if (objOn && (mask & 0x10) && objl.c[x] != kTransparent) {
-                consider(objl.c[x], 4, objl.prio[x]);
-                semi = topId == 4 && objl.semi[x];
-            }
-            uint16_t c = static_cast<uint16_t>(top);
-            bool fx = (mask & 0x20) != 0;
-            bool firstTarget = (bldcnt >> topId) & 1, secondTarget = (bldcnt >> (8 + secondId)) & 1;
-            if (semi && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
-            else if (fx && firstTarget) {
-                if (effect == 1 && secondTarget) c = Blend(c, static_cast<uint16_t>(second), eva, evb);
-                else if (effect == 2) c = Bright(c, evy, true);
-                else if (effect == 3) c = Bright(c, evy, false);
-            }
-            uint32_t mode = master >> 14, factor = std::min<uint32_t>(master & 31, 16);
-            if (mode == 1) c = Bright(c, factor, true);
-            else if (mode == 2) c = Bright(c, factor, false);
+            auto stack = [&](int with3d) {
+                Stack st{backdrop, backdrop, 5, 5, false};
+                int topPrio = 4, secondPrio = 4;
+                // Layers come back to front (BG3 .. BG0, then sprites), so on equal priority the
+                // later one is in front: a lower BG number, and sprites over BGs.
+                auto consider = [&](uint32_t c, int id, int prio) {
+                    if (prio <= topPrio) {
+                        st.second = st.top; st.secondId = st.topId; secondPrio = topPrio;
+                        st.top = c; st.topId = id; topPrio = prio;
+                    } else if (prio <= secondPrio) {
+                        st.second = c; st.secondId = id; secondPrio = prio;
+                    }
+                };
+                // with3d 3: only what lies behind the 3D layer (it and what is in front of it left out).
+                const int prio3d = IoReg16(e.io + 0x08) & 3;
+                for (int b = 3; b >= 0; --b) {
+                    if (!on[b] || !((mask >> b) & 1)) continue;
+                    uint32_t c = bgl[b].c[x];
+                    if (with3d == 3 && bg0is3d && b > 0 && (IoReg16(e.io + 0x08 + 2 * b) & 3) < prio3d) continue;
+                    if (b == 0 && bg0is3d) {
+                        if (with3d == 0 || with3d == 3 || (with3d == 1 && c == kTransparent)) continue;
+                        if (with3d == 2) c = 0;
+                    } else if (c == kTransparent) {
+                        continue;
+                    }
+                    consider(c, b, IoReg16(e.io + 0x08 + 2 * b) & 3);
+                }
+                if (objOn && (mask & 0x10) && objl.c[x] != kTransparent && !(with3d == 3 && bg0is3d && objl.prio[x] <= prio3d)) {
+                    consider(objl.c[x], 4, objl.prio[x]);
+                    st.semi = st.topId == 4 && objl.semi[x];
+                }
+                return st;
+            };
+            const bool fx = (mask & 0x20) != 0;
+            const Stack st = stack(1);
+            const bool top3dPixel = st.topId == 0 && bg0is3d;
+            const int a3d = top3dPixel ? alpha3d[at3d(x, y)] : 31;
+            const uint16_t c = finish(static_cast<uint16_t>(st.top), st.topId, st.second, st.secondId, st.semi, a3d, fx);
             int i = y * kScreenW + x;
             rgba[i] = ToRgba(c);
-            if (hud) hud[i] = topId == 5 ? 0 : ToRgba(c);
+            // The HUD image leaves the 3D layer out: what is behind it instead.
+            if (hud) hud[i] = top3dPixel ? (st.secondId == 5 ? 0 : ToRgba(static_cast<uint16_t>(st.second)))
+                                         : (st.topId == 5 ? 0 : ToRgba(c));
+            if (front) {
+                if (!bg0is3d) {
+                    front[i] = hud ? hud[i] : 0;
+                    back[i] = 0;
+                } else {
+                    // In front of the 3D layer: the 2D that wins over it even where it has a pixel.
+                    const Stack forced = stack(2);
+                    if (forced.topId == 0 || forced.topId == 5) {
+                        front[i] = 0;
+                    } else if (forced.secondId == 0 &&
+                               (((bldcnt >> 8) & 1) &&
+                                ((forced.semi) || (fx && effect == 1 && ((bldcnt >> forced.topId) & 1))))) {
+                        // It is blended with the 3D layer right behind it (a tint or a fade layer,
+                        // often all but invisible): its share of the blend becomes its opacity.
+                        uint16_t t = static_cast<uint16_t>(forced.top);
+                        if (masterMode == 1) t = Bright(t, masterFactor, true);
+                        else if (masterMode == 2) t = Bright(t, masterFactor, false);
+                        front[i] = eva ? ToRgba(t, static_cast<uint8_t>(std::min<uint32_t>(eva, 16) * 255 / 16)) : 0;
+                    } else {
+                        front[i] = ToRgba(finish(static_cast<uint16_t>(forced.top), forced.topId, forced.second,
+                                                 forced.secondId, forced.semi, 31, fx));
+                    }
+                    // Behind it: the 2D behind the 3D layer, under the 3D engine's rear plane where
+                    // that is opaque (the colour the DS shows wherever no polygon is).
+                    const Stack under = stack(3);
+                    uint16_t b = finish(static_cast<uint16_t>(under.top), under.topId, under.second, under.secondId,
+                                        under.semi, 31, fx);
+                    if (rearAlpha > 0) {
+                        uint16_t rear = rearColor;
+                        if (masterMode == 1) rear = Bright(rear, masterFactor, true);
+                        else if (masterMode == 2) rear = Bright(rear, masterFactor, false);
+                        const uint32_t a = rearAlpha >= 31 ? 16 : static_cast<uint32_t>(rearAlpha + 1) / 2;
+                        b = Blend(rear, b, a, 16 - a);
+                    }
+                    back[i] = ToRgba(b);
+                }
+            }
+            if (s3 > 1) {
+                const Stack forced = stack(2);
+                Recipe &r = recipe[i];
+                r.wins3d = forced.topId == 0;
+                if (r.wins3d) {
+                    const Stack under = stack(0);
+                    r.under = finish(static_cast<uint16_t>(under.top), under.topId, under.second, under.secondId,
+                                     under.semi, 31, fx);
+                    r.second = static_cast<uint16_t>(forced.second);
+                    r.secondId = static_cast<uint8_t>(forced.secondId);
+                    r.fx = fx;
+                }
+            }
         }
     }
+    if (front && bg0is3d) {
+        // The flat 3D pieces the world capture leaves out (orthographic HUD elements) go in front.
+        static uint16_t hudColor[kScreenW * kScreenH];
+        static uint8_t hudAlpha[kScreenW * kScreenH];
+        GxRender(hudColor, hudAlpha, 1, true);
+        for (int i = 0; i < kScreenW * kScreenH; ++i)
+            if (hudAlpha[i] && !(front[i] >> 24))
+                front[i] = ToRgba(hudColor[i], static_cast<uint8_t>(hudAlpha[i] * 255 / 31));
+    }
+    if (s3 <= 1) return false;
+    // The large picture: the 3D layer's own pixels where it is in front, the DS's 2D picture
+    // (each pixel s3 x s3) everywhere else.
+    for (size_t yy = 0; yy < static_cast<size_t>(kScreenH) * s3; ++yy) {
+        const int y = static_cast<int>(yy / s3);
+        uint32_t *row = hi + yy * w3;
+        for (size_t xx = 0; xx < w3; ++xx) {
+            const int x = static_cast<int>(xx / s3);
+            const int i = y * kScreenW + x;
+            const Recipe &r = recipe[i];
+            if (!r.wins3d) {
+                row[xx] = rgba[i];
+                continue;
+            }
+            const size_t j = yy * w3 + xx;
+            const int a = alpha3d[j];
+            row[xx] = a == 0 ? ToRgba(r.under) : ToRgba(finish(color3d[j], 0, r.second, r.secondId, false, a, r.fx));
+        }
+    }
+    return true;
 }
 
 }  // namespace
 
-void Render2D(PlatformScreens *out) {
+void Render2D(PlatformScreens *out, int scale3d, bool split) {
     // POWCNT1 bit 15: engine A on the top screen.
     bool aOnTop = IoReg16(0x304) & 0x8000;
     bool has3d = false;
+    out->topScale = 1;
     if (aOnTop) {
-        RenderEngine(0, out->top, out->topHud, &has3d);
+        scale3d = std::clamp(scale3d, 1, kMax3dScale);
+        if (scale3d > 1) out->topHi.resize(static_cast<size_t>(kScreenW * scale3d) * kScreenH * scale3d);
+        if (RenderEngine(0, out->top, out->topHud, &has3d, scale3d > 1 ? out->topHi.data() : nullptr, scale3d,
+                         split ? out->topFront : nullptr, split ? out->topBack : nullptr))
+            out->topScale = scale3d;
         RenderEngine(1, out->bottom, nullptr, nullptr);
     } else {
         RenderEngine(1, out->top, out->topHud, nullptr);

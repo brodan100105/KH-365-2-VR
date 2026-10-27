@@ -15,6 +15,9 @@ namespace khvr::hle {
 
 constexpr int kScreenW = PlatformScreens::kWidth, kScreenH = PlatformScreens::kHeight;
 
-void Render2D(PlatformScreens *out);
+// `scale3d` > 1: the top screen's 3D layer is drawn at that many times the DS's resolution too,
+// into out->topHi (out->topScale says whether it was).
+// `split`: also out->topFront / topBack, for a captured 3D world in between.
+void Render2D(PlatformScreens *out, int scale3d = 1, bool split = false);
 
 }  // namespace khvr::hle

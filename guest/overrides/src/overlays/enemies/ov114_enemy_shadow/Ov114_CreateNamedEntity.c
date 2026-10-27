@@ -1,0 +1,33 @@
+/* Port copy of the decomp's Ov114_CreateNamedEntity with a write watch on the first Shadow's
+ * spawn handler (+0x1cc): it is set by func_ov107_020c6624 here but reads 0 when the spawner
+ * places the Shadow, so the boot log names what clears it. */
+/* Construct a named object: allocate 0x39c bytes, open the resource pack Ms/<id>.p of Shadow (its
+ * handle goes to +0x1a4), install the 020d1638 callback (+0x18c) and init. Return it. */
+
+#include "game/enemy_common.h"
+#include "game/enemy_id.h"
+#include "khvr_host.h"
+
+extern int CallocInstance(int a);
+extern int OS_SPrintf(char *dst, const char *fmt, ...);
+extern void func_ov107_020c6624(int a, int b);
+extern const char gOv114PackPathFmt[];
+extern void Ov114_Construct(int);
+int Ov114_CreateNamedEntity(int param_1) {
+    char buf[0x1d] = {0};
+    int obj = CallocInstance(0x39c);
+    *(signed char *)(obj + 0x19c) = 0;
+    OS_SPrintf(buf, gOv114PackPathFmt, ENEMY_SHADOW);
+    *(int *)(obj + 0x1a4) = Ov107_OpenCachedResourceByName(buf);
+    *(int *)(obj + 0x18c) = (int)&Ov114_Construct;
+    func_ov107_020c6624(obj, param_1);
+    {
+        static int watched;
+        khvr_host_trace("shadow: created (address, spawn handler)", obj, *(int *)(obj + 0x1cc));
+        if (!watched) {
+            watched = 1;
+            khvr_host_watch((void *)(obj + 0x1cc), 4);
+        }
+    }
+    return obj;
+}

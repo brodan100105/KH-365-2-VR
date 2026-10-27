@@ -36,6 +36,9 @@ void BusWrite(uint32_t a, uint32_t v, uint32_t size);
 
 // Address of an exported guest symbol (function table index for functions), 0 if unknown.
 uint32_t SymbolAddress(const char *name);
+// The name of the guest function a function pointer (an indirect-table index) refers to, or
+// null for anything else.
+const char *FunctionName(uint32_t pointer);
 
 // Calls guest function `index` (a function pointer value) with up to four integer arguments, the
 // way an ARM `blx` would: missing parameters read as 0, extra ones are ignored.

@@ -12,6 +12,9 @@ void khvr_host_load_context(void *context);  /* switch to the thread that owns `
 void khvr_host_halt(void);
 /* Interrupts were just re-enabled: deliver any that are pending. */
 void khvr_host_irq_window(void);
+/* One turn of a busy-wait loop (guest/build_guest.py adds it to the SDK's): pending interrupts
+ * are delivered if the guest has them enabled, as the hardware would mid-loop. */
+void khvr_host_spin(void);
 void khvr_host_reset(void);
 /* The game stopped on a fatal error (OS_Terminate). */
 void khvr_host_terminate(void);
@@ -20,5 +23,15 @@ void khvr_host_read_rom(unsigned long offset, void *dst, unsigned long len);
 void khvr_host_start_overlay(unsigned long id);
 /* Debug output (OS_Printf and the port's own messages). */
 void khvr_host_print(const char *text);
+/* A traced event for the boot log (guest/runtime/trace.c): `b` is shown by function name when it
+ * is a guest function. */
+void khvr_host_trace(const char *what, unsigned long a, unsigned long b);
+/* Watch `size` bytes at `addr`: the boot log names the first stores into them (platform/src/hle_io.cpp). */
+void khvr_host_watch(const void *addr, unsigned long size);
+/* Movie pictures (platform/src/movie.cpp): the stream opened by its NitroFS path, the frame due
+ * at each vertical blank, and its end. */
+void khvr_host_movie_open(const char *path);
+void khvr_host_movie_frame(unsigned long frame);
+void khvr_host_movie_close(void);
 
 #endif

@@ -16,6 +16,8 @@ constexpr float kVelocitySmoothing = 0.012f;
 constexpr float kGuardMaxTiltDeg = 35.0f;
 constexpr float kGuardMaxReach = 0.75f;
 constexpr float kGuardHoldSeconds = 0.12f;
+// Dodge: a flick is released within this long; held longer, the stick is walking.
+constexpr float kFlickMaxHold = 0.25f;
 // Physical jump: upward head speed (m/s).
 constexpr float kJumpSpeed = 1.3f;
 
@@ -161,17 +163,27 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         jumpCooldown_ = 0.6f;
     }
 
-    // ---- Dodge: flick the stick from center to its edge quickly ----
+    // ---- Dodge: flick the stick from center to its edge and let go ----
+    // Pushing the stick to start walking is as fast as a flick, so the flick only counts once the
+    // stick springs back: holding it at the edge is walking.
     float mag = Length(in.moveAxis);
     if (mag < 0.2f) {
+        if (flickPending_) {
+            if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick) {
+                out.dodge = true;
+                out.dodgeDirection = flickDirection_;
+            }
+            flickPending_ = false;
+        }
         // Resting at center arms a flick.
         stickRestTime_ += in.dt;
         flickBandTime_ = 0.0f;
         stickWasCentered_ = stickRestTime_ > 0.08f;
     } else if (mag > 0.9f) {
-        if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick && stickWasCentered_) {
-            out.dodge = true;
-            out.dodgeDirection = Normalize(in.moveAxis);
+        if (stickWasCentered_) {
+            flickPending_ = true;
+            flickHeldTime_ = 0.0f;
+            flickDirection_ = Normalize(in.moveAxis);
         }
         stickWasCentered_ = false;
         stickRestTime_ = 0.0f;
@@ -180,6 +192,10 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         stickRestTime_ = 0.0f;
         flickBandTime_ += in.dt;
         if (flickBandTime_ > 0.07f) stickWasCentered_ = false;
+    }
+    if (flickPending_ && mag >= 0.2f) {
+        flickHeldTime_ += in.dt;
+        if (flickHeldTime_ > kFlickMaxHold) flickPending_ = false;
     }
 
     return out;

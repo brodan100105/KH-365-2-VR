@@ -1,3 +1,4 @@
+#include <cstring>
 // Unit tests for the platform-independent VR core. Run with `ctest` or ./khvr_core_tests.
 #include <cmath>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include "khvr/input_mapper.h"
 #include "khvr/math.h"
 #include "khvr/settings.h"
+#include "khvr/upscale.h"
 #include "khvr/settings_panel.h"
 #include "khvr/view_rig.h"
 
@@ -57,6 +59,29 @@ TrackingFrame MakeTracking(Vec3 head = {0, 1.6f, 0}, float dt = 1.0f / 90.0f) {
     t.dt = dt;
     t.head.position = head;
     return t;
+}
+
+// ---------------------------------------------------------------- upscale
+
+TEST(UpscaleScale2xFlatAndDiagonal) {
+    // A flat image stays flat.
+    const uint32_t flat[4] = {7, 7, 7, 7};
+    uint32_t out[16];
+    Scale2x(flat, 2, 2, out);
+    for (uint32_t v : out) CHECK(v == 7);
+    // A diagonal edge: the corner between two equal neighbours takes their colour.
+    //   1 1 0       1 1 1 1 0 0
+    //   1 0 0  ->   1 1 1 0 0 0  (row 1, pixel (1,1): its top-left corner becomes 1)
+    //   0 0 0
+    const uint32_t diag[9] = {1, 1, 0, 1, 0, 0, 0, 0, 0};
+    uint32_t big[36];
+    Scale2x(diag, 3, 3, big);
+    CHECK(big[2 * 6 + 2] == 1);  // (1,1)'s top-left corner
+    CHECK(big[2 * 6 + 3] == 0);  // its top-right corner keeps its own colour
+    CHECK(big[0] == 1 && big[5] == 0);
+    uint32_t scratch[36], big4[144];
+    Scale4x(diag, 3, 3, scratch, big4);
+    CHECK(big4[0] == 1 && big4[143] == 0);
 }
 
 // ---------------------------------------------------------------- math
@@ -139,7 +164,13 @@ TEST(SettingsStepAndFormat) {
 }
 
 TEST(SettingsEveryTabHasOptions) {
-    CHECK(SettingTabs().size() == 10);
+    // The panel has two rows of six tabs, and room for eleven options on a tab.
+    CHECK(SettingTabs().size() == 12);
+    for (const char *tab : SettingTabs()) {
+        int n = 0;
+        for (const SettingDef &d : SettingDefs()) n += std::strcmp(d.tab, tab) == 0;
+        CHECK(n >= 1 && n <= 11);
+    }
     for (const SettingDef &d : SettingDefs()) {
         CHECK(d.help && *d.help);
         if (d.type == SettingType::Enum) CHECK(d.optionKeys.size() == d.optionLabels.size());
@@ -339,7 +370,21 @@ TEST(CombatStickFlickDodges) {
     in.dt = 1.0f / 90.0f;
     for (int i = 0; i < 20; ++i) r.Update(s, in);
     in.moveAxis = {1, 0, 0};
-    CHECK(r.Update(s, in).dodge);
+    CHECK(!r.Update(s, in).dodge);  // not yet: it could be the start of walking
+    r.Update(s, in);
+    in.moveAxis = {};
+    CombatFrame flick = r.Update(s, in);
+    CHECK(flick.dodge);
+    CHECK(flick.dodgeDirection.x > 0.9f);
+    // Pushing the stick to the edge fast and holding it is walking, not a dodge.
+    CombatRecognizer hold;
+    for (int i = 0; i < 20; ++i) hold.Update(s, in);
+    bool held = false;
+    in.moveAxis = {0, 0, -1};
+    for (int i = 0; i < 90; ++i) held |= hold.Update(s, in).dodge;
+    in.moveAxis = {};
+    for (int i = 0; i < 5; ++i) held |= hold.Update(s, in).dodge;
+    CHECK(!held);
     // Walking up to full speed slowly is not a dodge.
     CombatRecognizer walk;
     in.moveAxis = {};
@@ -438,19 +483,92 @@ TEST(PanelClicksChangeSettings) {
     p.Open();
     CHECK(p.Redraw(s));
     CHECK(!p.Redraw(s));  // nothing changed
-    // The first row of the View tab is the view mode; its ">" sits at the right edge.
-    float rowY = 174 + 23, incX = SettingsPanel::kWidth - 24 - 28;
-    p.Pointer(true, incX, rowY, true, s);
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    // Quick setup lists the view mode among the most used options; its ">" steps it.
+    CHECK(p.tab() == 0);
+    CHECK(p.Find(B::Increase, static_cast<int>(SettingId::ViewMode), &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(s.Enum<ViewMode>(SettingId::ViewMode) == ViewMode::FirstPerson);
     CHECK(p.Redraw(s));
-    // Second tab button (Screen), then its Defaults button undoes a change.
+    // The Screens page, then its Defaults button undoes a change.
     s.Set(SettingId::ScreenDistance, 8.0f);
-    p.Pointer(true, 24 + 200, 64 + 20, true, s);
+    CHECK(p.Find(B::Tab, 1, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(p.tab() == 1);
-    p.Pointer(true, 24 + 100, SettingsPanel::kHeight - 12 - 28, true, s);
+    CHECK(p.Find(B::Defaults, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK_NEAR(s.Get(SettingId::ScreenDistance), 4.5f, 1e-6f);
-    p.Pointer(true, SettingsPanel::kWidth - 24 - 100, SettingsPanel::kHeight - 12 - 28, true, s);
+    // The button guide toggles; a page leaves it.
+    CHECK(p.Find(B::Guide, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
+    CHECK(p.guideOpen());
+    CHECK(p.Redraw(s));
+    CHECK(p.Find(B::Tab, 1, &x, &y));
+    p.Pointer(true, x, y, true, s);
+    CHECK(!p.guideOpen());
+    CHECK(p.Find(B::Close, 0, &x, &y));
+    p.Pointer(true, x, y, true, s);
     CHECK(!p.isOpen());
+}
+
+TEST(PanelProfilesSetEverythingAtOnce) {
+    Settings s;
+    SettingsPanel p;
+    p.Open();
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    CHECK(CurrentProfile(s) == SettingsProfile::GiantScreen);  // the defaults
+    // "DS in your hands": passthrough, the handheld alone, held in a hand.
+    CHECK(p.Find(B::Profile, static_cast<int>(SettingsProfile::DsInHands), &x, &y));
+    p.Pointer(true, x, y, true, s);
+    CHECK(s.Bool(SettingId::Passthrough));
+    CHECK(s.Enum<HandheldDs>(SettingId::HandScreenDs) == HandheldDs::Only);
+    CHECK(s.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement) == BottomScreenPlacement::InHand);
+    CHECK(CurrentProfile(s) == SettingsProfile::DsInHands);
+    // "Both screens": no handheld, nothing in the hand, both screens on the giant screen.
+    ApplyProfile(SettingsProfile::BothScreens, s);
+    CHECK(!s.Bool(SettingId::Passthrough));
+    CHECK(s.Bool(SettingId::ScreenBoth));
+    CHECK(s.Enum<HandheldDs>(SettingId::HandScreenDs) == HandheldDs::Off);
+    CHECK(s.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement) == BottomScreenPlacement::Hidden);
+    CHECK(CurrentProfile(s) == SettingsProfile::BothScreens);
+    // Changing one of them by hand leaves the profile.
+    s.SetBool(SettingId::Passthrough, true);
+    CHECK(CurrentProfile(s) == SettingsProfile::Count);
+    ApplyProfile(SettingsProfile::GiantScreen, s);
+    CHECK(CurrentProfile(s) == SettingsProfile::GiantScreen);
+}
+
+TEST(PanelPagesScroll) {
+    Settings s;
+    SettingsPanel p;
+    p.Open();
+    p.SetTab(3);  // View: four sections, more lines than fit
+    using B = SettingsPanel::Button;
+    float x = 0, y = 0;
+    CHECK(p.Find(B::ScrollDown, 0, &x, &y));
+    CHECK(!p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));  // far down
+    for (int i = 0; i < 40; ++i) p.Scroll(1);
+    CHECK(p.scroll() > 0);
+    CHECK(p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));
+    float before = s.Get(SettingId::ComfortSeatedHeight);
+    p.Pointer(true, x, y, true, s);
+    CHECK(s.Get(SettingId::ComfortSeatedHeight) != before);
+    p.Scroll(-1000);
+    CHECK(p.scroll() == 0);
+    // Every option is on some page.
+    for (const SettingDef &d : SettingDefs()) {
+        bool found = false;
+        for (int page = 1; page < SettingsPanel::PageCount() && !found; ++page) {
+            p.SetTab(page);
+            for (int i = 0; i < 60 && !found; ++i) {
+                found = p.Find(B::Row, static_cast<int>(d.id), &x, &y);
+                p.Scroll(1);
+            }
+        }
+        CHECK(found);
+    }
 }
 
 // ---------------------------------------------------------------- demo game

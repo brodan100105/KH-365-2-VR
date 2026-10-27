@@ -9,6 +9,7 @@
 #include <string>
 
 #include "hle.h"
+#include "platform_internal.h"
 
 namespace khvr::hle {
 
@@ -26,11 +27,26 @@ _Unwind_Reason_Code Collect(struct _Unwind_Context *ctx, void *arg) {
 }
 }  // namespace
 
+int CaptureBacktrace(void **pcs, int max) {
+    Frames f;
+    _Unwind_Backtrace(Collect, &f);
+    int n = f.n < max ? f.n : max;
+    for (int i = 0; i < n; ++i) pcs[i] = f.pcs[i];
+    return n;
+}
+
 void LogBacktrace(const char *why) {
     Frames f;
     _Unwind_Backtrace(Collect, &f);
-    Log("backtrace (%s), %d frames:", why, f.n);
-    for (int i = 1; i < f.n; ++i) {
+    LogFrames(why, f.pcs, f.n, 1);
+}
+
+void LogFrames(const char *why, void *const *pcs, int n, int skip) {
+    Frames f;
+    f.n = n < 48 ? n : 48;
+    for (int i = 0; i < f.n; ++i) f.pcs[i] = pcs[i];
+    Log("backtrace (%s), %d frames:", why, f.n - skip);
+    for (int i = skip; i < f.n; ++i) {
         Dl_info info{};
         char line[256];
         if (dladdr(f.pcs[i], &info) && info.dli_fname) {
@@ -67,6 +83,7 @@ extern "C" void khvr_on_trap(int code) {
 }
 
 extern "C" void w2c_env_khvr_host_terminate(struct w2c_env *) {
+    if (khvr::hle::ThreadsFinishExit()) return;
     khvr::hle::Log("game: OS_Terminate - the game stopped on a fatal error");
     khvr::hle::LogBacktrace("OS_Terminate");
     khvr::hle::PlatformReportStop("the game stopped on a fatal error (OS_Terminate)");

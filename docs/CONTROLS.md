@@ -2,6 +2,8 @@
 
 DS buttons are named as the game names them. The defaults follow the game's **Type A** controls
 (camp menu > Config); which DS button each gesture presses can be changed on the **Controls** tab.
+In the headset, **Button guide** at the bottom of the VR settings panel shows this on a drawing of
+both controllers.
 
 ## Always
 
@@ -16,7 +18,7 @@ DS buttons are named as the game names them. The defaults follow the game's **Ty
 | Right thumbstick left/right | Turn (snap or smooth, **Comfort** tab) |
 | Right thumbstick click, tap | Recenter (view, giant screen and panels) |
 | Right thumbstick click, hold | Switch between panoramic and first person (**View > Quick mode switch**) |
-| Right trigger on the touch screen | Touch (laser pointer) |
+| Trigger of the other hand, aimed at the touch screen | Touch (laser pointer; the screen is held or worn on one hand, see Settings > Hand screen) |
 | Right trigger on the settings panel | Select |
 
 ## Panoramic (third person) and giant screen
@@ -33,7 +35,7 @@ DS buttons are named as the game names them. The defaults follow the game's **Ty
 | Swing the Keyblade | Attack: one swing is one press of **Swing presses** (A) | Combat > Swing threshold, Swing cooldown |
 | Hold the Keyblade level across your body, in front of your face | Guard: holds **Guard presses** (Y) | Combat > Guard gesture |
 | Point the off hand where you look and pull its trigger | Cast the selected command (**Cast presses**, X) | Combat > Magic / commands |
-| Flick the left stick from center to its edge | Dodge roll in that direction (**Dodge presses**, Y) | Combat > Dodge roll |
+| Flick the left stick to its edge and let go | Dodge roll in that direction (**Dodge presses**, Y) | Combat > Dodge roll |
 | Jump in your room | Jump (**Physical jump presses**, B) | Combat > Physical jump (off by default) |
 | Off-hand grip | **Grip presses** (R, lock-on) | |
 | Weapon-hand trigger | DS L | |

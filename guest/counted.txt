@@ -1,0 +1,60 @@
+# Guest functions whose calls the platform counts and prints in the boot log's heartbeat
+# (guest/postprocess.py inserts the counter at their entry). One name per line.
+# The text pipeline: fonts, the character canvas, glyph lookup and drawing.
+Font_LoadUTF16
+NNS_G2dFontInitUTF16
+NNS_G2dCharCanvasInitForBG
+InitCharCanvas
+Text_DrawAlignedLines
+Text_DrawLine
+Text_DrawGlyph
+GetGlyphIndex
+LetterChar
+DrawGlyphLine
+ClearChar
+# Enemies: placing them from the field's markers, the enemy overlay and spawn, and the Shadow's
+# (ov114) life: built, ticked, fading in out of the ground, chasing, hit, removed.
+Ov002_CreateActorFromMarker
+Ov107_SpawnEntityClass
+Ov107_LoadEnemyOverlay
+Ov107_OpenCachedResourceByName
+Ov114_CreateNamedEntity
+Ov114_Construct
+Ov114_TickAndSyncTwoModelXforms
+Ov114_AiEnterFadeIn
+Ov114_AiFadeInTick
+Ov114_AiEnterPursuit
+Ov114_OnHit
+Ov114_Destroy
+# Encounters: the spawners that bind the waiting enemies when Roxas comes near, the regions
+# that wake them, and the Shadow's AI from its first state to rising out of the ground.
+func_ov107_020c0ea0
+Ov107_Spawner_Run
+Ov107_Spawner_FindFreeActor
+Ov107_Spawner_PlaceActors
+Ov107_Pillar_EnterRegion
+Ov107_HandleRegionEvent
+Ov107_Region_Update
+Ov107_Region_RequestJoin
+Ov114_CreateRegistryEntryAndLink
+Ov114_InitNodeAndRegisterHandlers
+Ov114_SetVisFlagsEnterState
+Ov114_AiStep_QueueStoredActionIfActive
+Ov114_DispatchSubStateByte
+Ov114_HandleMessage
+# What should make a placed Shadow active: the spawn event (0) and the despawn check (2) of its
+# +0x1cc handler, the stance reset, and the pose message that copies the stance into the flags.
+func_ov107_020c73a0
+Ov107_ResetStanceBase
+Ov107_AiState_SendPose
+Ov107_SendPoseMessage
+Ov107_AiState_OnSyncMessage
+# Sound effects: started from the archive (menus, NPCs), positioned (battle), the listener.
+PlaySound
+PlaySoundChecked
+Slot_Spawn
+Sound_UpdateSpatial
+Camera_UpdateSoundListener
+SoundMgr_SetListener
+SoundMgr_SetSeEnabled
+Res_RequestIdPair

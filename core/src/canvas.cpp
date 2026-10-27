@@ -1,5 +1,7 @@
 #include "khvr/canvas.h"
 
+#include <cstdlib>
+
 #include <algorithm>
 
 #include "font_data.h"
@@ -44,6 +46,23 @@ void Canvas::FillCircle(int cx, int cy, int r, uint32_t color) {
     for (int yy = -r; yy <= r; ++yy)
         for (int xx = -r; xx <= r; ++xx)
             if (xx * xx + yy * yy <= r * r) Blend(cx + xx, cy + yy, color, 255);
+}
+
+void Canvas::StrokeCircle(int cx, int cy, int r, uint32_t color, int thickness) {
+    const int inner = std::max(0, r - thickness);
+    for (int yy = -r; yy <= r; ++yy)
+        for (int xx = -r; xx <= r; ++xx) {
+            int d = xx * xx + yy * yy;
+            if (d <= r * r && d > inner * inner) Blend(cx + xx, cy + yy, color, 255);
+        }
+}
+
+void Canvas::DrawLine(int x0, int y0, int x1, int y1, uint32_t color, int thickness) {
+    const int steps = std::max(std::abs(x1 - x0), std::abs(y1 - y0));
+    for (int i = 0; i <= steps; ++i) {
+        int x = steps ? x0 + (x1 - x0) * i / steps : x0, y = steps ? y0 + (y1 - y0) * i / steps : y0;
+        FillRect(x - thickness / 2, y - thickness / 2, thickness, thickness, color);
+    }
 }
 
 int Canvas::TextWidth(const std::string &text, int scale) {

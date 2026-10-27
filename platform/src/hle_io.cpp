@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <vector>
@@ -134,6 +135,7 @@ void RunDma(int ch) {
     if (timing == 5) {
         LogOnce("dma-card", "dma: card-timed DMA (ROM reads go through CARDi_ReadRom instead)");
     }
+    WatchHostWrite(dstStep < 0 ? dst - (count - 1) * unit : dst, count * unit, "DMA");
     // A DMA "fill" reads its source from the channel's fill register.
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t v = BusRead(src, unit);
@@ -260,6 +262,11 @@ uint16_t IpcFifoCnt() {
 void IpcAfterSend() {
     if (Arm7HasReply() && (R16(0x184) & 0x400)) gIf |= kIrqIpcRecv;
 }
+}  // namespace
+
+void IpcRaiseIfReply() { IpcAfterSend(); }
+
+namespace {
 
 // ---------------------------------------------------------------------------------------------
 // Synthesized registers
@@ -288,7 +295,6 @@ uint16_t Read16Reg(uint32_t off) {
     case 0x184: return IpcFifoCnt();
     case 0x214: return static_cast<uint16_t>(gIf);
     case 0x216: return static_cast<uint16_t>(gIf >> 16);
-    case 0x600: return 0;                                  // GXSTAT low: nothing busy, no tests
     case 0x602: return static_cast<uint16_t>(0x0600 | (R16(0x602) & 0xc000));  // FIFO empty
     default:
         if (off >= 0x600 && off < 0x700) return GxReadRegister(off);
@@ -347,6 +353,7 @@ uint32_t &RegIf() { return gIf; }
 uint64_t IoCycles() { return gCycles; }
 
 void IoReset() {
+    GxReset();
     gRegs.fill(0);
     gIf = 0;
     gCycles = 0;
@@ -474,6 +481,24 @@ const uint8_t *VramExtPalette(int engine, bool obj, int slot) {
     return nullptr;
 }
 
+void VramTexture(uint8_t *tex, uint8_t *pal) {
+    std::memset(tex, 0, kTexVramSize);
+    std::memset(pal, 0, kTexPalSize);
+    for (int b = 0; b < 7; ++b) {
+        uint8_t cnt = gRegs[0x240 + b];
+        if (!(cnt & 0x80) || (cnt & 7) != 3) continue;
+        uint32_t ofs = (cnt >> 3) & 3;
+        const uint8_t *bank = gBanks[b].data();
+        if (b <= 3) {
+            for (uint32_t i = 0; i < 0x20000; ++i) tex[ofs * 0x20000 + i] |= bank[i];
+        } else {
+            uint32_t at = b == 4 ? 0 : 0x4000 * (ofs & 1) + 0x10000 * (ofs >> 1);
+            uint32_t size = kBankSize[b];
+            for (uint32_t i = 0; i < size && at + i < kTexPalSize; ++i) pal[at + i] |= bank[i];
+        }
+    }
+}
+
 uint8_t *VramBank(int bank) { return gBanks[bank].data(); }
 uint32_t VramBankSize(int bank) { return kBankSize[bank]; }
 uint8_t VramRead8(uint32_t addr) { return VramByte(addr); }
@@ -487,3 +512,84 @@ uint32_t IoReg32(uint32_t off) { return R32(off); }
 // Guest imports for the trapped accesses (guest/postprocess.py).
 extern "C" uint64_t khvr_io_read(uint32_t addr, uint32_t size) { return khvr::hle::IoRead(addr, size); }
 extern "C" void khvr_io_write(uint32_t addr, uint64_t value, uint32_t size) { khvr::hle::IoWrite(addr, value, size); }
+
+// ---------------------------------------------------------------------------------------------
+// Write watch: logs the first stores into a few bytes of guest data, with the host call stack
+// (guest functions show as w2c_khdays_<name>), to find what overwrites them. The guest's stores
+// check the range (guest/postprocess.py); the platform's own writes call WatchHostWrite.
+// ---------------------------------------------------------------------------------------------
+extern "C" {
+uint32_t khvr_watch_lo = 0, khvr_watch_len = 0;
+}
+
+namespace khvr::hle {
+namespace {
+uint32_t gWatchStart = 0, gWatchSize = 0;
+int gWatchHits = 0;
+constexpr int kMaxWatchHits = 10;
+}  // namespace
+
+void WatchSet(uint32_t addr, uint32_t size, const char *what) {
+    gWatchStart = addr;
+    gWatchSize = size;
+    // A store of up to 8 bytes that starts just before the range still overlaps it.
+    khvr_watch_lo = addr - 7;
+    khvr_watch_len = size + 7;
+    Log("watch: %u bytes at 0x%08x (%s)", size, addr, what);
+}
+
+void WatchHostWrite(uint32_t addr, uint32_t len, const char *what) {
+    if (!gWatchSize || gWatchHits >= kMaxWatchHits) return;
+    if (addr >= gWatchStart + gWatchSize || addr + len <= gWatchStart) return;
+    ++gWatchHits;
+    Log("watch: %s wrote 0x%x bytes at 0x%08x, over the watched bytes", what, len, addr);
+    LogBacktrace("watch");
+}
+}  // namespace khvr::hle
+
+extern "C" void khvr_watch_hit(uint32_t addr, uint64_t value, uint32_t size) {
+    using namespace khvr::hle;
+    if (addr >= gWatchStart + gWatchSize || addr + size <= gWatchStart || gWatchHits >= kMaxWatchHits) return;
+    ++gWatchHits;
+    Log("watch: guest stored 0x%llx (%u bytes) at 0x%08x", static_cast<unsigned long long>(value), size, addr);
+    LogBacktrace("watch");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Screen snapshots: everything the 2D renderer reads (the I/O registers, the nine VRAM banks,
+// palettes and OAM), so a screen seen on the headset can be rendered again on the desktop
+// (khdays_run --render-snapshot).
+// ---------------------------------------------------------------------------------------------
+namespace khvr::hle {
+namespace {
+constexpr char kSnapMagic[8] = {'K', 'H', 'V', 'R', 'S', 'N', 'P', '1'};
+constexpr uint32_t kPalBase = 0x05000000, kOamBase = 0x07000000, kPalOamSize = 0x800;
+}  // namespace
+
+bool SnapshotWrite(const std::string &path) {
+    FILE *f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    bool ok = std::fwrite(kSnapMagic, 1, 8, f) == 8 && std::fwrite(gRegs.data(), 1, kIoSize, f) == kIoSize;
+    for (int b = 0; b < 9 && ok; ++b) ok = std::fwrite(gBanks[b].data(), 1, kBankSize[b], f) == kBankSize[b];
+    ok = ok && std::fwrite(GuestMem() + kPalBase, 1, kPalOamSize, f) == kPalOamSize &&
+         std::fwrite(GuestMem() + kOamBase, 1, kPalOamSize, f) == kPalOamSize;
+    return std::fclose(f) == 0 && ok;
+}
+
+bool SnapshotRead(const std::string &path) {
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    char magic[8];
+    bool ok = std::fread(magic, 1, 8, f) == 8 && std::memcmp(magic, kSnapMagic, 8) == 0 &&
+              std::fread(gRegs.data(), 1, kIoSize, f) == kIoSize;
+    for (int b = 0; b < 9 && ok; ++b) {
+        gBanks[b].assign(kBankSize[b], 0);
+        ok = std::fread(gBanks[b].data(), 1, kBankSize[b], f) == kBankSize[b];
+    }
+    ok = ok && std::fread(GuestMem() + kPalBase, 1, kPalOamSize, f) == kPalOamSize &&
+         std::fread(GuestMem() + kOamBase, 1, kPalOamSize, f) == kPalOamSize;
+    std::fclose(f);
+    Remap();
+    return ok;
+}
+}  // namespace khvr::hle

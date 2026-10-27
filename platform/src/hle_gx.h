@@ -1,15 +1,41 @@
-// The 3D geometry engine. Iteration 2 only keeps the guest's view of it consistent (the FIFO
-// always drains, status reads are idle); iteration 3 decodes the command stream into the
-// world-space draw lists the VR renderer uses (docs/ARCHITECTURE.md).
+// The 3D engine: the geometry engine the guest feeds through the GX FIFO and command ports
+// (matrices, lighting, texture coordinates, primitives, clipping, the box/position/vector tests)
+// and a software rasterizer that draws the polygons of the last SWAP_BUFFERS the way the DS's
+// rendering engine does (textures in all seven formats, modulate/decal/toon/highlight, alpha
+// test and blending, depth or W buffer, fog). Its picture is engine A's BG0 when DISPCNT puts
+// the 3D layer there (render2d.cpp).
+//
+// The VR view will later take the same polygons as world-space draw lists (docs/ROADMAP.md).
 #pragma once
 
 #include <cstdint>
 
+#include "khvr/platform.h"
+
 namespace khvr::hle {
 
-void GxWrite(uint32_t addr, uint32_t value, uint32_t size);
+using khvr::PlatformWorld;
+
+void GxReset();
+void GxWrite(uint32_t addr, uint32_t value, uint32_t size);  // 0x04000400-0x040005ff
 uint16_t GxReadRegister(uint32_t off);  // 0x600-0x6ff, offset from 0x04000000
 uint32_t GxCommandsThisFrame();
 void GxVBlank();
+
+// The 3D layer at `scale` times the DS's 256 x 192 (1 to kMax3dScale): BGR555 colour and 5-bit
+// alpha per pixel (alpha 0: nothing there).
+constexpr int kMax3dScale = 4;
+// `hudOnly`: just the polygons drawn with another projection than the scene's (the flat HUD
+// pieces the world capture leaves out).
+void GxRender(uint16_t *color, uint8_t *alpha, int scale = 1, bool hudOnly = false);
+// The polygons of the last SWAP_BUFFERS drawn with the game's main camera, in world space.
+void GxCaptureWorld(PlatformWorld *out);
+// What the last capture found, for the heartbeat.
+struct GxWorldStats {
+    uint32_t captures = 0, triangles = 0, textures = 0, leftOut = 0;
+};
+extern GxWorldStats gWorldStats;
+// Polygons in the list GxRender draws (for the heartbeat and tests).
+uint32_t GxPolygonsShown();
 
 }  // namespace khvr::hle

@@ -15,6 +15,7 @@ add_library(khvr_core STATIC
     src/input_mapper.cpp
     src/settings.cpp
     src/settings_panel.cpp
+    src/upscale.cpp
     src/view_rig.cpp
 )
 target_include_directories(khvr_core PUBLIC include)

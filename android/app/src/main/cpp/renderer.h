@@ -6,6 +6,7 @@
 #include <GLES3/gl3.h>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "khvr/game_source.h"
@@ -15,7 +16,8 @@ namespace khvr {
 
 class Texture {
 public:
-    void Upload(int w, int h, const uint32_t *rgba, bool linear);
+    // `mipmaps`: for a texture seen at a slant or from afar (a floor), filtered without shimmer.
+    void Upload(int w, int h, const uint32_t *rgba, bool linear, bool mipmaps = false);
     GLuint id() const { return id_; }
     int width() const { return w_; }
     int height() const { return h_; }
@@ -53,16 +55,44 @@ public:
     void DrawQuad(GLuint texture, const Pose &pose, float w, float h, const Mat4 &viewProj,
                   float alpha = 1.0f, float curvature = 0.0f, float distance = 1.0f,
                   bool flipV = false);
+    // Edge-preserving smoothing (0..1) for the following DrawQuads, meant for DS screens only;
+    // set it back to 0 for anything else.
+    void SetScreenSmoothing(float amount) { smoothing_ = amount; }
     void DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj);
     void DrawComfortOverlay(float vignette, float blink);
+    // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
+    // over them. Its textures are kept on the GPU by key and uploaded only when new.
+    // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
+    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest);
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
     GLint litMvp_ = -1, litAlpha_ = -1, litLight_ = -1;
-    GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1;
+    GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1, texSmooth_ = -1, texDsPixel_ = -1;
+    float smoothing_ = 0.0f;
     GLint lineMvp_ = -1, lineColor_ = -1;
     GLint ovVignette_ = -1, ovBlink_ = -1;
     GLuint vao_ = 0, vbo_ = 0;
+    // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
+    GLuint worldProgram_ = 0, worldVbo_ = 0;
+    GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1, worldCut_ = -1;
+    struct WorldBatch {
+        int32_t texture;  // index into the world's textures, -1 none
+        bool blend, depthWrite, decal;
+        float cut;        // texels below this alpha are not drawn
+        int cull;         // 0 both faces, 1 front faces only, 2 back faces only
+        GLint first;
+        GLsizei count;
+    };
+    std::vector<WorldBatch> worldBatches_;
+    uint32_t worldRevision_ = ~0u;
+    struct GpuTexture {
+        GLuint id = 0;
+        uint32_t lastUsed = 0;
+    };
+    std::unordered_map<uint64_t, GpuTexture> worldTextures_;
+    std::vector<GLuint> worldTextureIds_;  // per texture of the current revision
+    uint32_t worldFrames_ = 0;
     std::vector<float> scratch_;
 };
 

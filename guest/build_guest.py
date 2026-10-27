@@ -160,9 +160,108 @@ def config_symbols():
 
 
 _CONFIG_SYMBOLS = None
+_DS_DATA = None
+
+
+def ds_data_addresses():
+    """Initialized data symbols the decomp's config places, by name: (module, DS address).
+    A name two modules both use (overlays share addresses) keeps the first."""
+    global _DS_DATA
+    if _DS_DATA is None:
+        _DS_DATA = {}
+        cfg = DECOMP / "config" / "arm9"
+        for f in sorted(cfg.rglob("symbols.txt")):
+            mod = f.parent.name if f.parent != cfg else "main"
+            for line in f.read_text().splitlines():
+                m = re.match(r"(\S+) kind:data\(\w+\) addr:0x([0-9a-f]+)", line)
+                if m and m.group(1) not in _DS_DATA:
+                    _DS_DATA[m.group(1)] = (mod, int(m.group(2), 16))
+    return _DS_DATA
+
+
+def is_data_file(rel):
+    return "/data/" in rel
+
+
+# The data files' definitions: `<type> name[dims] = ...` (the attribute goes before the `=`).
+RE_DATA_DEF = re.compile(r"\b([A-Za-z_]\w*)((?:\s*\[[^\]\n]*\])*)(\s*=)")
+RE_DATA_CONST = re.compile(r"^([ \t]*(?:static[ \t]+)?)const[ \t]+|(\*[ \t]*)const\b", re.M)
+
+
+def ds_layout(text, strip_const=True):
+    """Keeps a data file's definitions where the DS has them relative to each other: code reads
+    past one symbol into the next (the decomp splits tables the original kept whole), and clang
+    would align every array of 16 bytes or more to 16 and keep const ones in a separate segment.
+    Each definition gets its DS address's alignment (which also stops that), and loses `const`
+    (wasm memory is writable anyway) so the whole file is one run of .data."""
+    addrs = ds_data_addresses()
+
+    def attr(m):
+        name = m.group(1)
+        if name not in addrs or "__attribute__" in m.group(0):
+            return m.group(0)
+        if not strip_const:
+            # Outside the data files, only file-scope definitions: a type (or a struct's closing
+            # brace) at the start of the line, never an assignment inside a function.
+            line = text[text.rfind("\n", 0, m.start()) + 1:m.start()]
+            if not line or line[0] in " \t" or not re.match(r"[A-Za-z_}]", line) or "const" in line:
+                return m.group(0)
+        a = addrs[name][1]
+        align = 4 if a % 4 == 0 else (2 if a % 2 == 0 else 1)
+        # Its own .data section, also for an all-zero table (clang would put that in .bss).
+        return "%s%s __attribute__((aligned(%d), section(\".data.%s\")))%s" % (
+            name, m.group(2), align, name, m.group(3))
+
+    if strip_const:
+        text = RE_DATA_CONST.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), text)
+    return RE_DATA_DEF.sub(attr, text)
+
+
+def data_file_order(rel, path):
+    """Sort key that links the files defining DS data in DS order, each module's together."""
+    addrs = ds_data_addresses()
+    text = Path(path).read_text(errors="replace")
+    found = [addrs[n] for n in re.findall(r"\b([A-Za-z_]\w*)(?:\s*\[[^\]\n]*\])*(?:\s*__attribute__\(\(.*?\)\))?\s*=", text)
+             if n in addrs]
+    return min(found) if found else None
 # A function-local `static T data_02046d50;` that stands for the real global at that address
 # (the original only kept the function's code): it becomes a block-scope extern declaration.
 RE_STATIC_LOCAL = re.compile(r"\bstatic(\s+[^;=(){}]*?\b(data_[0-9a-f]{8})\b[^;=(){}]*;)")
+
+
+# mwcc accepts post-incrementing through a cast, `*((T *)p)++` (read a T and step p past it);
+# clang rejects the lvalue cast, so it is spelled out.
+RE_LVALUE_CAST_INC = re.compile(r"\*\(\((\w+)\s*\*\)\s*(\w+)\)\+\+")
+# A busy-wait loop with an empty body: `while (cond) {}` or `while (cond);` (not the tail of a
+# do-while). The port takes interrupts only where the guest re-enables them, so a loop that
+# spins with them already enabled would never see the reply it waits for.
+RE_SPIN = re.compile(r"(?<![}\w])(\s)while\s*\(((?:[^;{}()]|\((?:[^;{}()]|\([^;{}()]*\))*\))*)\)\s*(?:\{\s*\}|;)")
+
+
+def is_spin_wait(cond):
+    """A poll of state another context changes: a volatile read or a status call, and nothing the
+    loop itself changes. The hardware units the port answers at once (divider, square root,
+    geometry engine) are left alone; they sit in hot code."""
+    if re.search(r"\+\+|--|[^=!<>]=[^=]|<<=|>>=", cond):
+        return False
+    if re.search(r"0x0400|G3X_|CP_IsDivBusy", cond):
+        return False
+    return "volatile" in cond or re.search(r"\b(?!sizeof\b)[A-Za-z_]\w*\s*\(", cond) is not None
+
+
+def spin_waits(text):
+    def fix(m):
+        if not is_spin_wait(m.group(2)):
+            return m.group(0)
+        return "%swhile (%s) { khvr_host_spin(); }" % (m.group(1), m.group(2))
+    out = RE_SPIN.sub(fix, text)
+    if out != text:
+        out = "void khvr_host_spin(void);\n" + out
+    return out
+
+
+RE_VA_START_MACRO = re.compile(r"#define\s+va_start\(ap,\s*last\)\s*\(\(ap\)\s*=\s*\(char \*\)\(\(\(int\)&\(last\)\s*&\s*~3\)\s*\+\s*4\)\)")
+RE_VA_INLINE = re.compile(r"\(void \*\)\(\(\(unsigned int\)&(\w+)\s*&\s*~3u\)\s*\+\s*4\)")
 
 
 def patch_source(rel, text, fx):
@@ -170,7 +269,14 @@ def patch_source(rel, text, fx):
     t = RE_STATIC_LOCAL.sub(lambda m: ("extern" + m.group(1)) if m.group(2) in config_symbols() else m.group(0), text)
     t = RE_CLZ.sub(r"\1 = (\2) ? (unsigned int)__builtin_clz(\2) : 32u;", t)
     t = RE_REGPIN.sub("", t)
+    t = RE_LVALUE_CAST_INC.sub(r"(*(\1 *)((\2 += sizeof(\1)) - sizeof(\1)))", t)
     t = RE_ARRAY_ASSIGN.sub(r"__builtin_memcpy((void *)\2, (const void *)(\3), \1 * sizeof(int));", t)
+    # Variadic functions find their trailing arguments the ARM way, one word past the last named
+    # parameter's home slot. On wasm the named parameters are locals and the trailing arguments
+    # sit in a separate buffer the caller passes, which only the compiler's va_start can name
+    # (a wasm32 va_list is a plain pointer into that buffer, read a word at a time like ARM's).
+    t = RE_VA_START_MACRO.sub("#define va_start(ap, last) __builtin_va_start(*(__builtin_va_list *)&(ap), last)", t)
+    t = RE_VA_INLINE.sub(r"({ __builtin_va_list khvr_ap; __builtin_va_start(khvr_ap, \1); (void *)khvr_ap; })", t)
     # Overlay ids are linker symbols whose *address* is the id. wasm has no absolute symbols, so
     # the id becomes a constant pointer.
     for name, value in SDK_CONSTANTS.items():
@@ -180,6 +286,8 @@ def patch_source(rel, text, fx):
         t = RE_OVL_DECL.sub("", t)
         t = RE_OVL_ADDR.sub(lambda m: "((unsigned long *)%s)" % (m.group(1) or m.group(2)), t)
         t = RE_OVL.sub(r"((unsigned long *)\1)", t)
+    t = ds_layout(t, strip_const=is_data_file(rel))
+    t = spin_waits(t)
     for name in fx["unstatic"].get(rel, []):
         # A static helper that the same file (or a header) also declares extern, which mwcc
         # allows: it becomes an ordinary weak definition, and the linker keeps one copy.
@@ -378,15 +486,53 @@ def obj_name(rel):
     return rel.replace("/", "_") + ".o"
 
 
+RE_ASM_DATA_BLOCK = re.compile(r"^\t\.section\t\.data\.([A-Za-z_]\w*),")
+
+
+def reorder_data_sections(asm):
+    """clang emits a file's globals in its own order (a table's initializer pulls the symbols it
+    points at ahead of it); this puts the file's per-symbol data sections back in DS address
+    order, each block moved whole into the slots the data blocks occupied."""
+    addrs = ds_data_addresses()
+    lines = asm.split("\n")
+    starts = [i for i, l in enumerate(lines) if l.startswith("\t.section\t")]
+    blocks = []
+    for k, i in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        blocks.append((i, end))
+    head = lines[:starts[0]] if starts else lines
+    chunks = [lines[a:b] for a, b in blocks]
+    data = [k for k, (a, _) in enumerate(blocks)
+            if RE_ASM_DATA_BLOCK.match(lines[a]) and RE_ASM_DATA_BLOCK.match(lines[a]).group(1) in addrs
+            and any(l.startswith(RE_ASM_DATA_BLOCK.match(lines[a]).group(1) + ":") for l in chunks[k])]
+    order = sorted(data, key=lambda k: addrs[RE_ASM_DATA_BLOCK.match(chunks[k][0]).group(1)][1])
+    out = list(chunks)
+    for slot, k in zip(data, order):
+        out[slot] = chunks[k]
+    return "\n".join(head + [l for c in out for l in c])
+
+
 def compile_one(rel, path, objdir):
     obj = objdir / obj_name(rel)
     data = Path(path).read_bytes()
-    key = hashlib.sha1(data + " ".join(CFLAGS).encode()).hexdigest()
+    reorder = is_data_file(rel) or b"__attribute__((aligned(" in data
+    key = hashlib.sha1(data + " ".join(CFLAGS).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
     stamp = obj.with_suffix(".key")
     if obj.exists() and stamp.exists() and stamp.read_text() == key:
         return rel, True, ""
-    r = run(["clang", *CFLAGS, "-I", str(DECOMP / "include"), "-I", str(GUEST / "include"),
-             "-c", str(path), "-o", str(obj)])
+    inc = ["-I", str(DECOMP / "include"), "-I", str(GUEST / "include")]
+    if reorder:
+        # Through assembly, so the data sections can be put in DS order (reorder_data_sections).
+        asm = obj.with_suffix(".s")
+        r = run(["clang", *CFLAGS, *inc, "-S", str(path), "-o", str(asm)])
+        if r.returncode == 0:
+            asm.write_text(reorder_data_sections(asm.read_text()))
+            r2 = run(["clang", "--target=wasm32", "-c", str(asm), "-o", str(obj)])
+            asm.unlink()
+            if r2.returncode == 0:
+                stamp.write_text(key)
+                return rel, True, ""
+    r = run(["clang", *CFLAGS, *inc, "-c", str(path), "-o", str(obj)])
     if r.returncode == 0:
         stamp.write_text(key)
         return rel, True, ""
@@ -414,6 +560,37 @@ def link(objs, out):
              "--Map=%s" % (out / "game.map"), "-o", str(wasm), "@%s" % rsp])
     (out / "link.log").write_text(r.stdout + r.stderr)
     return r.returncode == 0, r.stdout + r.stderr
+
+
+def definers_first(log, objs, out):
+    """wasm-ld (18) leaves a function out of the function table, so that every address taken of
+    it is 0, when an object declaring it with another signature comes before the object that
+    defines it (the decomp declares many functions loosely). The objects that define such
+    functions, when they hold no data (so the data layout does not move), go right after
+    storage.o; returns the new object list, or None when nothing moves."""
+    names = set(re.findall(r"function signature mismatch: (\S+)", log))
+    if not names:
+        return None
+    definer, with_data, in_data = {}, set(), False
+    for line in (out / "game.map").read_text().splitlines():
+        cols = line.split()
+        if len(cols) >= 4 and cols[3] == "DATA":
+            in_data = True
+            continue
+        m = re.search(r"(\S+\.o):\(([^)]+)\)$", line)
+        if not m:
+            continue
+        if in_data:
+            with_data.add(m.group(1))
+        elif m.group(2) in names:
+            definer[m.group(2)] = m.group(1)
+    moving = {o for o in definer.values() if o not in with_data}
+    if not moving:
+        return None
+    front = [o for o in objs[1:] if str(o) in moving]
+    rest = [o for o in objs[1:] if str(o) not in moving]
+    print("link: %d objects that define loosely declared functions go first" % len(front))
+    return [objs[0]] + front + rest
 
 
 def obj_to_rel(obj, rels):
@@ -541,7 +718,11 @@ def main():
         if r.returncode:
             sys.exit("storage.s: " + r.stderr)
         # storage.o first: its low block must be the first data wasm-ld lays out.
-        objs = [out / "obj" / "storage.o"] + [out / "obj" / obj_name(rel) for rel in paths if rel not in failures]
+        # Data files first, in DS order (ds_layout keeps each one's symbols in DS order).
+        built = [rel for rel in paths if rel not in failures]
+        keys = {rel: data_file_order(rel, paths[rel]) for rel in built}
+        built.sort(key=lambda rel: (0, keys[rel]) if keys[rel] is not None else (1, ("", 0)))
+        objs = [out / "obj" / "storage.o"] + [out / "obj" / obj_name(rel) for rel in built]
         if placeholders:
             ph = out / "gen" / "placeholders.s"
             ph.write_text("".join(emit_block("khvr_ph_" + s, 0, 64, [(s, 0)]) for s in sorted(placeholders)))
@@ -550,6 +731,11 @@ def main():
                 sys.exit("placeholders.s: " + r.stderr)
             objs.append(out / "obj" / "placeholders.o")
         ok, log = link(objs, out)
+        if ok:
+            reordered = definers_first(log, objs, out)
+            if reordered:
+                objs = reordered
+                ok, log = link(objs, out)
         missing = set(undefined_data(log)) - placeholders
         if missing:
             # Data nobody defines (left out with a failed or excluded source): 64 zero bytes each,

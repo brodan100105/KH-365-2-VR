@@ -3,7 +3,10 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
 
+#include <chrono>
+#include <cstdlib>
 #include <string>
 
 #include "log.h"
@@ -50,6 +53,56 @@ struct AppState {
     bool destroyRequested = false;
 };
 
+// The shared folder for the ROM, the save and the boot log: SideQuest and adb can always write
+// there, unlike Android/data on recent Quest system versions.
+constexpr const char *kSharedDir = "/storage/emulated/0/KHDaysVR";
+
+bool ClearException(JNIEnv *env) {
+    if (!env->ExceptionCheck()) return false;
+    env->ExceptionClear();
+    return true;
+}
+
+// Environment.isExternalStorageManager(): the "All files access" permission (Android 11+).
+bool HasAllFilesAccess(android_app *app) {
+    JNIEnv *env = nullptr;
+    app->activity->vm->AttachCurrentThread(&env, nullptr);
+    jclass envClass = env->FindClass("android/os/Environment");
+    jmethodID isManager = envClass ? env->GetStaticMethodID(envClass, "isExternalStorageManager", "()Z") : nullptr;
+    bool granted = isManager && env->CallStaticBooleanMethod(envClass, isManager);
+    if (ClearException(env)) granted = false;
+    if (envClass) env->DeleteLocalRef(envClass);
+    return granted;
+}
+
+// Opens the system page where the user turns on "All files access" for this app.
+void RequestAllFilesAccess(android_app *app) {
+    JNIEnv *env = nullptr;
+    app->activity->vm->AttachCurrentThread(&env, nullptr);
+    jclass uriClass = env->FindClass("android/net/Uri");
+    jclass intentClass = env->FindClass("android/content/Intent");
+    jclass activityClass = env->GetObjectClass(app->activity->clazz);
+    if (!uriClass || !intentClass || ClearException(env)) return;
+    jmethodID parse = env->GetStaticMethodID(uriClass, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
+    jmethodID intentWithUri = env->GetMethodID(intentClass, "<init>", "(Ljava/lang/String;Landroid/net/Uri;)V");
+    jmethodID intentPlain = env->GetMethodID(intentClass, "<init>", "(Ljava/lang/String;)V");
+    jmethodID start = env->GetMethodID(activityClass, "startActivity", "(Landroid/content/Intent;)V");
+    if (ClearException(env)) return;
+    jstring pkg = env->NewStringUTF("package:com.khdays.vr");
+    jobject uri = env->CallStaticObjectMethod(uriClass, parse, pkg);
+    jstring perApp = env->NewStringUTF("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION");
+    jobject intent = env->NewObject(intentClass, intentWithUri, perApp, uri);
+    env->CallVoidMethod(app->activity->clazz, start, intent);
+    if (ClearException(env)) {
+        // No per-app page on this system: the list of all apps instead.
+        LOGW("per-app all-files access page unavailable, opening the list");
+        jstring all = env->NewStringUTF("android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION");
+        jobject intent2 = env->NewObject(intentClass, intentPlain, all);
+        env->CallVoidMethod(app->activity->clazz, start, intent2);
+        if (ClearException(env)) LOGE("cannot open the all-files access settings");
+    }
+}
+
 void HandleCmd(android_app *app, int32_t cmd) {
     auto *st = static_cast<AppState *>(app->userData);
     switch (cmd) {
@@ -60,9 +113,9 @@ void HandleCmd(android_app *app, int32_t cmd) {
     }
 }
 
-}  // namespace
-
-void android_main(android_app *app) {
+// The app's whole life on one activity. Its locals (the game among them, whose destructor
+// flushes the save) are gone when this returns.
+void RunApp(android_app *app) {
     AppState state;
     app->userData = &state;
     app->onAppCmd = HandleCmd;
@@ -72,6 +125,9 @@ void android_main(android_app *app) {
                                                            : app->activity->internalDataPath;
     khvr::VrApp vr;
     vr.LoadSettings(filesDir);
+    bool allFiles = HasAllFilesAccess(app);
+    LOGI("all-files access: %s", allFiles ? "granted" : "not granted");
+    vr.SetSharedDir(kSharedDir, allFiles);
 
     Egl egl;
     khvr::XrPlatform xr;
@@ -88,9 +144,17 @@ void android_main(android_app *app) {
         egl.Shutdown();
         return;
     }
+    if (vr.needsStorageAccess()) RequestAllFilesAccess(app);
 
     bool exit = false;
+    auto nextRetry = std::chrono::steady_clock::now();
     while (!app->destroyRequested && !state.destroyRequested && !exit) {
+        // Waiting for all-files access or a ROM: look again every two seconds, so the game starts
+        // the moment you allow access or copy the ROM in, with no restart.
+        if (vr.waitingForGame() && std::chrono::steady_clock::now() >= nextRetry) {
+            nextRetry = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            vr.RetryGame(kSharedDir, HasAllFilesAccess(app));
+        }
         // Block for events only while the session is not running, so the headset keeps its
         // frame rate the rest of the time.
         int events;
@@ -111,4 +175,16 @@ void android_main(android_app *app) {
     vr.SaveSettingsIfChanged(true);
     xr.Shutdown();
     egl.Shutdown();
+}
+
+}  // namespace
+
+void android_main(android_app *app) {
+    RunApp(app);
+    app->activity->vm->DetachCurrentThread();
+    // Android may keep the process and start android_main again for a new activity; the game's
+    // platform can only run once per process (its guest threads live on), so end the process
+    // here (RunApp's game has flushed its save) and every launch starts fresh.
+    LOGI("activity gone: exiting the process");
+    std::exit(0);
 }
