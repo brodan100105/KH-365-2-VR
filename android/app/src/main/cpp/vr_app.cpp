@@ -283,6 +283,14 @@ void VrApp::BuildLoadingArea(float floorY) {
         std::vector<uint32_t> glow = PaintGlow(64);
         glowTex_.Upload(64, 64, glow.data(), true, true);
     }
+    if (!titleTex_.id()) {
+        int w = 0, h = 0;
+        std::vector<uint32_t> title = PaintTitleText("KH: Days VR", 8, 24, Rgba(255, 255, 255),
+                                                     Rgba(150, 190, 255, 150), &w, &h);
+        titleTex_.Upload(w, h, title.data(), true, true);
+        titlePanel_.width = 1.6f;
+        titlePanel_.height = titlePanel_.width * h / w;
+    }
 }
 
 void VrApp::UpdateLoadingSparkles(double now) {
@@ -311,15 +319,13 @@ void VrApp::UpdateLoading(double now) {
     UpdateLoadingSparkles(now);
     if (now - loadingDrawn_ < 0.25) return;
     loadingDrawn_ = now;
+    // The text under the floating title, on nothing (no panel).
     Canvas &c = loadingCanvas_;
-    c.Clear(Rgba(16, 18, 34, 220));
-    c.StrokeRect(0, 0, c.width(), c.height(), Rgba(214, 178, 82), 3);
-    const char *title = "KINGDOM HEARTS 358/2 Days";
-    c.DrawText((c.width() - Canvas::TextWidth(title, 2)) / 2, 28, title, Rgba(236, 236, 244), 2);
+    c.Clear(0);
     if (waiting_) {
         // What the game is waiting for, wrapped to the panel.
         std::string rest = notice_;
-        int y = 80;
+        int y = 16;
         while (!rest.empty() && y + Canvas::LineHeight() <= c.height() - 8) {
             size_t cut = rest.size() <= 74 ? rest.size() : rest.rfind(' ', 74);
             if (cut == std::string::npos || cut == 0) cut = std::min<size_t>(74, rest.size());
@@ -333,12 +339,12 @@ void VrApp::UpdateLoading(double now) {
     }
     int dots = static_cast<int>(now * 3.0) % 4;
     std::string loading = "Loading" + std::string(static_cast<size_t>(dots), '.');
-    c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 92, loading, Rgba(214, 178, 82));
+    c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 40, loading, Rgba(214, 178, 82));
 #ifdef KHVR_HAS_GAME
     if (decomp_) {
         char line[96];
         std::snprintf(line, sizeof line, "game frames: %u", decomp_->gameFrames());
-        c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 132, line, Rgba(150, 154, 180));
+        c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 80, line, Rgba(110, 114, 140));
     }
 #endif
     loadingTex_.Upload(c.width(), c.height(), c.data(), true);
@@ -581,7 +587,8 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     }
     loadingPanel_.width = 1.0f;
     loadingPanel_.height = loadingPanel_.width * 192.0f / 768.0f;
-    loadingPanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.2f + Vec3{0, 0.25f, 0}, screenAnchor_);
+    loadingPanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.2f + Vec3{0, -0.1f, 0}, screenAnchor_);
+    titlePanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.4f + Vec3{0, 0.3f, 0}, screenAnchor_);
 
     // The status panel floats just below eye level, to the left of the HUD and clear of it.
     statusPanel_.width = 0.8f;
@@ -944,8 +951,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     Mat4 vpTracking = proj * ViewFromPose(in.eyes[eye].pose);
 
     if (passthrough) glClearColor(0, 0, 0, 0);
-    else if (Loading()) glClearColor(0.01f, 0.01f, 0.03f, 1.0f);
-    else if (mode == ViewMode::GiantScreen) glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
+    else if (Loading() || mode == ViewMode::GiantScreen) glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // pitch black
     else glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -1056,6 +1062,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                 renderer_.SetScreenSmoothing(0.0f);
             }
         }
+    }
+    if (Loading() && titleTex_.id()) {
+        // The title floats: a slow rise and fall of a couple of centimetres.
+        Pose title = titlePanel_.pose;
+        title.position.y += 0.02f * std::sin(static_cast<float>(std::fmod(in.time, 1000.0)) * 1.3f);
+        renderer_.DrawQuad(titleTex_.id(), title, titlePanel_.width, titlePanel_.height, vpTracking);
     }
     if (Loading() && loadingTex_.id())
         renderer_.DrawQuad(loadingTex_.id(), loadingPanel_.pose, loadingPanel_.width, loadingPanel_.height, vpTracking);

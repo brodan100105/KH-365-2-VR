@@ -99,7 +99,7 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_, titleTex_;
     Texture frontTex_, backTex_;  // Screen > Game in 3D: the 2D in front of and behind the world
     // Screen > Game in 3D is on and the game gave a world to draw this frame.
     bool World3d() const;
@@ -124,6 +124,7 @@ private:
     WorldDrawList loadingArea_, loadingBeam_, loadingSparkles_;
     Vec3 loadingCenter_;
     Placement loadingPanel_;
+    Placement titlePanel_;  // the startup title, "KH: Days VR", floating over the loading line
     Canvas statusCanvas_{768, 288};
     double statusDrawn_ = -10.0;
     bool statusVisible_ = false;

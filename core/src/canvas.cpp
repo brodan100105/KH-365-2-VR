@@ -1,8 +1,8 @@
 #include "khvr/canvas.h"
 
-#include <cstdlib>
-
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 
 #include "font_data.h"
 
@@ -88,6 +88,73 @@ int Canvas::DrawText(int x, int y, const std::string &text, uint32_t color, int 
         pen += kFontCellW * scale;
     }
     return pen - x;
+}
+
+std::vector<uint32_t> PaintTitleText(const std::string &text, int scale, int margin, uint32_t color,
+                                     uint32_t glow, int *w, int *h) {
+    // The glyphs' coverage at the font's own size, with a pixel of room around them.
+    const int mw = Canvas::TextWidth(text) + 2, mh = kFontCellH + 2;
+    std::vector<float> mask(static_cast<size_t>(mw) * mh, 0.0f);
+    for (size_t i = 0; i < text.size(); ++i) {
+        int code = static_cast<unsigned char>(text[i]);
+        if (code < kFontFirst || code >= kFontFirst + kFontCount) code = '?';
+        const uint8_t *glyph = &kFontAlpha[(code - kFontFirst) * kFontCellW * kFontCellH];
+        for (int gy = 0; gy < kFontCellH; ++gy)
+            for (int gx = 0; gx < kFontCellW; ++gx)
+                mask[static_cast<size_t>(gy + 1) * mw + 1 + static_cast<int>(i) * kFontCellW + gx] =
+                    glyph[gy * kFontCellW + gx] / 255.0f;
+    }
+    // The glow: the coverage spread out (three box blurs, about a Gaussian).
+    std::vector<float> halo = mask, tmp(mask.size());
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int y = 0; y < mh; ++y)
+            for (int x = 0; x < mw; ++x) {
+                float s = 0;
+                for (int d = -1; d <= 1; ++d) s += halo[static_cast<size_t>(y) * mw + std::clamp(x + d, 0, mw - 1)];
+                tmp[static_cast<size_t>(y) * mw + x] = s / 3;
+            }
+        for (int y = 0; y < mh; ++y)
+            for (int x = 0; x < mw; ++x) {
+                float s = 0;
+                for (int d = -1; d <= 1; ++d) s += tmp[static_cast<size_t>(std::clamp(y + d, 0, mh - 1)) * mw + x];
+                halo[static_cast<size_t>(y) * mw + x] = s / 3;
+            }
+    }
+    auto sample = [&](const std::vector<float> &m, float fx, float fy) {
+        // Nothing beyond the mask, so the glow fades out instead of smearing its edge outwards.
+        const int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+        const int x1 = x0 + 1, y1 = y0 + 1;
+        const float ax = fx - x0, ay = fy - y0;
+        auto at = [&](int x, int y) {
+            return x < 0 || y < 0 || x >= mw || y >= mh ? 0.0f : m[static_cast<size_t>(y) * mw + x];
+        };
+        return (at(x0, y0) * (1 - ax) + at(x1, y0) * ax) * (1 - ay) + (at(x0, y1) * (1 - ax) + at(x1, y1) * ax) * ay;
+    };
+    *w = mw * scale + 2 * margin;
+    *h = mh * scale + 2 * margin;
+    std::vector<uint32_t> out(static_cast<size_t>(*w) * *h, 0);
+    const float cr = (color & 0xff) / 255.0f, cg = ((color >> 8) & 0xff) / 255.0f, cb = ((color >> 16) & 0xff) / 255.0f;
+    const float gr = (glow & 0xff) / 255.0f, gg = ((glow >> 8) & 0xff) / 255.0f, gb = ((glow >> 16) & 0xff) / 255.0f;
+    const float glowAlpha = (glow >> 24) / 255.0f;
+    for (int y = 0; y < *h; ++y)
+        for (int x = 0; x < *w; ++x) {
+            const float fx = (x - margin + 0.5f) / scale - 0.5f, fy = (y - margin + 0.5f) / scale - 0.5f;
+            // Enlarged smoothly, then cut at half coverage with a soft edge a pixel or two wide.
+            const float v = sample(mask, fx, fy);
+            const float edge = 0.5f / scale + 0.04f;
+            float a = std::clamp((v - (0.5f - edge)) / (2 * edge), 0.0f, 1.0f);
+            a = a * a * (3 - 2 * a);
+            const float g = std::clamp(sample(halo, fx, fy) * 1.6f, 0.0f, 1.0f) * glowAlpha;
+            // The text over its glow.
+            const float oa = a + g * (1 - a);
+            if (oa <= 0.0f) continue;
+            const float r = (cr * a + gr * g * (1 - a)) / oa, gn = (cg * a + gg * g * (1 - a)) / oa,
+                        b = (cb * a + gb * g * (1 - a)) / oa;
+            out[static_cast<size_t>(y) * *w + x] =
+                Rgba(static_cast<uint8_t>(r * 255 + 0.5f), static_cast<uint8_t>(gn * 255 + 0.5f),
+                     static_cast<uint8_t>(b * 255 + 0.5f), static_cast<uint8_t>(oa * 255 + 0.5f));
+        }
+    return out;
 }
 
 }  // namespace khvr

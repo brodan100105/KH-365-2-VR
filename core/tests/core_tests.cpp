@@ -86,6 +86,22 @@ TEST(UpscaleScale2xFlatAndDiagonal) {
 
 // ---------------------------------------------------------------- math
 
+TEST(TitleTextLargeSmoothAndTransparentAround) {
+    int w = 0, h = 0;
+    std::vector<uint32_t> px = PaintTitleText("KH", 8, 10, Rgba(255, 255, 255), Rgba(150, 190, 255, 150), &w, &h);
+    CHECK(w == (2 * 10 + 2) * 8 + 20 && h == (20 + 2) * 8 + 20);
+    CHECK(px.size() == static_cast<size_t>(w) * h);
+    CHECK(px[0] == 0);  // nothing in the corners
+    int solid = 0, partial = 0;
+    for (uint32_t p : px) {
+        const uint32_t a = p >> 24;
+        solid += a == 255 && (p & 0xffffff) == 0xffffff;
+        partial += a > 0 && a < 255;
+    }
+    CHECK(solid > 2000);    // the letters, white
+    CHECK(partial > 500);   // their soft edges and the glow
+}
+
 TEST(MathYawRoundTrip) {
     for (float deg : {-170.0f, -90.0f, 0.0f, 45.0f, 135.0f}) {
         Quat q = Quat::Yaw(DegToRad(deg));
