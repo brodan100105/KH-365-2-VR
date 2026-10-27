@@ -77,7 +77,7 @@ struct PlatformPlayer {
     float heading = 0.0f;      // radians; facing (sin, 0, cos)
     bool menu = false;         // a menu over the field runs (camp menu, shop, save point...)
     bool event = false;        // an event script (ov023) drives the scene: a cutscene
-    bool dialog = false;       // the field's text panel is open: an NPC talks, or asks a choice
+    bool choice = false;       // a choice waits for an answer (an NPC's question, a confirmation)
 };
 
 struct PlatformWorld {
@@ -158,6 +158,9 @@ public:
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
     // how long CaptureScreens took.
     void NoteDisplay(bool skipped, float captureMs);
+    // From the viewer, for the heartbeat: a lock-on sight cut from the screen, the sprite pixels
+    // it kept and those it dropped as other sprites.
+    void NoteLockOnCut(int kept, int dropped);
     // The game's sound, 48 kHz stereo (interleaved L, R): fills `frames` frames, silence where
     // nothing has been mixed yet; returns how many were real. For the audio thread.
     size_t ReadAudio(int16_t *stereo, size_t frames);

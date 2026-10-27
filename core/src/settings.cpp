@@ -217,6 +217,11 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.4f, -1.0f, 0.4f, 0.05f, "m",
                   "How far below your eyes (negative) or above them the HUD panel sits, so the health "
                   "bar and commands stay out of the way. Menus are on the giant screen."));
+    d.push_back(B(S::HudFillView, "HUD", "fill_view", "Fill your view", true,
+                  "The HUD as large as your view, centred on it, so the health bar and commands sit at "
+                  "its edges as on the DS's screen. Off: a panel of Panel scale at Panel height."));
+    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 80.0f, 40.0f, 110.0f, 5.0f, "deg",
+                  "How wide the HUD spans when it fills your view."));
     d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 20.0f, 5.0f, 60.0f, 5.0f,
                   "deg", "How far you can look away from the floating HUD before it comes back in front "
                   "of you."));

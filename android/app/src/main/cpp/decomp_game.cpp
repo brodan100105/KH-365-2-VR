@@ -285,8 +285,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         ++frame_.frameCounter;
     }
     // Without a player in the field (title, menus, mission review), with a menu or event scene
-    // over it, or while an NPC talks (its choices go up and down), the stick moves a menu cursor.
-    frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event || latestPlayer_.dialog;
+    // over it, or while a choice waits (an NPC's question: up and down), the stick moves a cursor.
+    frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event || latestPlayer_.choice;
     if (!worldCapture_.load()) {
         frame_.inGameplay = false;
         frame_.inMenu = true;
@@ -363,29 +363,44 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
                     if (px < 0 || py < 0 || px >= W || py >= H) continue;
                     t.lockOnSprite[static_cast<size_t>(y) * n + x] = latest_->topObj[py * W + px];
                 }
-            // The sight fits well inside the square; sprites that run past its edge are others
-            // (the HUD's portrait, the command menu): every patch touching the edge goes.
-            std::vector<int> stack;
-            auto clear = [&](int x, int y) {
-                stack.assign(1, y * n + x);
+            // The game draws the sight's pieces around that pixel: a patch of sprite pixels centred
+            // on it (the ring) or lying within a circle around it (the turning corners) is the
+            // sight; others there (the HUD's portrait, the command menu) go.
+            std::vector<int> label(static_cast<size_t>(n) * n, -1), stack, patch;
+            int kept = 0, dropped = 0;
+            for (int start = 0; start < n * n; ++start) {
+                if (label[start] >= 0 || !(t.lockOnSprite[start] >> 24)) continue;
+                patch.clear();
+                stack.assign(1, start);
+                label[start] = start;
+                int x0 = n, x1 = -1, y0 = n, y1 = -1;
+                float farthest = 0;
                 while (!stack.empty()) {
                     const int i = stack.back();
                     stack.pop_back();
-                    if (!(t.lockOnSprite[i] >> 24)) continue;
-                    t.lockOnSprite[i] = 0;
+                    patch.push_back(i);
                     const int cx = i % n, cy = i / n;
-                    if (cx > 0) stack.push_back(i - 1);
-                    if (cx + 1 < n) stack.push_back(i + 1);
-                    if (cy > 0) stack.push_back(i - n);
-                    if (cy + 1 < n) stack.push_back(i + n);
+                    x0 = std::min(x0, cx); x1 = std::max(x1, cx);
+                    y0 = std::min(y0, cy); y1 = std::max(y1, cy);
+                    const float dx = cx - n / 2 + 0.5f, dy = cy - n / 2 + 0.5f;
+                    farthest = std::max(farthest, dx * dx + dy * dy);
+                    const int next[4] = {cx > 0 ? i - 1 : -1, cx + 1 < n ? i + 1 : -1, cy > 0 ? i - n : -1, cy + 1 < n ? i + n : -1};
+                    for (int j : next)
+                        if (j >= 0 && label[j] < 0 && (t.lockOnSprite[j] >> 24)) {
+                            label[j] = start;
+                            stack.push_back(j);
+                        }
                 }
-            };
-            for (int k = 0; k < n; ++k) {
-                clear(k, 0);
-                clear(k, n - 1);
-                clear(0, k);
-                clear(n - 1, k);
+                const float mx = (x0 + x1) / 2.0f - n / 2 + 0.5f, my = (y0 + y1) / 2.0f - n / 2 + 0.5f;
+                const bool sight = mx * mx + my * my <= 12.0f * 12.0f || farthest <= 44.0f * 44.0f;
+                if (sight) {
+                    kept += static_cast<int>(patch.size());
+                } else {
+                    dropped += static_cast<int>(patch.size());
+                    for (int i : patch) t.lockOnSprite[i] = 0;
+                }
             }
+            Platform::Get().NoteLockOnCut(kept, dropped);
             // Standing in the world the sight shows around the enemy, not on the HUD panel.
             if (frame_.inGameplay)
                 for (int y = 0; y < n; ++y)

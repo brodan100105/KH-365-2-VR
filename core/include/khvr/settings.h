@@ -100,6 +100,8 @@ enum class SettingId : int {
     HudTopScreen,
     HudDistance,
     HudHeight,
+    HudFillView,
+    HudFillAngle,
     HudFollowAngle,
     HudFollowDelay,
     HudScale,

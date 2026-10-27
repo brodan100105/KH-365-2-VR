@@ -308,15 +308,16 @@ bool Platform::ReadPlayerNow(PlatformPlayer *out) {
             if (!std::strncmp(fn, "Ov023_", 6)) out->event = true;
         }
     }
-    // The field's text panel (NPC talk, a choice): open while its state is 1 to 8, as
-    // Ov002_Hud_IsPanelOpen reads it.
-    static const uint32_t hud = SymbolAddress("data_ov002_0207f614");
-    if (hud) {
-        const uint32_t panel = Read32(hud);
-        if (ok(panel, 0x190)) {
-            const int32_t state = static_cast<int32_t>(Read32(panel + 0x18c));
-            out->dialog = state >= 1 && state <= 8;
-        }
+    // A choice waits for an answer (an NPC's question, a confirmation): game state flag 0x20ef,
+    // set by Ov002_ScriptOpenChoicePanel and cleared once answered (Ov002_ScriptCmd_WaitPanelPose).
+    // The flags are a big-endian bit array at *gGameState + 0x10 (GameState_IsFlagSet). The
+    // mission banner ("Defeat the Shadows!", Ov002_Hud_IsPanelOpen) is not one: you move then.
+    static const uint32_t gameState = SymbolAddress("gGameState");
+    if (gameState) {
+        const uint32_t flags = Read32(gameState) + 0x10;
+        constexpr uint32_t kChoice = 0x20ef;
+        if (ok(flags + kChoice / 32 * 4, 4))
+            out->choice = (Read32(flags + kChoice / 32 * 4) >> (31 - kChoice % 32)) & 1;
     }
     out->valid = true;
     return true;
@@ -335,6 +336,16 @@ void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs) {
     gWorldMsSum = gWorldMsSum + worldMs;
 }
 }  // namespace hle
+
+namespace {
+std::atomic<uint32_t> gCuts{0}, gCutKept{0}, gCutDropped{0};
+}
+
+void Platform::NoteLockOnCut(int kept, int dropped) {
+    ++gCuts;
+    gCutKept += static_cast<uint32_t>(kept);
+    gCutDropped += static_cast<uint32_t>(dropped);
+}
 
 void Platform::NoteDisplay(bool skipped, float captureMs) {
     if (skipped) {
@@ -479,6 +490,13 @@ void Platform::Heartbeat() {
         w.captures = 0;
         w.markers = 0;
         w.lockOns = 0;
+        if (gCuts) {
+            Log("  lock-on sight cut %u times: %u sprite pixels kept a cut, %u dropped as other sprites", gCuts.load(),
+                gCutKept.load() / gCuts.load(), gCutDropped.load() / gCuts.load());
+            gCuts = 0;
+            gCutKept = 0;
+            gCutDropped = 0;
+        }
         w.hudPieces = 0;
         w.boxesInView = w.boxesOutOfView = 0;
     }
@@ -525,7 +543,7 @@ void Platform::Heartbeat() {
         if (ReadPlayer(&pl))
             Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg%s%s%s", pl.actor, pl.position[0],
                 pl.position[1], pl.position[2], pl.heading * 57.29578f, pl.menu ? ", camp menu" : "",
-                pl.event ? ", event script" : "", pl.dialog ? ", text panel open" : "");
+                pl.event ? ", event script" : "", pl.choice ? ", a choice waits" : "");
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");

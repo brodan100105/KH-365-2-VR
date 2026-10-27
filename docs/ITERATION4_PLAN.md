@@ -72,7 +72,8 @@ and into VR as real geometry around you.
       game's camera does not see** answers the game's BOX_TESTs "visible" (the heartbeat counts
       the boxes out of view). The field does not use BOX_TEST (0 in the Day 11 log): its culling
       is in its own code, still to find (the enemy framework hides and shows models through its
-      visibility messages, Ov107_AiState_SetVisible).
+      visibility messages, Ov107_AiState_SetVisible; func_ov022_0208ffe8 skips only nodes within
+      0.8 of the camera; Ov002_IsPointOnScreen serves the camera).
 - [x] HUD pieces the game draws in 3D in front of its camera (the mission's heart counter) stay
       on the HUD: polygons that keep their place in camera space while most of the scene moves
       across the view (a slight turn rounds far polygons in place), and never more than a quarter

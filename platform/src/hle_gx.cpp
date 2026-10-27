@@ -350,8 +350,11 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
         g.hudLooks.clear();
         return;
     }
+    // The camera turned: a camera that only travels (following Roxas) keeps what moves with it
+    // in place too, such as the sky around the level, which is no HUD piece.
     bool moved = false;
-    for (int i = 0; i < 16 && !moved; ++i) moved = std::fabs(g.sceneCamera[i] - g.prevCamera[i]) > 1e-3;
+    for (int r = 0; r < 3 && !moved; ++r)
+        for (int c = 0; c < 3 && !moved; ++c) moved = std::fabs(g.sceneCamera[r * 4 + c] - g.prevCamera[r * 4 + c]) > 2e-3;
     g.prevCamera = g.sceneCamera;
     // Each polygon of the scene: its place in camera space (key) and its texture and depth (look).
     struct Seen {

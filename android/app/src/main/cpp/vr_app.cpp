@@ -507,13 +507,18 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         hudAwaySeconds_ = 0.0f;
     }
     if (hudGliding_) hudAwaySeconds_ = 0.0f;
-    hudPanel_.width = 0.55f * hudScale;
+    // Filling the view: the DS's screen as wide as HUD > View it fills, centred on your eyes, so
+    // its corners (health, commands) sit at the edges of your view. Otherwise a panel.
+    const bool fill = settings_.Bool(SettingId::HudFillView);
+    // Filling the view it is an arc round your head at the panel distance, spanning the angle.
+    hudPanel_.width = fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale;
     hudPanel_.height = hudPanel_.width * 0.75f;
+    const float hudHeight = fill ? 0.0f : settings_.Get(SettingId::HudHeight);
     if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
-        hudPanel_.pose = head * Pose{Quat(), {0, settings_.Get(SettingId::HudHeight), -hudDist}};
+        hudPanel_.pose = head * Pose{Quat(), {0, hudHeight, -hudDist}};
     } else {
         Vec3 fwd = Quat::Yaw(hudYaw_).Forward();
-        Vec3 at = head.position + fwd * hudDist + Vec3{0, settings_.Get(SettingId::HudHeight), 0};
+        Vec3 at = head.position + fwd * hudDist + Vec3{0, hudHeight, 0};
         hudPanel_.pose = FacingFrom(at, head.position);
     }
 
@@ -1104,8 +1109,14 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     if (mode != ViewMode::GiantScreen && (!handheld_ || (settings_.Bool(SettingId::HandScreenDsGiant) && !DsOnly())) &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
     {
+        // Over everything: the world close by does not cut into it. Filling the view it curves
+        // round your head, so its corners (commands, health) are as near and as easy to read as
+        // its middle.
+        const bool fill = settings_.Bool(SettingId::HudFillView);
+        const float hudDist = settings_.Get(SettingId::HudDistance);
         renderer_.SetScreenSmoothing(screenSmoothing);
-        renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
+        renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking, 1.0f,
+                           fill ? 1.0f : 0.0f, hudDist, false, true);
         renderer_.SetScreenSmoothing(0.0f);
     }
     {

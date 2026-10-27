@@ -11,6 +11,10 @@ namespace {
 constexpr float kTeleportMeters = 8.0f;
 // Teleport follow mode re-centers once the character is this far from the anchor.
 constexpr float kTeleportFollowMeters = 2.5f;
+// The third-person view follows the game camera's heading for up to this long after it is
+// placed, until that heading has held still for kSettledSeconds.
+constexpr float kSettleSeconds = 4.0f;
+constexpr float kSettledSeconds = 0.5f;
 
 Vec3 Flat(const Vec3 &v) { return {v.x, 0.0f, v.z}; }
 
@@ -126,6 +130,18 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
         anchor_ = target;
         initialized_ = true;
         if (t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
+        settleLeft_ = kSettleSeconds;
+        settleStill_ = 0.0f;
+        lastCameraYaw_ = CameraYaw(game.camera);
+    } else if (settleLeft_ > 0.0f) {
+        // Still settling: turn with the game camera's heading until it holds still (your own
+        // turning still adds to it).
+        const float cameraYaw = CameraYaw(game.camera);
+        const float swing = WrapAngle(cameraYaw - lastCameraYaw_);
+        settleStill_ = std::fabs(swing) < DegToRad(0.5f) ? settleStill_ + t.dt : 0.0f;
+        lastCameraYaw_ = cameraYaw;
+        viewYaw_ = WrapAngle(viewYaw_ + swing);
+        settleLeft_ = settleStill_ >= kSettledSeconds ? 0.0f : settleLeft_ - t.dt;
     }
 
     // Follow the character.

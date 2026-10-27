@@ -148,6 +148,12 @@ int RenderSnapshot(const char *path, const char *prefix) {
         for (uint32_t p : s.topFront) opaque += (p >> 24) == 255;
         std::printf("snapshot: in front of the 3D layer, %d of %d pixels are opaque\n", opaque, 256 * 192);
     }
+    {
+        int sprites = 0;
+        for (uint32_t p : s.topObj) sprites += (p >> 24) != 0;
+        WritePpm((std::string(prefix) + "_obj.ppm").c_str(), s.topObj);
+        std::printf("snapshot: %d top-screen pixels show sprites\n", sprites);
+    }
     std::printf("snapshot: rendered %s to %s_top.ppm and %s_bottom.ppm\n", path, prefix, prefix);
     return 0;
 }

@@ -72,6 +72,9 @@ private:
     bool initialized_ = false;
     Vec3 anchor_;          // smoothed character position the view is built around
     float viewYaw_ = 0.0f; // world yaw that tracking -Z points along
+    // After (re)placing the view, the game's camera may still be swinging into place (a level's
+    // spawn): the view keeps looking its way until it has held still a moment.
+    float settleLeft_ = 0.0f, settleStill_ = 0.0f, lastCameraYaw_ = 0.0f;
     Vec3 lastCameraDir_;
     TurnController turn_;
     MotionSmoother motion_;

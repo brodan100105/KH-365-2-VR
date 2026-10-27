@@ -245,6 +245,29 @@ TEST(ThirdPersonTeleportReinitializes) {
     CHECK(Near(rig.anchor(), g.playerPos));
 }
 
+TEST(ThirdPersonFollowsCameraSettlingAfterSpawn) {
+    Settings s;
+    ThirdPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.camera.eye = {0, 2, 6};
+    g.camera.target = {0, 1, 0};  // looking along -Z
+    rig.Update(s, g, MakeTracking());
+    const float start = rig.viewYaw();
+    // The level's camera swings round behind the character over the first half second.
+    for (int i = 1; i <= 45; ++i) {
+        const float a = kPi * i / 45;
+        g.camera.eye = {6 * std::sin(a), 2, 6 * std::cos(a)};
+        rig.Update(s, g, MakeTracking());
+    }
+    CHECK_NEAR(std::fabs(WrapAngle(rig.viewYaw() - start)), kPi, 0.05f);
+    // Once it has held still a moment, the view no longer follows it.
+    for (int i = 0; i < 90; ++i) rig.Update(s, g, MakeTracking());
+    const float settled = rig.viewYaw();
+    g.camera.eye = {6, 2, 0};
+    for (int i = 0; i < 10; ++i) rig.Update(s, g, MakeTracking());
+    CHECK_NEAR(rig.viewYaw(), settled, 1e-4f);
+}
+
 TEST(ThirdPersonSnapTurnAroundCharacter) {
     Settings s;
     ThirdPersonRig rig;
