@@ -136,6 +136,8 @@ private:
     Vec3 screenAnchor_;             // head position at the last recenter
     float screenYaw_ = 0.0f;
     float hudYaw_ = 0.0f;
+    float hudAwaySeconds_ = 0.0f;  // how long you have looked away from the floating HUD
+    bool hudGliding_ = false;      // the HUD is on its way back in front of you
     bool laserOnPanel_ = false, laserOnBottom_ = false;
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen

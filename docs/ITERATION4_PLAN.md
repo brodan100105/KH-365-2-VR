@@ -59,8 +59,11 @@ and into VR as real geometry around you.
       not the one the game had set up for its next frame when it swapped (that turned the world
       whenever the game's camera swung).
 - [x] Sprites (munny, orbs, effects) face you: polygons flat across the game camera's view are
-      sprites, turned to face the viewer. Flat markers drawn with their own projection (the
-      lock-on sight) are placed in the world in front of what they mark.
+      sprites, turned to face the viewer. Flat markers drawn with their own projection are
+      placed in the world in front of what they mark.
+- [x] The lock-on sight: the game's is 2D sprites placed for its own camera
+      (Ov022_UpdateSelectionMarker); Ov022_ProjectToScreen reports the target's world position
+      (khvr_host_lock_on) and the headset draws a sight of its own around it, over everything.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera now: what lies behind it is not submitted at all).
 - [ ] Analog movement and room-scale steps through the game's collision.

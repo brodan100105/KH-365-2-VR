@@ -469,10 +469,27 @@ int WorldTest() {
         sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
                   turned.billboard.empty();
     }
-    const bool all = a && b && split && scrolled && event && wire && sprites;
+    // The lock-on sight's target, reported while a frame is drawn, comes with that frame's
+    // capture (and not with the next one's when the game no longer reports it).
+    bool lockOn = false;
+    {
+        const uint32_t at = 0x02300000;
+        w32(at, fx(1.5)); w32(at + 4, fx(0.75)); w32(at + 8, fx(-2));
+        khvr::hle::GxNoteLockOn(at);
+        quad();
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w, after;
+        khvr::Platform::Get().CaptureWorld(&w);
+        quad();
+        cmd(0x50, 0);
+        khvr::Platform::Get().CaptureWorld(&after);
+        lockOn = w.lockOn && std::fabs(w.lockOnAt[0] - 1.5f) < 1e-3f && std::fabs(w.lockOnAt[1] - 0.75f) < 1e-3f &&
+                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && !after.lockOn;
+    }
+    const bool all = a && b && split && scrolled && event && wire && sprites && lockOn;
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
-                "event scene %d, wireframe %d, sprites %d)\n",
-                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites);
+                "event scene %d, wireframe %d, sprites %d, lock-on %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites, lockOn);
     return all ? 0 : 1;
 }
 

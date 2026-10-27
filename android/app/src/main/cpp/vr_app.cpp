@@ -200,6 +200,35 @@ std::vector<std::string> VrApp::StatusLines() const {
     return lines;
 }
 
+// A lock-on sight of our own around `centre` (game units, world space), across the view (`right`,
+// `up`): four gold arrowheads pointing in, turning slowly and breathing in and out.
+static WorldDrawList LockOnSight(const Vec3 &centre, const Vec3 &right, const Vec3 &up, float time) {
+    WorldDrawList out;
+    const Vec3 lit = Normalize(Vec3{0.4f, 0.8f, 0.45f});  // the lit shader's light: full brightness
+    const float radius = 0.55f + 0.06f * std::sin(time * 4.0f);
+    const float spin = time * 0.8f;
+    const uint32_t gold = Rgba(255, 214, 90), deep = Rgba(232, 150, 40);
+    auto at = [&](float a, float r) { return centre + right * (r * std::cos(a)) + up * (r * std::sin(a)); };
+    auto tri = [&](const Vec3 &a, const Vec3 &b, const Vec3 &c, uint32_t ca, uint32_t cb, uint32_t cc) {
+        // Both windings, so it shows whichever way it ends up facing.
+        out.triangles.push_back({a, lit, ca});
+        out.triangles.push_back({b, lit, cb});
+        out.triangles.push_back({c, lit, cc});
+        out.triangles.push_back({a, lit, ca});
+        out.triangles.push_back({c, lit, cc});
+        out.triangles.push_back({b, lit, cb});
+    };
+    for (int i = 0; i < 4; ++i) {
+        const float a = spin + i * kPi / 2;
+        const Vec3 tip = at(a, radius * 0.62f);
+        const Vec3 l = at(a - 0.32f, radius), r = at(a + 0.32f, radius);
+        const Vec3 notch = at(a, radius * 0.86f);
+        tri(tip, l, notch, gold, deep, deep);
+        tri(tip, notch, r, gold, deep, deep);
+    }
+    return out;
+}
+
 bool VrApp::Loading() const {
 #ifdef KHVR_HAS_GAME
     if (waiting_) return true;
@@ -463,9 +492,20 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         giantBottom_ = {middle * Pose{Quat(), {0.0f, -half, 0.0f}}, w, h};
     }
 
-    // HUD: floating panels lazily follow your heading; head-locked ones follow exactly.
+    // HUD: a floating panel stays put while you glance around; once you have looked away from it
+    // (HUD > Follow after turning) for a while (Follow delay), it glides around you, level, back
+    // in front of you. Head-locked ones follow exactly.
     float diff = WrapAngle(headYaw - hudYaw_);
-    if (std::fabs(diff) > DegToRad(35.0f)) hudYaw_ = WrapAngle(hudYaw_ + diff * 0.08f);
+    if (hudGliding_) {
+        hudYaw_ = WrapAngle(hudYaw_ + diff * (1.0f - std::exp(-4.0f * in.dt)));
+        if (std::fabs(diff) < DegToRad(2.0f)) hudGliding_ = false;
+    } else if (std::fabs(diff) > DegToRad(settings_.Get(SettingId::HudFollowAngle))) {
+        hudAwaySeconds_ += in.dt;
+        if (hudAwaySeconds_ >= settings_.Get(SettingId::HudFollowDelay)) hudGliding_ = true;
+    } else {
+        hudAwaySeconds_ = 0.0f;
+    }
+    if (hudGliding_) hudAwaySeconds_ = 0.0f;
     hudPanel_.width = 0.55f * hudScale;
     hudPanel_.height = hudPanel_.width * 0.75f;
     if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
@@ -1028,6 +1068,14 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             motion.up = Normalize(Cross(motion.right, f));
             renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
                                         filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
+            // The lock-on sight: the game's is 2D, placed for its own camera; ours is around the
+            // target in the world, facing you, over everything.
+            const TexturedWorld &tw = game_->texturedWorld();
+            if (tw.lockOn) {
+                WorldDrawList sight = LockOnSight(tw.lockOnAt, motion.right, motion.up,
+                                                  static_cast<float>(std::fmod(in.time, 1000.0)));
+                renderer_.DrawTriangles(sight, vpWorld, 0.9f, true);
+            }
         }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;

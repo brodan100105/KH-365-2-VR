@@ -26,6 +26,7 @@
 
 #include "guest.h"
 #include "hle.h"
+#include "hle_gx.h"
 #include "platform_internal.h"
 
 extern "C" {
@@ -308,6 +309,8 @@ void w2c_env_khvr_host_reset(struct w2c_env *) {
 void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
 
 void w2c_env_khvr_host_watch(struct w2c_env *, u32 addr, u32 size) { WatchSet(addr, size, "asked by the guest"); }
+
+void w2c_env_khvr_host_lock_on(struct w2c_env *, u32 position) { GxNoteLockOn(position); }
 
 void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
     if (ReadString(what) == "scene request") SnapshotOnSceneRequest(a);

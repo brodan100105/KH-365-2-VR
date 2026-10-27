@@ -214,6 +214,12 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.4f, -1.0f, 0.4f, 0.05f, "m",
                   "How far below your eyes (negative) or above them the HUD panel sits, so the health "
                   "bar and commands stay out of the way. Menus are on the giant screen."));
+    d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 20.0f, 5.0f, 60.0f, 5.0f,
+                  "deg", "How far you can look away from the floating HUD before it comes back in front "
+                  "of you."));
+    d.push_back(F(S::HudFollowDelay, "HUD", "follow_delay", "Follow delay", 2.5f, 0.0f, 10.0f, 0.5f, "s",
+                  "How long you look away before the HUD glides back in front of you, so glancing "
+                  "around does not move it."));
     d.push_back(F(S::HudScale, "HUD", "scale", "Panel scale", 1.0f, 0.5f, 2.0f, 0.1f, "x",
                   "Size of the floating HUD panels."));
     d.push_back(E(S::HudTouchInput, "HUD", "touch_input", "Touch input", 0,

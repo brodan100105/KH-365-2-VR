@@ -284,9 +284,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         ++screens_.revision;
         ++frame_.frameCounter;
     }
-    // Without a player in the field (title, menus, mission review) or with a menu or event
-    // scene over it, the stick moves a menu cursor.
-    frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event;
+    // Without a player in the field (title, menus, mission review), with a menu or event scene
+    // over it, or while an NPC talks (its choices go up and down), the stick moves a menu cursor.
+    frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event || latestPlayer_.dialog;
     if (!worldCapture_.load()) {
         frame_.inGameplay = false;
         frame_.inMenu = true;
@@ -348,6 +348,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             b.flipT = a.flipT;
             b.rgba = a.rgba;
         }
+        t.lockOn = w.lockOn;
+        t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
         std::copy(w.viewport, w.viewport + 4, t.viewport);
         std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
         std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);

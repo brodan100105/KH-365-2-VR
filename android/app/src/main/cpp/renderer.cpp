@@ -293,7 +293,7 @@ bool Renderer::Init() {
     return true;
 }
 
-void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, float alpha) {
+void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, float alpha, bool onTop) {
     if (list.triangles.empty()) return;
     glUseProgram(litProgram_);
     glUniformMatrix4fv(litMvp_, 1, GL_FALSE, viewProj.m);
@@ -315,10 +315,12 @@ void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, fl
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(WorldVertex),
                           reinterpret_cast<void *>(offsetof(WorldVertex, color)));
     SetBlend(alpha < 1.0f);
-    glEnable(GL_DEPTH_TEST);
+    if (onTop) glDisable(GL_DEPTH_TEST);
+    else glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(list.triangles.size()));
     glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
     glDisableVertexAttribArray(2);
 }
 

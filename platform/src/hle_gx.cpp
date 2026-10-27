@@ -110,6 +110,10 @@ struct Gx {
     struct GlbSnapshot { Mtx lens, camera; bool ok = false; };
     std::vector<GlbSnapshot> glbList, glbShown;
     std::vector<Mat4d> toWorldShown;  // per projShown: position-matrix space to world space
+    // The lock-on sight's target (world), as the game placed it while drawing a frame, and for the
+    // shown frame.
+    bool lockOnPending = false, lockOnShown = false;
+    float lockOnPendingAt[3] = {}, lockOnShownAt[3] = {};
     // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
     bool sceneKnown = false;
     bool sceneHasCamera = false;  // the scene's camera is the game's (not an event scene's stand-in)
@@ -762,6 +766,9 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.projList.clear();
         g.glbShown.swap(g.glbList);
         g.glbList.clear();
+        g.lockOnShown = g.lockOnPending;
+        std::copy(g.lockOnPendingAt, g.lockOnPendingAt + 3, g.lockOnShownAt);
+        g.lockOnPending = false;
         g.projRecorded = 0;
         SceneOf(g.projShown, g.worldShown);
         g.vertexCount = 0;
@@ -1489,8 +1496,18 @@ void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &piec
     }
 }
 
+void GxNoteLockOn(uint32_t position) {
+    if (!position || position + 12 > GuestMemSize()) return;
+    // The game's thread alone writes the pending sight (and moves it to the shown one at the swap).
+    for (int k = 0; k < 3; ++k) g.lockOnPendingAt[k] = static_cast<int32_t>(Read32(position + 4 * k)) / 4096.0f;
+    g.lockOnPending = true;
+    ++gWorldStats.lockOns;
+}
+
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
+    out->lockOn = g.lockOnShown;
+    std::copy(g.lockOnShownAt, g.lockOnShownAt + 3, out->lockOnAt);
     out->vertices.clear();
     out->triangleTexture.clear();
     out->triangleFlags.clear();

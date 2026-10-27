@@ -99,6 +99,8 @@ enum class SettingId : int {
     HudTopScreen,
     HudDistance,
     HudHeight,
+    HudFollowAngle,
+    HudFollowDelay,
     HudScale,
     HudTouchInput,
     // Hand screen (the DS touch screen held in or worn on a hand)

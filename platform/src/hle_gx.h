@@ -34,8 +34,11 @@ void GxCaptureWorld(PlatformWorld *out);
 struct GxWorldStats {
     uint32_t captures = 0, triangles = 0, textures = 0, leftOut = 0;
     uint32_t markers = 0;  // flat markers placed in the world since the last heartbeat
+    uint32_t lockOns = 0;  // frames the game placed its lock-on sight since then
 };
 extern GxWorldStats gWorldStats;
+// The game placed its lock-on sight over the target at this guest VecFx32 (khvr_host_lock_on).
+void GxNoteLockOn(uint32_t position);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

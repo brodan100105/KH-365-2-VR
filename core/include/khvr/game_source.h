@@ -49,6 +49,9 @@ struct TexturedWorld {
     // Per vertex, when any triangle has kTriBillboard: its sprite's centre (x, y, z) and the
     // vertex's offset from it along the game camera's right and up. Five floats, or empty.
     std::vector<float> billboard;
+    // The game's lock-on sight is over a target here (world): the headset draws its own sight.
+    bool lockOn = false;
+    Vec3 lockOnAt;
     uint32_t revision = 0;  // bumped with every new frame of it
     // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
     // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.

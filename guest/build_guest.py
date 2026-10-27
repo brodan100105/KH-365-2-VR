@@ -56,10 +56,6 @@ CFLAGS = [
     "--target=wasm32", "-ffreestanding", "-nostdinc", "-fno-builtin", "-O2", "-w",
     "-fno-strict-aliasing",  # decompiled code type-puns freely
     "-fwrapv",               # and relies on ARM's wrapping integer arithmetic
-    # Matching decompiled code leaves some locals unset on paths where the ROM passed whatever a
-    # register held (Ov025_MoveGridCursor's nDx / nDy): clang reads that as undefined behaviour and
-    # turns the whole path into a trap. Zeroed locals keep it an ordinary call.
-    "-ftrivial-auto-var-init=zero",
     # mwcc's ARM ABI aligns 64-bit integers (and doubles) to 4 bytes, wasm32 to 8: without this
     # every structure holding one after an odd word (OSContext, with the divider's u64
     # registers) would grow, and code that reaches its fields by offset would miss them.
@@ -530,11 +526,39 @@ def reorder_data_sections(asm):
     return "\n".join(head + [l for c in out for l in c])
 
 
+# Matching decompiled code leaves some locals unset on paths where the ROM used whatever a
+# register held. Mostly clang picks a value and the game plays as on the DS, but in these files it
+# reads the path as undefined behaviour and turns it into a trap (Ov025_MoveGridCursor's nDx / nDy
+# crashed the panel grid): their locals start at zero instead. Not every file: a zero where clang
+# had picked a value breaks other places (Ov025_InitSubsystemObject's budget, a divisor, froze
+# the camp menu in the Grey Area). The build fails on any new trap of this kind (check_traps).
+ZERO_INIT = {
+    "Ov002_ScriptMoveSlot", "Ov006_MissionBuildOptionRows", "Ov008_MissionMenuWaitReady",
+    "Ov008_MoveGridCursor", "Ov025_MoveGridCursor", "Ov213_EnterLeap", "Ov253_IdleTick",
+    "Ov253_SeekTick", "Ov273_EnterLeap", "Ov285_Chase_DecideAttack", "Ov286_Chase_DecideAttack",
+}
+
+
+def check_traps(wasm2c_dir):
+    """Functions wasm2c made into a trap (clang's `unreachable` for undefined behaviour)."""
+    found = []
+    for c in sorted(wasm2c_dir.glob("khdays_*.c")):
+        current = None
+        for line in c.read_text().splitlines():
+            m = re.match(r"^\w+ w2c_khdays_(\w+?)(?:_0)?\(w2c_khdays\* instance.*\{$", line)
+            if m:
+                current = m.group(1)
+            elif line.strip() == "UNREACHABLE;" and current not in found:
+                found.append(current)
+    return found
+
+
 def compile_one(rel, path, objdir):
     obj = objdir / obj_name(rel)
     data = Path(path).read_bytes()
     reorder = is_data_file(rel) or b"__attribute__((aligned(" in data
-    key = hashlib.sha1(data + " ".join(CFLAGS).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
+    flags = CFLAGS + (["-ftrivial-auto-var-init=zero"] if Path(rel).stem in ZERO_INIT else [])
+    key = hashlib.sha1(data + " ".join(flags).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
     stamp = obj.with_suffix(".key")
     if obj.exists() and stamp.exists() and stamp.read_text() == key:
         return rel, True, ""
@@ -542,7 +566,7 @@ def compile_one(rel, path, objdir):
     if reorder:
         # Through assembly, so the data sections can be put in DS order (reorder_data_sections).
         asm = obj.with_suffix(".s")
-        r = run(["clang", *CFLAGS, *inc, "-S", str(path), "-o", str(asm)])
+        r = run(["clang", *flags, *inc, "-S", str(path), "-o", str(asm)])
         if r.returncode == 0:
             asm.write_text(reorder_data_sections(asm.read_text()))
             r2 = run(["clang", "--target=wasm32", "-c", str(asm), "-o", str(obj)])
@@ -550,7 +574,7 @@ def compile_one(rel, path, objdir):
             if r2.returncode == 0:
                 stamp.write_text(key)
                 return rel, True, ""
-    r = run(["clang", *CFLAGS, *inc, "-c", str(path), "-o", str(obj)])
+    r = run(["clang", *flags, *inc, "-c", str(path), "-o", str(obj)])
     if r.returncode == 0:
         stamp.write_text(key)
         return rel, True, ""
@@ -793,6 +817,10 @@ def main():
     sys.stdout.write(r.stdout)
     if r.returncode:
         sys.exit("postprocess: " + r.stderr)
+    traps = check_traps(out / "wasm2c")
+    if traps:
+        sys.exit("functions compiled to a trap (an unset local or other undefined behaviour; see "
+                 "ZERO_INIT): " + " ".join(traps))
     n, count = write_overlay_table(out, out / "wasm2c")
     print("overlay table: %d overlays, %d data ranges" % (n, count))
 

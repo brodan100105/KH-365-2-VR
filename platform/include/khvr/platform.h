@@ -73,8 +73,9 @@ struct PlatformPlayer {
     uint32_t actor = 0;        // guest address of the player actor
     float position[3] = {};    // feet, world space, game units
     float heading = 0.0f;      // radians; facing (sin, 0, cos)
-    bool menu = false;         // the camp menu (ov025, ov008) is running
+    bool menu = false;         // a menu over the field runs (camp menu, shop, save point...)
     bool event = false;        // an event script (ov023) drives the scene: a cutscene
+    bool dialog = false;       // the field's text panel is open: an NPC talks, or asks a choice
 };
 
 struct PlatformWorld {
@@ -100,6 +101,10 @@ struct PlatformWorld {
     // vertex's offset from it along the camera's right and up, so a viewer can turn the sprite to
     // face itself. Five floats a vertex (zero for the other triangles), or empty. Not in files.
     std::vector<float> billboard;
+    // The game's lock-on sight is over a target at this world position (its own sight is 2D
+    // sprites placed for its camera; a viewer draws one of its own here). Not in files.
+    bool lockOn = false;
+    float lockOnAt[3] = {0, 0, 0};
 };
 
 // A captured world to a file and back (world_file.cpp).

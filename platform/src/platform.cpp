@@ -296,8 +296,24 @@ bool Platform::ReadPlayerNow(PlatformPlayer *out) {
         for (int i = 0; obj && ok(obj, 0x18) && i < 96; ++i, obj = Read32(obj + 12)) {
             const char *fn = FunctionName(Read32(obj + 20));
             if (!fn) continue;
-            if (!std::strncmp(fn, "Ov025_", 6) || !std::strncmp(fn, "Ov008_", 6)) out->menu = true;
+            // Menus over the field: the camp menu (ov025, ov008), the save point (ov009), shops
+            // (ov026), game over (ov027), the calendar (ov004), mission results (ov005) and
+            // select (ov006), the monologue screen (ov007).
+            static const char *const kMenus[] = {"Ov025_", "Ov008_", "Ov009_", "Ov026_", "Ov027_",
+                                                 "Ov004_", "Ov005_", "Ov006_", "Ov007_"};
+            for (const char *m : kMenus)
+                if (!std::strncmp(fn, m, 6)) out->menu = true;
             if (!std::strncmp(fn, "Ov023_", 6)) out->event = true;
+        }
+    }
+    // The field's text panel (NPC talk, a choice): open while its state is 1 to 8, as
+    // Ov002_Hud_IsPanelOpen reads it.
+    static const uint32_t hud = SymbolAddress("data_ov002_0207f614");
+    if (hud) {
+        const uint32_t panel = Read32(hud);
+        if (ok(panel, 0x190)) {
+            const int32_t state = static_cast<int32_t>(Read32(panel + 0x18c));
+            out->dialog = state >= 1 && state <= 8;
         }
     }
     out->valid = true;
@@ -453,10 +469,11 @@ void Platform::Heartbeat() {
     }
     if (GxWorldStats &w = gWorldStats; w.captures) {
         Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture, "
-            "%u markers placed in the world",
-            w.captures, w.triangles, w.textures, w.leftOut, w.markers);
+            "%u markers placed in the world, lock-on sight in %u frames",
+            w.captures, w.triangles, w.textures, w.leftOut, w.markers, w.lockOns);
         w.captures = 0;
         w.markers = 0;
+        w.lockOns = 0;
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
@@ -499,9 +516,9 @@ void Platform::Heartbeat() {
     {
         PlatformPlayer pl;
         if (ReadPlayer(&pl))
-            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg%s%s", pl.actor, pl.position[0],
+            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg%s%s%s", pl.actor, pl.position[0],
                 pl.position[1], pl.position[2], pl.heading * 57.29578f, pl.menu ? ", camp menu" : "",
-                pl.event ? ", event script" : "");
+                pl.event ? ", event script" : "", pl.dialog ? ", text panel open" : "");
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");

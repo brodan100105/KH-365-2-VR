@@ -58,7 +58,8 @@ public:
 
     // Lit triangles. `viewProj` maps the list's space to clip space; the directional light is
     // given in the list's own space.
-    void DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, float alpha = 1.0f);
+    // `onTop`: drawn over everything (no depth test), as a lock-on sight is.
+    void DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, float alpha = 1.0f, bool onTop = false);
     // A textured quad of size w x h centered on `pose` (in the space `viewProj` expects),
     // facing +Z of the pose. Curvature bends it around a vertical axis toward the viewer.
     // `flipV` is for textures rendered by GL (bottom row first) rather than uploaded images.
