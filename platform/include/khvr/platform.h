@@ -63,6 +63,15 @@ struct PlatformWorldTexture {
     bool repeatS = false, repeatT = false, flipS = false, flipT = false;
     std::vector<uint32_t> rgba;  // 0xAABBGGRR, row 0 at t = 0
 };
+// The player character in the field (Platform::ReadPlayer): where the game keeps it, in its own
+// units (fixed point 1.0 = 4096 there, given here as floats), and its heading.
+struct PlatformPlayer {
+    bool valid = false;        // false outside the field, or before the player actor exists
+    uint32_t actor = 0;        // guest address of the player actor
+    float position[3] = {};    // feet, world space, game units
+    float heading = 0.0f;      // radians; facing (sin, 0, cos)
+};
+
 struct PlatformWorld {
     std::vector<PlatformWorldVertex> vertices;  // three per triangle
     std::vector<int32_t> triangleTexture;       // per triangle: index into textures, -1 none
@@ -117,6 +126,8 @@ public:
     void CaptureScreens(PlatformScreens *out);
     // The game's 3D world (PlatformWorld). Call when CaptureScreens may be called.
     void CaptureWorld(PlatformWorld *out);
+    // The player character now (PlatformPlayer). Call when CaptureScreens may be called.
+    bool ReadPlayer(PlatformPlayer *out);
     // CaptureScreens also fills topFront / topBack.
     void SetWorldCapture(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.

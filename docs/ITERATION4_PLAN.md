@@ -32,7 +32,11 @@ and into VR as real geometry around you.
 
 ## Step 2: the game's state (hooks)
 
-- [ ] Player position, heading and height, from the active player actor.
+- [ ] Player position, heading and height, from the active player actor. Found as the field's
+      own code finds it (`func_ov022_020881f8`): the battle session's player table
+      (`data_ov022_020b2e78`), the player actor's position at +0x48c and its heading, a u16 angle
+      at +0x80 of the node at +0x20. `Platform::ReadPlayer` reads them and the boot log's
+      heartbeat prints them, to be checked on the headset before the view uses them.
 - [ ] Gameplay, cutscene and menu flags (scene ids, event scripts, camera animations).
 - [ ] **Game > World units per meter** from Roxas's model height.
 

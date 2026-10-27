@@ -227,6 +227,34 @@ void Platform::SetWorldCapture(bool on) {
 
 void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
 
+bool Platform::ReadPlayer(PlatformPlayer *out) {
+    using namespace hle;
+    *out = PlatformPlayer();
+    // As the field's own code finds it (func_ov022_020881f8, Ov022_ScoreCandidateByFacing): the
+    // battle session's player table (data_ov022_020b2e78 +4, 0xc-byte entries whose +0x20 is
+    // the player actor), the local player's entry (QueryActiveStateOrDelegate: 0 alone, 1 when
+    // the second slot is the one played), the position at actor +0x48c and the heading, a u16
+    // angle at +0x80 of the node at actor +0x20.
+    static const uint32_t session = SymbolAddress("data_ov022_020b2e78");
+    static const uint32_t secondFlag = SymbolAddress("data_0204be04");
+    if (!session || !Guest()) return false;
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    const uint32_t table = Read32(session + 4);
+    if (!ok(table, 0x40)) return false;
+    int index = 0;
+    if ((Read32(table) & 2) == 0 && secondFlag && Read8(secondFlag) != 0 && Read32(table + 16) != 0) index = 1;
+    const uint32_t entry = Read32(table + 4 + index * 0xc);
+    if (!ok(entry, 0x24)) return false;
+    const uint32_t actor = Read32(entry + 0x20);
+    if (!ok(actor, 0x498)) return false;
+    out->actor = actor;
+    for (int i = 0; i < 3; ++i) out->position[i] = static_cast<int32_t>(Read32(actor + 0x48c + 4 * i)) / 4096.0f;
+    const uint32_t node = Read32(actor + 0x20);
+    if (ok(node, 0x82)) out->heading = Read16(node + 0x80) * (6.2831853f / 65536.0f);
+    out->valid = true;
+    return true;
+}
+
 namespace {
 std::atomic<uint32_t> gSkippedCaptures{0}, gCaptures{0};
 std::atomic<float> gCaptureMsMax{0.0f}, gCaptureMsSum{0.0f};
@@ -403,6 +431,13 @@ void Platform::Heartbeat() {
         }
         if (now != last) LogList("objects:", now);
         last = now;
+    }
+    // The player character, while there is one: where the 3D view will stand.
+    {
+        PlatformPlayer pl;
+        if (ReadPlayer(&pl))
+            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg", pl.actor, pl.position[0], pl.position[1],
+                pl.position[2], pl.heading * 57.29578f);
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");
