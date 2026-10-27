@@ -53,6 +53,35 @@ uint16_t ExtOrPal(const Engine &e, bool obj, int slot, uint32_t pal, uint32_t id
     return Pal(obj ? e.objPal : e.bgPal, idx);
 }
 
+// The 3D layer as BG0 shows it: shifted by BG0's horizontal scroll (9 bits, signed; the vertical
+// one does nothing to it), so DS pixel x shows the 3D pixel at x + scroll and what scrolls in is
+// empty. The pause menu moves its Roxas into its right-hand panel this way.
+int Bg0Scroll3d() {
+    int h = IoReg16(0x10) & 511;
+    return h >= 256 ? h - 512 : h;
+}
+
+void Shift3d(uint16_t *color, uint8_t *alpha, int width, int height, int shift) {
+    if (shift == 0) return;
+    for (int y = 0; y < height; ++y) {
+        uint16_t *c = color + static_cast<size_t>(y) * width;
+        uint8_t *a = alpha + static_cast<size_t>(y) * width;
+        if (shift > 0) {
+            for (int x = 0; x < width; ++x) {
+                const bool in = x + shift < width;
+                c[x] = in ? c[x + shift] : 0;
+                a[x] = in ? a[x + shift] : 0;
+            }
+        } else {
+            for (int x = width - 1; x >= 0; --x) {
+                const bool in = x + shift >= 0;
+                c[x] = in ? c[x + shift] : 0;
+                a[x] = in ? a[x + shift] : 0;
+            }
+        }
+    }
+}
+
 void TextBg(const Engine &e, int bg, int y, Line *out) {
     uint16_t cnt = IoReg16(e.io + 0x08 + 2 * bg);
     uint32_t hofs = IoReg16(e.io + 0x10 + 4 * bg) & 511, vofs = IoReg16(e.io + 0x12 + 4 * bg) & 511;
@@ -312,6 +341,7 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
         color3d.resize(w3 * kScreenH * s3);
         alpha3d.resize(w3 * kScreenH * s3);
         GxRender(color3d.data(), alpha3d.data(), s3);
+        Shift3d(color3d.data(), alpha3d.data(), static_cast<int>(w3), kScreenH * s3, Bg0Scroll3d() * s3);
     }
     // The 3D sample that stands for DS pixel (x, y): the centre one of its s3 x s3.
     auto at3d = [&](int x, int y) { return (static_cast<size_t>(y) * s3 + s3 / 2) * w3 + static_cast<size_t>(x) * s3 + s3 / 2; };
@@ -496,6 +526,7 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
         static uint16_t hudColor[kScreenW * kScreenH];
         static uint8_t hudAlpha[kScreenW * kScreenH];
         GxRender(hudColor, hudAlpha, 1, true);
+        Shift3d(hudColor, hudAlpha, kScreenW, kScreenH, Bg0Scroll3d());
         for (int i = 0; i < kScreenW * kScreenH; ++i)
             if (hudAlpha[i] && !(front[i] >> 24))
                 front[i] = ToRgba(hudColor[i], static_cast<uint8_t>(hudAlpha[i] * 255 / 31));

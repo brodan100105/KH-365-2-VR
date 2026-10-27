@@ -351,9 +351,28 @@ int WorldTest() {
     const int mid = 96 * 256 + 128, corner = 4 * 256 + 4;
     bool split = s.split && (s.topFront[mid] >> 24) == 255 && (s.topFront[corner] >> 24) == 0 &&
                  s.topBack[corner] == 0xffff0000u;
-    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d)\n",
-                a && b && split ? "ok" : "FAILED", a && b, split);
-    return a && b && split ? 0 : 1;
+    // BG0's horizontal scroll moves the 3D layer: by -16 (0x1f0) the world lands 16 pixels right,
+    // and so does the HUD quad in the 2D picture.
+    bool scrolled = false;
+    {
+        static khvr::PlatformWorld w0, w1;
+        static khvr::PlatformScreens s1;
+        khvr::Platform::Get().CaptureWorld(&w0);
+        khvr::PlatformTestWrite(0x04000010, 0x1f0, 2);
+        khvr::Platform::Get().CaptureWorld(&w1);
+        khvr::Platform::Get().CaptureScreens(&s1);
+        khvr::PlatformTestWrite(0x04000010, 0, 2);
+        int firstFront = -1, firstFrontShifted = -1;
+        for (int x = 0; x < 256 && (firstFront < 0 || firstFrontShifted < 0); ++x) {
+            if (firstFront < 0 && (s.topFront[96 * 256 + x] >> 24) == 255) firstFront = x;
+            if (firstFrontShifted < 0 && (s1.topFront[96 * 256 + x] >> 24) == 255) firstFrontShifted = x;
+        }
+        scrolled = w1.viewport[0] == w0.viewport[0] + 16 && w1.viewport[2] == w0.viewport[2] + 16 && firstFront >= 0 &&
+                   firstFrontShifted == firstFront + 16;
+    }
+    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d)\n",
+                a && b && split && scrolled ? "ok" : "FAILED", a && b, split, scrolled);
+    return a && b && split && scrolled ? 0 : 1;
 }
 
 // Draws a captured world (khvr_world_N.bin) the way Screen > Game in 3D does, on the CPU: the

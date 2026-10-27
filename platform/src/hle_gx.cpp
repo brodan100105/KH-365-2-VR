@@ -1364,9 +1364,13 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->triangleFlags.push_back(flags);
         }
     }
-    out->viewport[0] = g.vpX1;
+    // BG0's horizontal scroll moves the whole 3D layer on the screen (render2d.cpp, Bg0Scroll3d):
+    // the world is drawn that much the other way.
+    int scroll = IoReg16(0x10) & 511;
+    if (scroll >= 256) scroll -= 512;
+    out->viewport[0] = g.vpX1 - scroll;
     out->viewport[1] = g.vpY1;
-    out->viewport[2] = g.vpX2;
+    out->viewport[2] = g.vpX2 - scroll;
     out->viewport[3] = g.vpY2;
     // Fades: engine A's BLDY brightness when the 3D layer (BG0) is its first target, then its
     // master brightness.
