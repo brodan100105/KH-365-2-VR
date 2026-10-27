@@ -26,6 +26,8 @@ void khvr_host_print(const char *text);
 /* A traced event for the boot log (guest/runtime/trace.c): `b` is shown by function name when it
  * is a guest function. */
 void khvr_host_trace(const char *what, unsigned long a, unsigned long b);
+/* Watch `size` bytes at `addr`: the boot log names the first stores into them (platform/src/hle_io.cpp). */
+void khvr_host_watch(const void *addr, unsigned long size);
 /* Movie pictures (platform/src/movie.cpp): the stream opened by its NitroFS path, the frame due
  * at each vertical blank, and its end. */
 void khvr_host_movie_open(const char *path);

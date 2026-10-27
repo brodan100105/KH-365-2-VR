@@ -75,6 +75,7 @@ struct Voice {
     int track = -1, player = -1;
     int key = 60, velocity = 127, length = -1;  // length in ticks, -1 until released
     int updates = 0;  // sound frames it has been updated in (the boot log's sound statistics)
+    bool logged = false;  // one of the notes the boot log follows to their end
     int prio = 0;
     Instrument inst;
     uint32_t baseTimer = 0;
@@ -198,6 +199,8 @@ Instrument FindInstrument(uint32_t bank, int prg, int key) {
 
 void StopVoice(int ch) {
     Voice &v = gVoice[ch];
+    if (v.on && v.logged && v.env != kRelease)
+        Log("sound: note on channel %d cut after %d sound frames", ch, v.updates);
     v.on = false;
     SoundChannel &c = SoundChannels()[ch];
     if (c.owner == ch) {
@@ -329,6 +332,19 @@ void NoteOn(int ti, int key, int velocity, int length) {
         c.timer = v.baseTimer;
     }
     SoundStartChannel(c);
+    // The first notes of each session in full, to find sound effects that play but cannot be
+    // heard: what the note asks for, the wave, and the level it starts at.
+    static int notesLogged = 0;
+    if (notesLogged < 80) {
+        ++notesLogged;
+        v.logged = true;
+        int dB = DecibelSquare(velocity) + DecibelSquare(p.volume) + p.extFader + DecibelSquare(t.volume) +
+                 DecibelSquare(t.volume2) + t.extFader;
+        Log("sound: note player %d track %d channel %d key %d velocity %d length %d | instrument %d wave 0x%08x "
+            "format %d timer %u loop %s %u+%u | level %d cB, attack %d release %d, pan %d",
+            t.player, ti, ch, key, velocity, length, inst.type, inst.wave, c.format, c.timer,
+            c.repeat == kLoop ? "on" : "off", c.loopStart, c.loopLength, dB, v.attackRate, v.releaseRate, c.pan);
+    }
 }
 
 // The voice's channel parameters for this frame, and its envelope, length, sweep and LFO.
@@ -338,6 +354,9 @@ void UpdateVoice(int ch) {
     if (!v.on) return;
     if (c.owner != ch || !c.active) {  // stolen by the ARM9, or a one-shot wave ended
         if (v.updates == 0) ++gStats.endedAtOnce;
+        if (v.logged)
+            Log("sound: note on channel %d ended after %d sound frames (%s)", ch, v.updates,
+                c.owner != ch ? "channel taken" : "wave ended");
         v.on = false;
         if (c.owner == ch) c.owner = -1;
         return;
@@ -363,6 +382,7 @@ void UpdateVoice(int ch) {
     case kRelease:
         v.level -= v.releaseRate;
         if (v.level <= kEnvelopeMin) {
+            if (v.logged) Log("sound: note on channel %d released and silent after %d sound frames", ch, v.updates);
             StopVoice(ch);
             return;
         }
@@ -754,6 +774,9 @@ bool SeqCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
         }
         return true;
     case 0x06: {  // PLAYER_PARAM: player, offset in SNDPlayer, data, size
+        static int paramsLogged = 0;
+        if (paramsLogged++ < 120)
+            Log("sound: player %u parameter +0x%x = %d (%u bytes)", a0, a1, static_cast<int16_t>(a2), a3);
         if (a0 >= kPlayers) return true;
         Player &p = gPlayers[a0];
         switch (a1) {
@@ -768,6 +791,9 @@ bool SeqCommand(uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3)
     }
     case 0x07: {  // TRACK_PARAM: player | size << 24, track mask, offset in SNDTrack, data
         uint32_t pn = a0 & 0xffffff;
+        static int trackParamsLogged = 0;
+        if (trackParamsLogged++ < 120)
+            Log("sound: player %u tracks 0x%04x parameter +0x%x = %d", pn, a1, a2, static_cast<int16_t>(a3));
         if (pn >= kPlayers) return true;
         for (int i = 0; i < kTracksPerPlayer; ++i) {
             if (!(a1 & (1u << i)) || gPlayers[pn].track[i] < 0) continue;
