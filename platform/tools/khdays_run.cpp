@@ -515,15 +515,23 @@ int WorldTest() {
     // camera turns, it stays put; it is kept out of the world from then on.
     bool hudPiece = false;
     {
-        auto frame = [&](double turn, khvr::PlatformWorld *w) {
+        auto frame = [&](double turn, khvr::PlatformWorld *w, double glbTurn = -1) {
             const double c = std::cos(turn), s = std::sin(turn);
             const double turned[12] = {c, 0, -s, 0, 1, 0, s, 0, c, 0, -2, -10};
-            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(turned[i]));
+            const double gc = std::cos(glbTurn < 0 ? turn : glbTurn), gs = std::sin(glbTurn < 0 ? turn : glbTurn);
+            const double glbCam[12] = {gc, 0, -gs, 0, 1, 0, gs, 0, gc, 0, -2, -10};
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(glbCam[i]));
             cmd(0x10, 0);
             for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
             cmd(0x10, 2);
             for (int i = 0; i < 12; ++i) cmd(0x17, fx(turned[i]));
-            quad();  // the world: the quad at the origin
+            cmd(0x11, 0);  // MTX_PUSH the camera
+            for (int q = 0; q < 8; ++q) {  // the world: a row of quads
+                cmd(0x12, 1);  // MTX_POP: back to the camera
+                cmd(0x11, 0);  // MTX_PUSH
+                cmd(0x1c, fx(q - 4)); cmd(0x1c, 0); cmd(0x1c, 0);
+                quad();
+            }
             cmd(0x15, 0);  // the HUD piece: in camera space, 5 in front
             cmd(0x1c, fx(-0.5)); cmd(0x1c, fx(0.5)); cmd(0x1c, fx(-5));
             cmd(0x1b, fx(0.25)); cmd(0x1b, fx(0.25)); cmd(0x1b, fx(1));
@@ -531,14 +539,19 @@ int WorldTest() {
             cmd(0x50, 0);
             khvr::Platform::Get().CaptureWorld(w);
         };
-        static khvr::PlatformWorld w0, w1, w2;
+        static khvr::PlatformWorld w0, w1, w2, x0, x1;
+        // The game's camera variable changes while what it draws stays put (a slight turn rounded
+        // away, a menu over the field): nothing is taken for a HUD piece.
+        frame(0.3, &x0);
+        frame(0.3, &x1, 0.35);
         frame(0.0, &w0);
         frame(0.1, &w1);
         frame(0.1, &w2);  // the camera still: it stays on the HUD
-        hudPiece = w0.triangleFlags.size() == 4 && w1.triangleFlags.size() == 2 && w1.polygonsLeftOut == 1 &&
-                   w2.triangleFlags.size() == 2;
-        std::printf("  HUD piece: %zu, %zu, %zu triangles in the world\n", w0.triangleFlags.size(), w1.triangleFlags.size(),
-                    w2.triangleFlags.size());
+        // Then the camera turns for real (0.3 to 0): the piece that kept its place is the HUD's.
+        hudPiece = x1.triangleFlags.size() == 18 && w0.triangleFlags.size() == 16 && w0.polygonsLeftOut == 1 &&
+                   w1.triangleFlags.size() == 16 && w2.triangleFlags.size() == 16;
+        std::printf("  HUD piece: %zu, %zu, %zu triangles in the world (%zu with the scene still)\n",
+                    w0.triangleFlags.size(), w1.triangleFlags.size(), w2.triangleFlags.size(), x1.triangleFlags.size());
         for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
     }
     const bool all = a && b && split && scrolled && event && wire && sprites && lockOn && hudPiece;

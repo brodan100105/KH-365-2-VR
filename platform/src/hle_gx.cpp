@@ -353,8 +353,15 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
     bool moved = false;
     for (int i = 0; i < 16 && !moved; ++i) moved = std::fabs(g.sceneCamera[i] - g.prevCamera[i]) > 1e-3;
     g.prevCamera = g.sceneCamera;
-    std::unordered_set<uint64_t> keys, hud, looks;
-    keys.reserve(polys.size());
+    // Each polygon of the scene: its place in camera space (key) and its texture and depth (look).
+    struct Seen {
+        size_t index;
+        uint64_t key, look;
+        bool same;  // at the same place in camera space as in the last frame
+    };
+    std::vector<Seen> seen;
+    seen.reserve(polys.size());
+    size_t sameCount = 0;
     for (size_t k = 0; k < polys.size(); ++k) {
         const WorldPoly &w = polys[k];
         if (w.proj >= g.inSceneShown.size() || !g.inSceneShown[w.proj]) continue;
@@ -372,15 +379,31 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
         }
         const int32_t look[3] = {static_cast<int32_t>(w.texParam), static_cast<int32_t>(w.palBase),
                                  static_cast<int32_t>(std::lround(depth / w.n / 16))};
-        const uint64_t lookKey = Fnv(look, sizeof look);
-        keys.insert(key);
         const bool same = g.prevKeys.count(key) != 0;
-        const bool isHud = (same && (moved || g.hudKeys.count(key))) || (!same && g.hudLooks.count(lookKey));
+        sameCount += same;
+        seen.push_back({k, key, Fnv(look, sizeof look), same});
+    }
+    // The camera moved for real only when most of the scene moved across its view: a slight turn
+    // leaves far polygons in place to the rounding, and those are not HUD pieces.
+    const bool sceneMoved = moved && sameCount * 10 < seen.size() * 3;
+    std::unordered_set<uint64_t> keys, hud, looks;
+    keys.reserve(seen.size());
+    size_t hudCount = 0;
+    for (const Seen &s : seen) {
+        keys.insert(s.key);
+        const bool isHud = (s.same && (sceneMoved || g.hudKeys.count(s.key))) || (!s.same && g.hudLooks.count(s.look));
         if (isHud) {
-            g.hudShown[k] = 1;
-            hud.insert(key);
-            looks.insert(lookKey);
+            g.hudShown[s.index] = 1;
+            hud.insert(s.key);
+            looks.insert(s.look);
+            ++hudCount;
         }
+    }
+    // A HUD is a small part of the picture: more than that is the scene itself, mistaken.
+    if (hudCount * 4 > seen.size()) {
+        std::fill(g.hudShown.begin(), g.hudShown.end(), 0);
+        hud.clear();
+        looks.clear();
     }
     g.prevKeys.swap(keys);
     g.hudKeys.swap(hud);

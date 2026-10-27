@@ -361,11 +361,39 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
                 for (int x = 0; x < n; ++x) {
                     const int px = sx - n / 2 + x, py = sy - n / 2 + y;
                     if (px < 0 || py < 0 || px >= W || py >= H) continue;
-                    const uint32_t c = latest_->topObj[py * W + px];
-                    t.lockOnSprite[static_cast<size_t>(y) * n + x] = c;
-                    // Standing in the world it shows around the enemy, not on the HUD panel.
-                    if ((c >> 24) && frame_.inGameplay) screens_.topHud[static_cast<size_t>(py) * W + px] = 0;
+                    t.lockOnSprite[static_cast<size_t>(y) * n + x] = latest_->topObj[py * W + px];
                 }
+            // The sight fits well inside the square; sprites that run past its edge are others
+            // (the HUD's portrait, the command menu): every patch touching the edge goes.
+            std::vector<int> stack;
+            auto clear = [&](int x, int y) {
+                stack.assign(1, y * n + x);
+                while (!stack.empty()) {
+                    const int i = stack.back();
+                    stack.pop_back();
+                    if (!(t.lockOnSprite[i] >> 24)) continue;
+                    t.lockOnSprite[i] = 0;
+                    const int cx = i % n, cy = i / n;
+                    if (cx > 0) stack.push_back(i - 1);
+                    if (cx + 1 < n) stack.push_back(i + 1);
+                    if (cy > 0) stack.push_back(i - n);
+                    if (cy + 1 < n) stack.push_back(i + n);
+                }
+            };
+            for (int k = 0; k < n; ++k) {
+                clear(k, 0);
+                clear(k, n - 1);
+                clear(0, k);
+                clear(n - 1, k);
+            }
+            // Standing in the world the sight shows around the enemy, not on the HUD panel.
+            if (frame_.inGameplay)
+                for (int y = 0; y < n; ++y)
+                    for (int x = 0; x < n; ++x) {
+                        const int px = sx - n / 2 + x, py = sy - n / 2 + y;
+                        if ((t.lockOnSprite[static_cast<size_t>(y) * n + x] >> 24) && px >= 0 && py >= 0 && px < W && py < H)
+                            screens_.topHud[static_cast<size_t>(py) * W + px] = 0;
+                    }
             ++t.lockOnSpriteRevision;
             // Its size: a DS pixel at the enemy's depth before the game's camera. The game draws
             // the sight 8 pixels above the enemy (Ov022_ProjectToScreen).
