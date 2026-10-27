@@ -684,12 +684,12 @@ void TickPlayer(int pn) {
             p.track[i] = -1;
         }
     }
-    // Note lengths count down per tick.
+    // Note lengths count down per tick; a note given no length (0) plays until its wave ends or
+    // the track stops it, as on the DS: menu and battle sound effects are such one-shot notes.
     for (int ch = 0; ch < 16; ++ch) {
         Voice &v = gVoice[ch];
-        if (!v.on || v.player != pn || v.length < 0) continue;
-        if (v.length > 0) --v.length;
-        if (v.length == 0) ReleaseVoice(v);
+        if (!v.on || v.player != pn || v.length <= 0) continue;
+        if (--v.length == 0) ReleaseVoice(v);
     }
     ++p.ticks;
     if (!any) StopPlayer(pn);

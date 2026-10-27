@@ -728,11 +728,42 @@ int SeqTest() {
         out.insert(out.end(), buf, buf + 2 * n);
     }
     double muted = crossings(4800, 28800);
+    // A note with no length (0) on a one-shot wave, as the game's sound effects are: it sounds
+    // until the wave ends (here half a second of square wave), not just for its first frame.
+    const uint32_t arc3 = 0x02119000, seq3 = 0x02115400, cmds3 = 0x02116c00, bank3 = 0x02113000;
+    const uint32_t shot = arc3 + 0x40;
+    const int shotWords = 8192;  // 16384 PCM16 samples at 32768 Hz
+    w32(arc3 + 0x38, 1);
+    w32(arc3 + 0x3c, 0x40);
+    w8(shot, 1); w8(shot + 1, 0); w16(shot + 2, 32768); w16(shot + 4, 512); w16(shot + 6, 0); w32(shot + 8, shotWords);
+    for (int i = 0; i < 2 * shotWords; ++i) w16(shot + 12 + 2 * i, (i / 20) % 2 ? 0x4000 : 0xc000);
+    w32(bank3 + 0x18, arc3);
+    w32(bank3 + 0x38, 1);
+    w32(bank3 + 0x3c, 1 | 0x40 << 8);
+    const uint8_t inst3[10] = {0, 0, 0, 0, 60, 127, 127, 127, 127, 64};  // wave 0 of its archive
+    for (int i = 0; i < 10; ++i) w8(bank3 + 0x40 + i, inst3[i]);
+    const uint8_t code3[] = {0x3c, 0x7f, 0x00, 0x80, 0x60, 0xff};  // key 60, length 0; wait 96; end
+    for (size_t i = 0; i < sizeof code3; ++i) w8(seq3 + static_cast<uint32_t>(i), code3[i]);
+    auto cmd3 = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+        uint32_t at = cmds3 + 0x18 * n;
+        w32(at, next); w32(at + 4, id); w32(at + 8, a0); w32(at + 12, a1); w32(at + 16, a2); w32(at + 20, a3);
+    };
+    cmd3(0, 0, 0x00, 2, seq3, 0, bank3);  // START_SEQ player 2
+    Arm7OnSend(7 | (cmds3 << 6));
+    out.clear();
+    for (int f = 0; f < 40; ++f) {
+        SoundFrame();
+        while (Arm7HasReply()) Arm7PopReply();
+        int16_t buf[2 * 1024];
+        size_t n = SoundRead(buf, 802);
+        out.insert(out.end(), buf, buf + 2 * n);
+    }
+    double oneShot = crossings(4800, 19200);
     bool ok = first > 760 && first < 840 && second > 1520 && second < 1680 && third < 20 && statusDuring && !statusAfter &&
-              muted < 20;
+              muted < 20 && oneShot > 700;
     std::printf("seq test: %s (%.0f, %.0f, %.0f zero crossings a second; player status %d during, %d after; "
-                "muted track before start %.0f)\n",
-                ok ? "ok" : "FAILED", first, second, third, statusDuring, statusAfter, muted);
+                "muted track before start %.0f; one-shot note without a length %.0f)\n",
+                ok ? "ok" : "FAILED", first, second, third, statusDuring, statusAfter, muted, oneShot);
     return ok ? 0 : 1;
 }
 

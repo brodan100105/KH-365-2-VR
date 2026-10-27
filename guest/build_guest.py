@@ -562,6 +562,37 @@ def link(objs, out):
     return r.returncode == 0, r.stdout + r.stderr
 
 
+def definers_first(log, objs, out):
+    """wasm-ld (18) leaves a function out of the function table, so that every address taken of
+    it is 0, when an object declaring it with another signature comes before the object that
+    defines it (the decomp declares many functions loosely). The objects that define such
+    functions, when they hold no data (so the data layout does not move), go right after
+    storage.o; returns the new object list, or None when nothing moves."""
+    names = set(re.findall(r"function signature mismatch: (\S+)", log))
+    if not names:
+        return None
+    definer, with_data, in_data = {}, set(), False
+    for line in (out / "game.map").read_text().splitlines():
+        cols = line.split()
+        if len(cols) >= 4 and cols[3] == "DATA":
+            in_data = True
+            continue
+        m = re.search(r"(\S+\.o):\(([^)]+)\)$", line)
+        if not m:
+            continue
+        if in_data:
+            with_data.add(m.group(1))
+        elif m.group(2) in names:
+            definer[m.group(2)] = m.group(1)
+    moving = {o for o in definer.values() if o not in with_data}
+    if not moving:
+        return None
+    front = [o for o in objs[1:] if str(o) in moving]
+    rest = [o for o in objs[1:] if str(o) not in moving]
+    print("link: %d objects that define loosely declared functions go first" % len(front))
+    return [objs[0]] + front + rest
+
+
 def obj_to_rel(obj, rels):
     name = Path(obj).name
     for rel in rels:
@@ -700,6 +731,11 @@ def main():
                 sys.exit("placeholders.s: " + r.stderr)
             objs.append(out / "obj" / "placeholders.o")
         ok, log = link(objs, out)
+        if ok:
+            reordered = definers_first(log, objs, out)
+            if reordered:
+                objs = reordered
+                ok, log = link(objs, out)
         missing = set(undefined_data(log)) - placeholders
         if missing:
             # Data nobody defines (left out with a failed or excluded source): 64 zero bytes each,
