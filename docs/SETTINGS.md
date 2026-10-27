@@ -50,11 +50,12 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
+| `world_scale` | World scale | 0.1 to 3 x | `1` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
 | `eye_height` | Character eye height | 1 to 2.2 m | `1.5` | Eye height of the character you play. |
 | `match_height` | Match character height | `true` / `false` | `true` | Scale the world so your real eye height matches the character's. |
 | `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
-| `show_body` | Show body | `hidden`, `hands_and_weapon`, `full_body` | `hands_and_weapon` | Which parts of the character model are drawn in first person. |
+| `show_body` | Show body | `hidden`, `hands_and_weapon`, `full_body` | `hands_and_weapon` | Which parts of the character model are drawn in first person. Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
 | `weapon_hand` | Keyblade hand | `left`, `right` | `right` | The hand that holds the Keyblade. |
 | `dual_wield` | Dual wield | `true` / `false` | `false` | Put a second Keyblade in the other hand when the character has one. |
 | `grip_angle` | Grip angle | -60 to 60 deg | `0` | Tilts the Keyblade in your hand. |
@@ -103,7 +104,8 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `refresh_rate` | Refresh rate | `72`, `90`, `120` | `90` | Headset refresh rate. The game itself runs at its original frame rate. |
+| `refresh_rate` | Refresh rate | `72`, `90`, `120` | `120` | Headset refresh rate. The game runs at its own 60 frames a second; at 120 Hz each of its frames shows for exactly two, which keeps turning smooth. |
+| `draw_while_running` | Draw while the game runs | `true` / `false` | `true` | Draw each frame's screens while the game runs the next one, as the DS does, so heavy scenes keep all their frames. Turn off if pictures ever flicker or tear. |
 | `resolution_scale` | Resolution scale | 0.5 to 1.5 x | `1` | Per-eye render resolution relative to the headset's. Applies on restart. |
 | `msaa` | Anti-aliasing | `off`, `2x`, `4x` | `4x` | Multisample anti-aliasing. Applies on restart. |
 | `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp`, `smooth` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth also rounds diagonal edges (Scale4x) instead of showing them as steps. |

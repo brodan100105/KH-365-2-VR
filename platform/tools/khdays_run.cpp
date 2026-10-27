@@ -201,6 +201,13 @@ int GxTest() {
     frame(0x001f0040, false);                // back faces only: the front-facing triangle goes
     khvr::Platform::Get().CaptureScreens(&s);
     bool culled = px(128, 100) == 0;
+    // Alpha 0: a wireframe triangle, its edges drawn (the bottom one along y 144) and its inside
+    // empty; the world capture has it as three edges.
+    frame(0x000000c0, false);
+    khvr::Platform::Get().CaptureScreens(&s);
+    const bool wire = px(128, 100) == 0 && (px(128, 143) == 0x0000ff || px(128, 144) == 0x0000ff) &&
+                      (px(128, 47) == 0x0000ff || px(128, 48) == 0x0000ff);
+    tri = tri && wire;
     frame(0x001f0080, true);
     khvr::Platform::Get().CaptureScreens(&s);
     bool tex = px(90, 96) == 0xffffff && px(166, 96) == 0x00ff00;
@@ -233,7 +240,7 @@ int GxTest() {
         double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / iters;
         std::printf("gx bench: %.2f ms a frame for 1500 quads\n", ms);
     }
-    std::printf("gx test: %s (triangle %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
+    std::printf("gx test: %s (triangle and wireframe %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
                 tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
     return tri && culled && tex ? 0 : 1;
 }
@@ -268,8 +275,8 @@ int WorldTest() {
         cmd(0x23, (fx(x) & 0xffff) | (fx(y) << 16));
         cmd(0x23, 0);
     };
-    auto quad = [&] {
-        cmd(0x29, 0x001f00c0);
+    auto quad = [&](uint32_t attr = 0x001f00c0) {
+        cmd(0x29, attr);
         cmd(0x2a, 7u << 26);
         cmd(0x20, 0x7fff);
         cmd(0x40, 1);
@@ -409,10 +416,25 @@ int WorldTest() {
         }
         for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(lens[i]));
     }
-    const bool all = a && b && split && scrolled && event;
+    // A wireframe quad (alpha 0) is captured as its four edges.
+    bool wire = false;
+    {
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        cmd(0x10, 2);
+        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        quad(0x000000c0);
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w;
+        khvr::Platform::Get().CaptureWorld(&w);
+        int lines = 0;
+        for (uint8_t f : w.triangleFlags) lines += (f & khvr::kWorldLine) != 0;
+        wire = lines == 4 && w.triangleFlags.size() == 4 && (w.vertices[0].color >> 24) == 255;
+    }
+    const bool all = a && b && split && scrolled && event && wire;
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
-                "event scene %d)\n",
-                all ? "ok" : "FAILED", a && b, split, scrolled, event);
+                "event scene %d, wireframe %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire);
     return all ? 0 : 1;
 }
 

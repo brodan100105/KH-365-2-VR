@@ -45,6 +45,7 @@ enum class SettingId : int {
     TpMoveRelativeTo,
     TpWallFade,
     // First person
+    FpWorldScale,
     FpEyeHeight,
     FpMatchCharacterHeight,
     FpMoveRelativeTo,
@@ -83,6 +84,7 @@ enum class SettingId : int {
     ComfortSeatedHeight,
     // Picture
     PicRefreshRate,
+    PicParallelCapture,
     PicResolutionScale,
     PicMsaa,
     PicTextureFilter,

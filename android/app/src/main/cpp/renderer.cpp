@@ -325,13 +325,16 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         auto add = [&](size_t t, bool blend, bool depthWrite, float cut) {
             const int32_t tex = world.triangleTexture[t];
             const bool decal = world.triangleFlags[t] & kTriDecal;
-            const int cull = cullOf(t);
+            const bool lines = world.triangleFlags[t] & kTriLine;
+            const int cull = lines ? 0 : cullOf(t);
             WorldBatch *b = worldBatches_.empty() ? nullptr : &worldBatches_.back();
             if (!b || b->texture != tex || b->blend != blend || b->depthWrite != depthWrite || b->decal != decal ||
-                b->cut != cut || b->cull != cull)
-                worldBatches_.push_back({tex, blend, depthWrite, decal, cut, cull, static_cast<GLint>(sorted.size()), 0});
-            for (int k = 0; k < 3; ++k) sorted.push_back(world.vertices[t * 3 + k]);
-            worldBatches_.back().count += 3;
+                b->cut != cut || b->cull != cull || b->lines != lines)
+                worldBatches_.push_back(
+                    {tex, blend, depthWrite, decal, cut, cull, lines, static_cast<GLint>(sorted.size()), 0});
+            const int n = lines ? 2 : 3;  // an edge is its first two vertices
+            for (int k = 0; k < n; ++k) sorted.push_back(world.vertices[t * 3 + k]);
+            worldBatches_.back().count += n;
         };
         std::vector<size_t> pass1, pass2, pass3;
         for (size_t t = 0; t < triangles; ++t) {
@@ -344,6 +347,8 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             }
         }
         auto byKey = [&](size_t a, size_t b) {
+            const bool la = world.triangleFlags[a] & kTriLine, lb = world.triangleFlags[b] & kTriLine;
+            if (la != lb) return lb;  // edges after the opaque triangles, in batches of their own
             if (world.triangleTexture[a] != world.triangleTexture[b]) return world.triangleTexture[a] < world.triangleTexture[b];
             return cullOf(a) < cullOf(b);
         };
@@ -429,7 +434,10 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             glBindTexture(GL_TEXTURE_2D, worldTextureIds_[b.texture]);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, nearest ? GL_NEAREST : GL_LINEAR);
         }
-        glDrawArrays(GL_TRIANGLES, b.first, b.count);
+        // A wireframe edge is one DS pixel wide on its 256 x 192 screen: a few headset pixels.
+        if (b.lines) glLineWidth(3.0f);
+        glDrawArrays(b.lines ? GL_LINES : GL_TRIANGLES, b.first, b.count);
+        if (b.lines) glLineWidth(1.0f);
     }
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);

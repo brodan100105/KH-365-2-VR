@@ -624,6 +624,9 @@ void VrApp::Frame(const XrFrameInput &in) {
         decomp_->Set3dScale(headsetDraws3d ? 1 : settings_.Int(SettingId::Pic3dResolution) + 1);
         const bool standInWorld = settings_.Bool(SettingId::ViewStandInWorld);
         decomp_->SetStandInWorld(standInWorld);
+        decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
+        decomp_->SetHidePlayer(lastMode_ == ViewMode::FirstPerson &&
+                               settings_.Enum<BodyDisplay>(SettingId::FpShowBody) != BodyDisplay::FullBody);
         decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds || standInWorld);
     }
 #endif

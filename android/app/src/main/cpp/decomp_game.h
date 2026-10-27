@@ -7,6 +7,8 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -37,6 +39,12 @@ public:
     // View > Stand in the world: report gameplay (the player in the field, no menu or event
     // scene) so the app leaves the giant screen for the captured world around you.
     void SetStandInWorld(bool on) { standInWorld_ = on; }
+    // Picture > Draw while the game runs: the screens of a frame are drawn on a thread of their
+    // own while the game runs the next frame, as the DS does, instead of before it.
+    void SetParallelCapture(bool on) { parallel_ = on; }
+    // First person without the full body: the game's own Roxas (his model and what he holds,
+    // the polygons right around his feet) is left out of the captured world.
+    void SetHidePlayer(bool on) { hidePlayer_ = on; }
     // Screen > Game picture (Sharp, 3D depth) or standing in the world: capture the game's 3D
     // world each frame.
     void SetWorldCapture(bool on) {
@@ -56,6 +64,10 @@ public:
 
 private:
     void DriverLoop();
+    // Draws the screens (and the world, and reads the player) of the frame the game just
+    // finished, and hands them to the app.
+    void CaptureFrame(std::unique_ptr<PlatformScreens> &scratch, std::unique_ptr<PlatformWorld> &scratchWorld);
+    void CaptureLoop();
     void OpenAudio();
     void CloseAudio();
 
@@ -68,6 +80,14 @@ private:
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
     PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
     std::atomic<bool> standInWorld_{false};
+    bool hidePlayer_ = false;
+    // The drawing thread (Picture > Draw while the game runs) and its hand-off.
+    std::atomic<bool> parallel_{true};
+    std::thread capture_;
+    std::mutex captureMu_;
+    std::condition_variable captureCv_;
+    bool captureWanted_ = false, captureBusy_ = false, captureStop_ = false;
+    std::chrono::steady_clock::time_point started_;
 
     std::thread driver_;
     std::atomic<bool> stop_{false};

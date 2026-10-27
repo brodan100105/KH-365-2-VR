@@ -48,7 +48,13 @@ and into VR as real geometry around you.
       runs, and the view mode then draws the captured world through the rig. Still to come: the
       scale from Roxas's height, cutscene detection beyond event scripts, and what the game's
       camera does not see (step 3's camera override).
-- [ ] First person: the view from Roxas's head, his model hidden.
+- [ ] First person: the view from Roxas's head, his model hidden. In: the game's own Roxas left
+      out of the captured world unless **Show body** is Full body, and **First person > World
+      scale**. To come: the game's Keyblade model in the VR hand instead of the placeholder, and
+      Roxas's arms following yours (IK on his model's bones).
+- [ ] In-engine cutscenes from where you stand (**Cutscenes: Same as gameplay**): event scenes set
+      their own projection, captured now only in camera space (sharp on the giant screen); placing
+      them in the world needs their camera.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera now: what lies behind it is not submitted at all).
 - [ ] Analog movement and room-scale steps through the game's collision.

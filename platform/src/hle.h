@@ -8,6 +8,10 @@
 
 namespace khvr::hle {
 
+// Where the screens' time goes, for the heartbeat: milliseconds added up since it last printed
+// them (render2d.cpp adds the 3D layer and the HUD pass, Platform::CaptureWorld the capture).
+void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs);
+
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void LogOnce(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));

@@ -1,6 +1,7 @@
 #include "render2d.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -340,7 +341,9 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
     if (draw3d) {
         color3d.resize(w3 * kScreenH * s3);
         alpha3d.resize(w3 * kScreenH * s3);
+        const auto t0 = std::chrono::steady_clock::now();
         GxRender(color3d.data(), alpha3d.data(), s3);
+        NoteCaptureTimes(std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count(), 0, 0);
         Shift3d(color3d.data(), alpha3d.data(), static_cast<int>(w3), kScreenH * s3, Bg0Scroll3d() * s3);
     }
     // The 3D sample that stands for DS pixel (x, y): the centre one of its s3 x s3.
@@ -525,7 +528,9 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
         // The flat 3D pieces the world capture leaves out (orthographic HUD elements) go in front.
         static uint16_t hudColor[kScreenW * kScreenH];
         static uint8_t hudAlpha[kScreenW * kScreenH];
+        const auto t0 = std::chrono::steady_clock::now();
         GxRender(hudColor, hudAlpha, 1, true);
+        NoteCaptureTimes(0, std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count(), 0);
         Shift3d(hudColor, hudAlpha, kScreenW, kScreenH, Bg0Scroll3d());
         for (int i = 0; i < kScreenW * kScreenH; ++i)
             if (hudAlpha[i] && !(front[i] >> 24))

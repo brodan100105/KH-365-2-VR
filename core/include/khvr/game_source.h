@@ -38,6 +38,7 @@ struct WorldTexture {
 };
 enum TexturedTriangleFlags : uint8_t {
     kTriFront = 1, kTriBack = 2, kTriTranslucent = 4, kTriDecal = 8, kTriTexAlpha = 16, kTriDepthWrite = 32,
+    kTriLine = 64,  // a wireframe edge: vertices 0 to 1 (2 repeats 1)
 };
 struct TexturedWorld {
     std::vector<TexturedVertex> vertices;  // three per triangle

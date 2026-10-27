@@ -81,6 +81,7 @@ private:
         bool blend, depthWrite, decal;
         float cut;        // texels below this alpha are not drawn
         int cull;         // 0 both faces, 1 front faces only, 2 back faces only
+        bool lines;       // wireframe edges: pairs of vertices (GL_LINES)
         GLint first;
         GLsizei count;
     };

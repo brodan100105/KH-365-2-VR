@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -107,6 +108,7 @@ struct Gx {
     bool sceneKnown = false;
     Mat4d sceneLens{}, sceneCamera{}, sceneLensInv{}, sceneCameraInv{};
     bool shownWBuffer = false, shownManualSort = false;
+    std::array<int, 4> shownVp{0, 0, 255, 191};  // the viewport when the shown list was swapped in
     uint32_t vertexCount = 0;
 
     int vpX1 = 0, vpY1 = 0, vpX2 = 255, vpY2 = 191;
@@ -126,6 +128,10 @@ struct Gx {
 };
 
 Gx g;
+// The shown list (and what SceneOf decided about it) is swapped in by the game's thread at
+// SWAP_BUFFERS and read by the screens' drawing, which may run on another thread while the game
+// runs its next frame (as the DS draws one frame while its CPU works on the next).
+std::mutex gShownMu;
 uint32_t gCommands = 0, gLastFrame = 0;
 
 uint8_t ParamCount(uint8_t cmd) {
@@ -710,7 +716,8 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.stripOdd = false;
         break;
     case 0x41: break;
-    case 0x50:
+    case 0x50: {
+        std::lock_guard<std::mutex> lock(gShownMu);
         g.shown.swap(g.list);
         g.list.clear();
         g.worldShown.swap(g.worldList);
@@ -722,7 +729,9 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
+        g.shownVp = {g.vpX1, g.vpY1, g.vpX2, g.vpY2};
         break;
+    }
     case 0x60:
         g.vpX1 = static_cast<int>(p[0] & 0xff);
         g.vpY1 = static_cast<int>((p[0] >> 8) & 0xff);
@@ -1081,9 +1090,10 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
 ScreenVertex ToScreen(const Vertex &v, bool wbuffer, int scale) {
     ScreenVertex o;
     const float w = v.w != 0 ? v.w : 1.0f;
-    const float vpW = static_cast<float>(g.vpX2 - g.vpX1 + 1), vpH = static_cast<float>(g.vpY2 - g.vpY1 + 1);
-    o.x = (v.x / w + 1.0f) * vpW * 0.5f + g.vpX1;
-    const float yUp = (v.y / w + 1.0f) * vpH * 0.5f + g.vpY1;
+    const auto &vp = g.shownVp;
+    const float vpW = static_cast<float>(vp[2] - vp[0] + 1), vpH = static_cast<float>(vp[3] - vp[1] + 1);
+    o.x = (v.x / w + 1.0f) * vpW * 0.5f + vp[0];
+    const float yUp = (v.y / w + 1.0f) * vpH * 0.5f + vp[1];
     o.y = 192.0f - yUp;
     o.x *= scale;
     o.y *= scale;
@@ -1097,10 +1107,45 @@ ScreenVertex ToScreen(const Vertex &v, bool wbuffer, int scale) {
     return o;
 }
 
+// A wireframe polygon (alpha 0): only its edges, opaque, one DS pixel wide (`scale` pixels in a
+// larger picture). The game outlines furniture and the like this way.
+void DrawEdges(Frame &f, const RenderParams &rp, const Polygon &p, const ScreenVertex *sv, int rowMin, int rowMax) {
+    Polygon opaque = p;
+    opaque.attr |= 31u << 16;
+    const int dot = std::max(1, rp.scale);
+    for (int e = 0; e < p.n; ++e) {
+        const ScreenVertex &a = sv[e], &b = sv[(e + 1) % p.n];
+        const int steps = std::max(1, static_cast<int>(std::ceil(std::max(std::fabs(b.x - a.x), std::fabs(b.y - a.y)) / dot)));
+        for (int k = 0; k <= steps; ++k) {
+            const float t = static_cast<float>(k) / steps;
+            const float invW = a.invW + (b.invW - a.invW) * t;
+            if (invW <= 0) continue;
+            const float wv = 1.0f / invW;
+            const float depthF = rp.wbuffer ? wv : a.depth + (b.depth - a.depth) * t;
+            const uint32_t depth = static_cast<uint32_t>(std::clamp(depthF, 0.0f, 16777215.0f));
+            const int cx = static_cast<int>(std::floor(a.x + (b.x - a.x) * t)) / dot * dot;
+            const int cy = static_cast<int>(std::floor(a.y + (b.y - a.y) * t)) / dot * dot;
+            const int r = std::clamp(static_cast<int>((a.r + (b.r - a.r) * t) * wv), 0, 63);
+            const int gg = std::clamp(static_cast<int>((a.g + (b.g - a.g) * t) * wv), 0, 63);
+            const int bb = std::clamp(static_cast<int>((a.b + (b.b - a.b) * t) * wv), 0, 63);
+            const float s = (a.s + (b.s - a.s) * t) * wv, tt = (a.t + (b.t - a.t) * t) * wv;
+            for (int y = std::max(cy, rowMin); y < cy + dot && y <= rowMax && y < f.h; ++y) {
+                for (int x = std::max(cx, 0); x < cx + dot && x < f.w; ++x) {
+                    const size_t i = static_cast<size_t>(y) * f.w + x;
+                    if (depth <= f.depth[i]) DrawPixel(f, rp, opaque, static_cast<int>(i), depth, r, gg, bb, s, tt);
+                }
+            }
+        }
+    }
+}
+
 void DrawPolygon(Frame &f, const RenderParams &rp, const Polygon &p, int rowMin, int rowMax) {
-    if (((p.attr >> 16) & 31) == 0) return;  // wireframe: edges only, not drawn yet
     ScreenVertex sv[kMaxPolyVerts];
     for (int i = 0; i < p.n; ++i) sv[i] = ToScreen(p.v[i], rp.wbuffer, rp.scale);
+    if (((p.attr >> 16) & 31) == 0) {
+        DrawEdges(f, rp, p, sv, rowMin, rowMax);
+        return;
+    }
     for (int i = 1; i + 1 < p.n; ++i) DrawTriangle(f, rp, p, sv[0], sv[i], sv[i + 1], rowMin, rowMax);
 }
 
@@ -1190,6 +1235,7 @@ void GxVBlank() {
 }
 
 void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
+    std::lock_guard<std::mutex> lock(gShownMu);
     static Frame f;
     static TexMem mem;
     mem.tex.resize(kTexVramSize);
@@ -1270,6 +1316,7 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
 GxWorldStats gWorldStats;
 
 void GxCaptureWorld(PlatformWorld *out) {
+    std::lock_guard<std::mutex> lock(gShownMu);
     out->vertices.clear();
     out->triangleTexture.clear();
     out->triangleFlags.clear();
@@ -1363,14 +1410,14 @@ void GxCaptureWorld(PlatformWorld *out) {
             continue;
         }
         const uint32_t alpha = (w.attr >> 16) & 31;
-        if (alpha == 0) continue;  // wireframe
+        const bool wire = alpha == 0;  // wireframe: its edges, opaque
         const Mat4d &m = toWorld[w.proj];
         const int32_t tex = texture(w.texParam, w.palBase);
         const uint32_t format = (w.texParam >> 26) & 7;
         uint8_t flags = 0;
         if (w.attr & 0x80) flags |= kWorldFront;
         if (w.attr & 0x40) flags |= kWorldBack;
-        if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+        if (!wire && (alpha < 31 || (tex >= 0 && (format == 1 || format == 6)))) flags |= kWorldTranslucent;
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
@@ -1388,7 +1435,17 @@ void GxCaptureWorld(PlatformWorld *out) {
                 pv[i].u = pv[i].v = 0;
             }
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
-            pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((alpha * 255 / 31) << 24);
+            pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
+        }
+        if (wire) {
+            for (int i = 0; i < w.n; ++i) {
+                out->vertices.push_back(pv[i]);
+                out->vertices.push_back(pv[(i + 1) % w.n]);
+                out->vertices.push_back(pv[(i + 1) % w.n]);
+                out->triangleTexture.push_back(tex);
+                out->triangleFlags.push_back(static_cast<uint8_t>(kWorldLine | kWorldFront | kWorldBack));
+            }
+            continue;
         }
         for (int i = 1; i + 1 < w.n; ++i) {
             out->vertices.push_back(pv[0]);
@@ -1402,10 +1459,10 @@ void GxCaptureWorld(PlatformWorld *out) {
     // the world is drawn that much the other way.
     int scroll = IoReg16(0x10) & 511;
     if (scroll >= 256) scroll -= 512;
-    out->viewport[0] = g.vpX1 - scroll;
-    out->viewport[1] = g.vpY1;
-    out->viewport[2] = g.vpX2 - scroll;
-    out->viewport[3] = g.vpY2;
+    out->viewport[0] = g.shownVp[0] - scroll;
+    out->viewport[1] = g.shownVp[1];
+    out->viewport[2] = g.shownVp[2] - scroll;
+    out->viewport[3] = g.shownVp[3];
     // Fades: engine A's BLDY brightness when the 3D layer (BG0) is its first target, then its
     // master brightness.
     const uint16_t bldcnt = IoReg16(0x50), master = IoReg16(0x6c);

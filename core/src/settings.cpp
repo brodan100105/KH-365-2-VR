@@ -86,6 +86,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::TpWallFade, "Camera", "wall_fade", "Fade walls", true,
                   "Fade geometry between you and the character."));
     // ---- First person ----
+    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.0f, 0.1f, 3.0f, 0.05f, "x",
+                  "How big the world looks around you in first person: above 1 larger, below 1 smaller "
+                  "(on top of Match character height)."));
     d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 1.5f,
                   1.0f, 2.2f, 0.05f, "m", "Eye height of the character you play."));
     d.push_back(B(S::FpMatchCharacterHeight, "First person", "match_height",
@@ -99,7 +102,8 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::FpShowBody, "First person", "show_body", "Show body", 1,
                   {"hidden", "hands_and_weapon", "full_body"},
                   {"Hidden", "Hands and Keyblade", "Full body"},
-                  "Which parts of the character model are drawn in first person."));
+                  "Which parts of the character model are drawn in first person. Hidden and Hands and "
+                  "Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay)."));
     d.push_back(E(S::FpWeaponHand, "First person", "weapon_hand", "Keyblade hand", 1,
                   {"left", "right"}, {"Left", "Right"}, "The hand that holds the Keyblade."));
     d.push_back(B(S::FpDualWield, "First person", "dual_wield", "Dual wield", false,
@@ -165,9 +169,13 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::ComfortSeatedHeight, "Comfort", "seated_height", "Seated height boost",
                   0.45f, 0.0f, 1.0f, 0.05f, "m", "Height added in seated play."));
     // ---- Picture ----
-    d.push_back(E(S::PicRefreshRate, "Picture", "refresh_rate", "Refresh rate", 1,
+    d.push_back(E(S::PicRefreshRate, "Picture", "refresh_rate", "Refresh rate", 2,
                   {"72", "90", "120"}, {"72 Hz", "90 Hz", "120 Hz"},
-                  "Headset refresh rate. The game itself runs at its original frame rate."));
+                  "Headset refresh rate. The game runs at its own 60 frames a second; at 120 Hz each "
+                  "of its frames shows for exactly two, which keeps turning smooth."));
+    d.push_back(B(S::PicParallelCapture, "Picture", "draw_while_running", "Draw while the game runs", true,
+                  "Draw each frame's screens while the game runs the next one, as the DS does, so "
+                  "heavy scenes keep all their frames. Turn off if pictures ever flicker or tear."));
     d.push_back(F(S::PicResolutionScale, "Picture", "resolution_scale", "Resolution scale", 1.0f,
                   0.5f, 1.5f, 0.05f, "x", "Per-eye render resolution relative to the headset's. Applies on restart."));
     d.push_back(E(S::PicMsaa, "Picture", "msaa", "Anti-aliasing", 2, {"off", "2x", "4x"},

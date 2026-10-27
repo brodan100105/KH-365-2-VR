@@ -75,7 +75,7 @@ float ThirdPersonScale(const Settings &s) {
 }
 
 float FirstPersonScale(const Settings &s, float realEyeHeight) {
-    float scale = s.Get(SettingId::GameUnitsPerMeter);
+    float scale = s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::FpWorldScale);
     if (s.Bool(SettingId::FpMatchCharacterHeight) && realEyeHeight > 0.5f)
         scale *= s.Get(SettingId::FpEyeHeight) / realEyeHeight;
     return scale;

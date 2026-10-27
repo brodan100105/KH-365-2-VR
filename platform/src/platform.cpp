@@ -1,6 +1,7 @@
 #include "khvr/platform.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -225,7 +226,11 @@ void Platform::SetWorldCapture(bool on) {
     hle::gWorldCaptureOn = on;
 }
 
-void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
+void Platform::CaptureWorld(PlatformWorld *out) {
+    const auto t0 = std::chrono::steady_clock::now();
+    hle::GxCaptureWorld(out);
+    hle::NoteCaptureTimes(0, 0, std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count());
+}
 
 bool Platform::ReadPlayer(PlatformPlayer *out) {
     using namespace hle;
@@ -270,7 +275,16 @@ bool Platform::ReadPlayer(PlatformPlayer *out) {
 namespace {
 std::atomic<uint32_t> gSkippedCaptures{0}, gCaptures{0};
 std::atomic<float> gCaptureMsMax{0.0f}, gCaptureMsSum{0.0f};
+std::atomic<float> g3dMsSum{0.0f}, gHudMsSum{0.0f}, gWorldMsSum{0.0f};
 }
+
+namespace hle {
+void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs) {
+    g3dMsSum = g3dMsSum + layer3dMs;
+    gHudMsSum = gHudMsSum + hudMs;
+    gWorldMsSum = gWorldMsSum + worldMs;
+}
+}  // namespace hle
 
 void Platform::NoteDisplay(bool skipped, float captureMs) {
     if (skipped) {
@@ -350,6 +364,7 @@ void LogActionScript() {
 }
 }  // namespace
 
+
 // Calls to the guest functions in guest/counted.txt (postprocess inserts khvr_count at their
 // entry); the heartbeat logs the ones that changed.
 extern "C" {
@@ -397,8 +412,10 @@ void Platform::Heartbeat() {
     }
     // How the screens kept up since the last heartbeat (the app's driver reports them).
     if (uint32_t n = gCaptures.exchange(0); n || gSkippedCaptures) {
-        Log("  screens: %u drawn (%.1f ms average, %.1f ms at most), %u skipped to keep up", n,
-            n ? gCaptureMsSum.load() / n : 0.0f, gCaptureMsMax.load(), gSkippedCaptures.exchange(0));
+        Log("  screens: %u drawn (%.1f ms average, %.1f ms at most; of which the 3D layer %.1f, the HUD pass %.1f, "
+            "the world capture %.1f), %u skipped to keep up", n,
+            n ? gCaptureMsSum.load() / n : 0.0f, gCaptureMsMax.load(), n ? g3dMsSum.exchange(0) / n : 0.0f,
+            n ? gHudMsSum.exchange(0) / n : 0.0f, n ? gWorldMsSum.exchange(0) / n : 0.0f, gSkippedCaptures.exchange(0));
         gCaptureMsSum = 0.0f;
         gCaptureMsMax = 0.0f;
     }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -133,6 +134,55 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     return true;
 }
 
+void DecompGame::CaptureFrame(std::unique_ptr<PlatformScreens> &scratch, std::unique_ptr<PlatformWorld> &scratchWorld) {
+    using clock = std::chrono::steady_clock;
+    Platform &p = Platform::Get();
+    const auto captureStart = clock::now();
+    p.CaptureScreens(scratch.get());
+    const bool world = worldCapture_.load();
+    if (world) p.CaptureWorld(scratchWorld.get());
+    p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
+    if (world) {
+        PlatformPlayer player;
+        p.ReadPlayer(&player);
+        std::lock_guard<std::mutex> lock(screensMu_);
+        std::swap(scratchWorld, latestWorld_);
+        latestPlayer_ = player;
+        ++latestWorldRevision_;
+    }
+    // The loading area stays for 5 seconds at least, and until either screen shows an
+    // image: the game starts on flat white or black (a brightness fade), which is not one.
+    if (!hasPicture_ && clock::now() - started_ > std::chrono::seconds(5)) {
+        auto detailed = [](const uint32_t *px) {
+            const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
+            size_t differ = 0;
+            for (size_t i = 0; i < n; ++i) differ += (px[i] & 0x00ffffffu) != (px[0] & 0x00ffffffu);
+            return differ > n / 100;
+        };
+        if (detailed(scratch->top) || detailed(scratch->bottom)) hasPicture_ = true;
+    }
+    std::lock_guard<std::mutex> lock(screensMu_);
+    std::swap(scratch, latest_);
+    ++latestRevision_;
+}
+
+void DecompGame::CaptureLoop() {
+    auto scratch = std::make_unique<PlatformScreens>();
+    auto scratchWorld = std::make_unique<PlatformWorld>();
+    std::unique_lock<std::mutex> lock(captureMu_);
+    for (;;) {
+        captureCv_.wait(lock, [&] { return captureWanted_ || captureStop_; });
+        if (captureStop_) return;
+        captureWanted_ = false;
+        captureBusy_ = true;
+        lock.unlock();
+        CaptureFrame(scratch, scratchWorld);
+        lock.lock();
+        captureBusy_ = false;
+        captureCv_.notify_all();
+    }
+}
+
 void DecompGame::DriverLoop() {
     using clock = std::chrono::steady_clock;
     auto frame = std::chrono::duration_cast<clock::duration>(std::chrono::duration<double>(kDsFrameSeconds));
@@ -142,10 +192,19 @@ void DecompGame::DriverLoop() {
     auto scratchWorld = std::make_unique<PlatformWorld>();
     Platform &p = Platform::Get();
     auto nextBeat = clock::now() + std::chrono::seconds(2);
-    const auto started = clock::now();
+    started_ = clock::now();
+    capture_ = std::thread([this] { CaptureLoop(); });
+    // Waits until the drawing thread has nothing to do (before the guest restarts or stops).
+    auto captureIdle = [&] {
+        std::unique_lock<std::mutex> lock(captureMu_);
+        captureCv_.wait(lock, [&] { return !captureBusy_ && !captureWanted_; });
+    };
     while (!stop_ && (p.state() == PlatformState::Running || p.state() == PlatformState::Resetting)) {
         // "Return to title" resets the DS: boot the game again (logos, then the title screen).
-        if (p.state() == PlatformState::Resetting) p.Restart();
+        if (p.state() == PlatformState::Resetting) {
+            captureIdle();
+            p.Restart();
+        }
         if (clock::now() >= nextBeat) {
             p.Heartbeat();
             nextBeat = clock::now() + std::chrono::seconds(5);
@@ -156,6 +215,19 @@ void DecompGame::DriverLoop() {
         uint32_t t = touch_.load();
         p.SetInput(static_cast<uint16_t>(buttons_.load()), (t >> 31) & 1, t & 0xff, (t >> 8) & 0xff);
         if (!p.VBlank(100)) continue;  // still busy with the previous frame
+        if (parallel_.load()) {
+            // The drawing thread draws this frame while the game goes on with the next one; if it
+            // is still drawing the last one, this frame's screens are skipped.
+            std::lock_guard<std::mutex> lock(captureMu_);
+            if (captureBusy_ || captureWanted_) {
+                p.NoteDisplay(true, 0.0f);
+            } else {
+                captureWanted_ = true;
+                captureCv_.notify_all();
+            }
+            continue;
+        }
+        captureIdle();
         // Behind schedule (a heavy frame): keep the game, and so its sound, at full speed and
         // skip drawing the screens this time, at most twice in a row.
         if (clock::now() > next && skippedCaptures < 2) {
@@ -164,34 +236,14 @@ void DecompGame::DriverLoop() {
             continue;
         }
         skippedCaptures = 0;
-        const auto captureStart = clock::now();
-        p.CaptureScreens(scratch.get());
-        const bool world = worldCapture_.load();
-        if (world) p.CaptureWorld(scratchWorld.get());
-        p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
-        if (world) {
-            PlatformPlayer player;
-            p.ReadPlayer(&player);
-            std::lock_guard<std::mutex> lock(screensMu_);
-            std::swap(scratchWorld, latestWorld_);
-            latestPlayer_ = player;
-            ++latestWorldRevision_;
-        }
-        // The loading area stays for 5 seconds at least, and until either screen shows an
-        // image: the game starts on flat white or black (a brightness fade), which is not one.
-        if (!hasPicture_ && clock::now() - started > std::chrono::seconds(5)) {
-            auto detailed = [](const uint32_t *px) {
-                const size_t n = PlatformScreens::kWidth * PlatformScreens::kHeight;
-                size_t differ = 0;
-                for (size_t i = 0; i < n; ++i) differ += (px[i] & 0x00ffffffu) != (px[0] & 0x00ffffffu);
-                return differ > n / 100;
-            };
-            if (detailed(scratch->top) || detailed(scratch->bottom)) hasPicture_ = true;
-        }
-        std::lock_guard<std::mutex> lock(screensMu_);
-        std::swap(scratch, latest_);
-        ++latestRevision_;
+        CaptureFrame(scratch, scratchWorld);
     }
+    {
+        std::lock_guard<std::mutex> lock(captureMu_);
+        captureStop_ = true;
+        captureCv_.notify_all();
+    }
+    capture_.join();
 }
 
 void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sampleButtons)(void *),
@@ -241,13 +293,25 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         shownWorldRevision_ = latestWorldRevision_;
         const PlatformWorld &w = *latestWorld_;
         TexturedWorld &t = texturedWorld_;
-        t.vertices.resize(w.vertices.size());
-        for (size_t i = 0; i < w.vertices.size(); ++i) {
-            const PlatformWorldVertex &v = w.vertices[i];
-            t.vertices[i] = {{v.x, v.y, v.z}, v.u, v.v, v.color};
+        // Roxas's own polygons: every vertex within a body-sized cylinder on his feet (game units
+        // are about a meter; the field's Roxas is some 1.6 tall).
+        const PlatformPlayer &me = latestPlayer_;
+        const bool hide = hidePlayer_ && me.valid;
+        auto onPlayer = [&](const PlatformWorldVertex &v) {
+            const float dx = v.x - me.position[0], dz = v.z - me.position[2], dy = v.y - me.position[1];
+            return dx * dx + dz * dz < 0.55f * 0.55f && dy > -0.2f && dy < 2.2f;
+        };
+        t.vertices.clear();
+        t.triangleTexture.clear();
+        t.triangleFlags.clear();
+        t.vertices.reserve(w.vertices.size());
+        for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
+            const PlatformWorldVertex *v = &w.vertices[tri * 3];
+            if (hide && onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) continue;
+            for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
+            t.triangleTexture.push_back(w.triangleTexture[tri]);
+            t.triangleFlags.push_back(w.triangleFlags[tri]);  // the same bits (kTriFront ...)
         }
-        t.triangleTexture = w.triangleTexture;
-        t.triangleFlags = w.triangleFlags;  // the same bits (kTriFront ...)
         t.textures.resize(w.textures.size());
         for (size_t i = 0; i < w.textures.size(); ++i) {
             const PlatformWorldTexture &a = w.textures[i];
