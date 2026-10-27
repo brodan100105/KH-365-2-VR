@@ -201,13 +201,14 @@ std::vector<std::string> VrApp::StatusLines() const {
 }
 
 // A lock-on sight of our own around `centre` (game units, world space), across the view (`right`,
-// `up`): four gold arrowheads pointing in, turning slowly and breathing in and out.
+// `up`): four blue arrowheads pointing in, as the game's own sight is blue, turning slowly and
+// breathing in and out.
 static WorldDrawList LockOnSight(const Vec3 &centre, const Vec3 &right, const Vec3 &up, float time) {
     WorldDrawList out;
     const Vec3 lit = Normalize(Vec3{0.4f, 0.8f, 0.45f});  // the lit shader's light: full brightness
     const float radius = 0.55f + 0.06f * std::sin(time * 4.0f);
     const float spin = time * 0.8f;
-    const uint32_t gold = Rgba(255, 214, 90), deep = Rgba(232, 150, 40);
+    const uint32_t light = Rgba(150, 215, 255), deep = Rgba(40, 110, 235);
     auto at = [&](float a, float r) { return centre + right * (r * std::cos(a)) + up * (r * std::sin(a)); };
     auto tri = [&](const Vec3 &a, const Vec3 &b, const Vec3 &c, uint32_t ca, uint32_t cb, uint32_t cc) {
         // Both windings, so it shows whichever way it ends up facing.
@@ -223,8 +224,8 @@ static WorldDrawList LockOnSight(const Vec3 &centre, const Vec3 &right, const Ve
         const Vec3 tip = at(a, radius * 0.62f);
         const Vec3 l = at(a - 0.32f, radius), r = at(a + 0.32f, radius);
         const Vec3 notch = at(a, radius * 0.86f);
-        tri(tip, l, notch, gold, deep, deep);
-        tri(tip, notch, r, gold, deep, deep);
+        tri(tip, l, notch, light, deep, deep);
+        tri(tip, notch, r, light, deep, deep);
     }
     return out;
 }
