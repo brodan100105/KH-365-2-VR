@@ -33,6 +33,7 @@ void GxCaptureWorld(PlatformWorld *out);
 // What the last capture found, for the heartbeat.
 struct GxWorldStats {
     uint32_t captures = 0, triangles = 0, textures = 0, leftOut = 0;
+    uint32_t markers = 0;  // flat markers placed in the world since the last heartbeat
 };
 extern GxWorldStats gWorldStats;
 // Polygons in the list GxRender draws (for the heartbeat and tests).

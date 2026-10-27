@@ -42,6 +42,16 @@ private:
     int w_ = 0, h_ = 0;
 };
 
+// Standing in the world, DrawTexturedWorld can show in-between frames (each vertex glides from
+// where the previous game frame had it over the time between game frames, when the frames match
+// triangle for triangle) and turn sprites to face the viewer (right / up: the viewer's, in world
+// space).
+struct WorldMotion {
+    bool inBetween = false;
+    bool sprites = false;
+    Vec3 right{1, 0, 0}, up{0, 1, 0};
+};
+
 class Renderer {
 public:
     bool Init();
@@ -63,7 +73,9 @@ public:
     // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
     // over them. Its textures are kept on the GPU by key and uploaded only when new.
     // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
-    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest);
+    // `motion`: see WorldMotion.
+    void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
+                           const WorldMotion &motion = WorldMotion());
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
@@ -74,8 +86,16 @@ private:
     GLint ovVignette_ = -1, ovBlink_ = -1;
     GLuint vao_ = 0, vbo_ = 0;
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
-    GLuint worldProgram_ = 0, worldVbo_ = 0;
+    GLuint worldProgram_ = 0, worldVbo_ = 0, worldMotionVbo_ = 0;
     GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1, worldCut_ = -1;
+    GLint worldBlend_ = -1, worldSprites_ = -1, worldRight_ = -1, worldUp_ = -1;
+    // In-between frames: the previous revision's triangles (texture key and flags) and vertex
+    // positions and sprite centres, in its order; when the new revision's match, its vertices
+    // glide from these.
+    std::vector<uint64_t> prevTriangles_;
+    std::vector<Vec3> prevPositions_, prevCenters_;
+    double revisionTime_ = 0.0, gameFrameSeconds_ = 1.0 / 60.0;
+    bool motionMatched_ = false;
     struct WorldBatch {
         int32_t texture;  // index into the world's textures, -1 none
         bool blend, depthWrite, decal;

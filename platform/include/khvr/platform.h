@@ -58,6 +58,7 @@ enum PlatformWorldFlags : uint8_t {
     kWorldDepthWrite = 32,  // translucent, and its pixels still set depth (POLYGON_ATTR bit 11)
     kWorldLine = 64,        // an edge of a wireframe polygon (alpha 0): the line from its first
                             // vertex to its second (the third repeats the second)
+    kWorldBillboard = 128,  // part of a sprite drawn facing the game's camera (PlatformWorld::billboard)
 };
 struct PlatformWorldTexture {
     uint64_t key = 0;  // its parameters, texels and palette: equal keys are the same image
@@ -94,6 +95,11 @@ struct PlatformWorld {
     int viewport[4] = {0, 0, 255, 191};
     int fadeMode[2] = {0, 0}, fadeFactor[2] = {0, 0};
     uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
+    // Sprites (munny, orbs, effects) face the game's camera: their polygons lie flat across its
+    // view. Per vertex, when any triangle has kWorldBillboard: the sprite's centre (world) and the
+    // vertex's offset from it along the camera's right and up, so a viewer can turn the sprite to
+    // face itself. Five floats a vertex (zero for the other triangles), or empty. Not in files.
+    std::vector<float> billboard;
 };
 
 // A captured world to a file and back (world_file.cpp).
@@ -131,7 +137,8 @@ public:
     // The game's 3D world (PlatformWorld). Call when CaptureScreens may be called.
     void CaptureWorld(PlatformWorld *out);
     // The player character now (PlatformPlayer). Call when CaptureScreens may be called.
-    bool ReadPlayer(PlatformPlayer *out);
+    bool ReadPlayer(PlatformPlayer *out);  // as of the game's last finished frame
+    bool ReadPlayerNow(PlatformPlayer *out);  // from the game's memory right now
     // CaptureScreens also fills topFront / topBack.
     void SetWorldCapture(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.

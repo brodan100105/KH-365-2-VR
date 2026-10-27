@@ -260,6 +260,8 @@ TEST(ThirdPersonMoveBasisFollowsHead) {
 
 TEST(FirstPersonHeadOnCharacter) {
     Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     s.SetBool(SettingId::FpMatchCharacterHeight, false);
     FirstPersonRig rig;
     GameFrame g = MakeGame({5, 2, 5}, DegToRad(30));
@@ -274,6 +276,8 @@ TEST(FirstPersonHeadOnCharacter) {
 
 TEST(FirstPersonMatchesCharacterHeight) {
     Settings s;  // character eye height 1.5 m
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     FirstPersonRig rig;
     GameFrame g = MakeGame({0, 0, 0});
     TrackingFrame t = MakeTracking({0, 1.8f, 0});
@@ -287,6 +291,8 @@ TEST(FirstPersonMatchesCharacterHeight) {
 
 TEST(FirstPersonRoomScaleStep) {
     Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     s.SetBool(SettingId::FpMatchCharacterHeight, false);
     FirstPersonRig rig;
     GameFrame g = MakeGame({0, 0, 0});
@@ -296,10 +302,35 @@ TEST(FirstPersonRoomScaleStep) {
     CHECK(Near(o.requests.roomScaleStep, {0.1f, 0, 0}));
     // Until the game applies it, the view shows the step as already applied.
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
-    // The game frame advances but a wall blocked the move: you are pushed back.
+    // The game frame advances but a wall blocked the move: you are pushed back, over the time of
+    // a game frame (smooth motion), from where the view showed you.
     g.frameCounter++;
     o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
+    CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
+    for (int i = 0; i < 6; ++i) o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0, 1.6f, 0}));
+    // Without smooth motion, at once.
+    s.SetBool(SettingId::ViewSmoothMotion, false);
+    rig.Update(s, g, MakeTracking({0.2f, 1.6f, 0}));
+    g.frameCounter++;
+    o = rig.Update(s, g, MakeTracking({0.2f, 1.6f, 0}));
+    CHECK(Near(o.trackingToWorld.Transform({0.2f, 1.6f, 0}), {0, 1.6f, 0}));
+}
+
+TEST(SmootherPlaysStepsOutBetweenGameFrames) {
+    MotionSmoother m;
+    m.Reset({0, 0, 0});
+    uint32_t frame = 0;
+    // The game at 30 frames a second, the headset at 120: a 1-unit step every 4 headset frames.
+    float last = 0, biggest = 0;
+    for (int i = 1; i <= 40; ++i) {
+        if (i % 4 == 0) ++frame;
+        Vec3 p = m.Update({static_cast<float>(frame), 0, 0}, frame, 1.0f / 120);
+        if (i > 12) biggest = std::fmax(biggest, p.x - last);
+        last = p.x;
+    }
+    CHECK(biggest < 0.4f);   // the steps shared out over the headset frames, not 1 at once
+    CHECK(last > 8.0f);      // a game frame behind at most
 }
 
 // ---------------------------------------------------------------- combat
@@ -406,6 +437,44 @@ TEST(MapperDpadOctants) {
     CHECK(InputMapper::DpadFromDirection(0.05f, 0.05f, 0) == 0);
     // Moving "forward" relative to a head turned 90 degrees left of the game camera is Left.
     CHECK(InputMapper::DpadFromDirection(0, 1, DegToRad(90)) == kDsLeft);
+}
+
+TEST(MapperMenuStickOneAxisWithRelease) {
+    Settings s;
+    InputMapper m;
+    m.SetMenuStick(true);
+    ControllerState c;
+    auto dpad = [&](float x, float y) {
+        c.stickX[0] = x;
+        c.stickY[0] = y;
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+        return static_cast<uint16_t>(m.heldButtons() & (kDsUp | kDsDown | kDsLeft | kDsRight));
+    };
+    CHECK(dpad(0.0f, 0.45f) == 0);              // a light push does not press yet
+    CHECK(dpad(0.0f, 0.7f) == kDsUp);
+    CHECK(dpad(0.5f, 0.6f) == kDsUp);           // drifting toward the diagonal keeps Up alone
+    CHECK(dpad(0.0f, 0.4f) == kDsUp);           // easing off holds until the release point
+    CHECK(dpad(0.0f, 0.2f) == 0);
+    CHECK(dpad(0.75f, 0.7f) == kDsRight);       // a diagonal press is one axis
+    CHECK(dpad(0.3f, 0.75f) == kDsUp);          // a clear move to the other axis switches
+    CHECK(dpad(0.0f, -0.8f) == kDsDown);        // and so does reversing
+}
+
+TEST(MapperFieldOctantHysteresis) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    auto dpad = [&](float degrees) {
+        c.stickX[0] = -std::sin(DegToRad(degrees));
+        c.stickY[0] = std::cos(DegToRad(degrees));
+        m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.011f);
+        return static_cast<uint16_t>(m.heldButtons() & (kDsUp | kDsDown | kDsLeft | kDsRight));
+    };
+    CHECK(dpad(0) == kDsUp);
+    CHECK(dpad(25) == kDsUp);                   // just past the edge: still Up
+    CHECK(dpad(35) == (kDsUp | kDsLeft));
+    CHECK(dpad(20) == (kDsUp | kDsLeft));       // and back just past it: still up-left
+    CHECK(dpad(10) == kDsUp);
 }
 
 TEST(MapperSwingPulse) {

@@ -11,6 +11,9 @@ namespace khvr::hle {
 // Where the screens' time goes, for the heartbeat: milliseconds added up since it last printed
 // them (render2d.cpp adds the 3D layer and the HUD pass, Platform::CaptureWorld the capture).
 void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs);
+// SWAP_BUFFERS: the game finished a frame's 3D (hle_gx.cpp). The player is read now, with the
+// polygons it is drawn with, so the two never come from different frames.
+void NoteFrameSwapped();
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

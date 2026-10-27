@@ -42,6 +42,24 @@ private:
     bool armed_ = true;  // snap turns re-arm when the stick returns to center
 };
 
+// The game moves the character once per game frame (30 or 60 a second) while the headset draws
+// up to 120: following those steps directly shakes the view, most on a change of direction.
+// This plays each step out over the time between game frames instead, a game frame behind.
+class MotionSmoother {
+public:
+    void Reset(const Vec3 &p);
+    // The game's position this headset frame; returns the smoothed one. `shown` is how much of
+    // the newest step to show at once (room-scale steps the view already showed).
+    Vec3 Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown = {});
+    const Vec3 &position() const { return pos_; }
+
+private:
+    Vec3 from_, to_, pos_;
+    uint32_t frame_ = 0;
+    float elapsed_ = 0.0f;           // since the newest game frame
+    float interval_ = 1.0f / 30.0f;  // between game frames, averaged
+};
+
 class ThirdPersonRig {
 public:
     void Reset() { initialized_ = false; }
@@ -56,6 +74,7 @@ private:
     float viewYaw_ = 0.0f; // world yaw that tracking -Z points along
     Vec3 lastCameraDir_;
     TurnController turn_;
+    MotionSmoother motion_;
 };
 
 class FirstPersonRig {
@@ -76,6 +95,7 @@ private:
     Vec3 lastPlayerPos_;
     uint32_t lastGameFrame_ = 0;
     TurnController turn_;
+    MotionSmoother motion_;
 };
 
 // Scale (game units per tracking meter) of a rig, from the settings.

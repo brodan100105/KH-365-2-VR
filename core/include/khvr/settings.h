@@ -24,6 +24,7 @@ enum class SettingId : int {
     // View
     ViewMode,
     ViewStandInWorld,
+    ViewSmoothMotion,
     CutsceneView,
     ModeSwitchButton,
     // Screen (the giant screen used for cutscenes, menus and "Giant screen" mode)
@@ -85,6 +86,7 @@ enum class SettingId : int {
     // Picture
     PicRefreshRate,
     PicParallelCapture,
+    PicInBetweenFrames,
     PicResolutionScale,
     PicMsaa,
     PicTextureFilter,
@@ -96,6 +98,7 @@ enum class SettingId : int {
     // HUD
     HudTopScreen,
     HudDistance,
+    HudHeight,
     HudScale,
     HudTouchInput,
     // Hand screen (the DS touch screen held in or worn on a hand)

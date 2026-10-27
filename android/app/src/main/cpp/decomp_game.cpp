@@ -142,13 +142,15 @@ void DecompGame::CaptureFrame(std::unique_ptr<PlatformScreens> &scratch, std::un
     const bool world = worldCapture_.load();
     if (world) p.CaptureWorld(scratchWorld.get());
     p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
-    if (world) {
-        PlatformPlayer player;
-        p.ReadPlayer(&player);
+    PlatformPlayer player;
+    p.ReadPlayer(&player);  // the snapshot taken when the game finished the frame: cheap
+    {
         std::lock_guard<std::mutex> lock(screensMu_);
-        std::swap(scratchWorld, latestWorld_);
         latestPlayer_ = player;
-        ++latestWorldRevision_;
+        if (world) {
+            std::swap(scratchWorld, latestWorld_);
+            ++latestWorldRevision_;
+        }
     }
     // The loading area stays for 5 seconds at least, and until either screen shows an
     // image: the game starts on flat white or black (a brightness fade), which is not one.
@@ -282,6 +284,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         ++screens_.revision;
         ++frame_.frameCounter;
     }
+    // Without a player in the field (title, menus, mission review) or with a menu or event
+    // scene over it, the stick moves a menu cursor.
+    frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event;
     if (!worldCapture_.load()) {
         frame_.inGameplay = false;
         frame_.inMenu = true;
@@ -301,16 +306,34 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             const float dx = v.x - me.position[0], dz = v.z - me.position[2], dy = v.y - me.position[1];
             return dx * dx + dz * dz < 0.55f * 0.55f && dy > -0.2f && dy < 2.2f;
         };
+        // Running swings arms, hair and the Keyblade out of that cylinder: small triangles whose
+        // middle is close to him go too (the ground's are large, and lie below his knees).
+        auto nearPlayer = [&](const PlatformWorldVertex *v) {
+            const float cx = (v[0].x + v[1].x + v[2].x) / 3 - me.position[0];
+            const float cy = (v[0].y + v[1].y + v[2].y) / 3 - me.position[1];
+            const float cz = (v[0].z + v[1].z + v[2].z) / 3 - me.position[2];
+            if (cx * cx + cz * cz > 0.85f * 0.85f || cy < 0.25f || cy > 2.4f) return false;
+            for (int k = 0; k < 3; ++k) {
+                const PlatformWorldVertex &a = v[k], &b = v[(k + 1) % 3];
+                const float ex = a.x - b.x, ey = a.y - b.y, ez = a.z - b.z;
+                if (ex * ex + ey * ey + ez * ez > 0.6f * 0.6f) return false;
+            }
+            return true;
+        };
         t.vertices.clear();
         t.triangleTexture.clear();
         t.triangleFlags.clear();
+        t.billboard.clear();
+        const bool sprites = w.billboard.size() == w.vertices.size() * 5;
         t.vertices.reserve(w.vertices.size());
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
-            if (hide && onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) continue;
+            if (hide && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
             for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
             t.triangleTexture.push_back(w.triangleTexture[tri]);
             t.triangleFlags.push_back(w.triangleFlags[tri]);  // the same bits (kTriFront ...)
+            if (sprites)
+                t.billboard.insert(t.billboard.end(), w.billboard.begin() + tri * 15, w.billboard.begin() + tri * 15 + 15);
         }
         t.textures.resize(w.textures.size());
         for (size_t i = 0; i < w.textures.size(); ++i) {

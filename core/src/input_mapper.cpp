@@ -10,6 +10,11 @@ constexpr float kStickDeadzone = 0.2f;
 constexpr float kHoldSeconds = 0.8f;   // menu / right stick long press
 constexpr float kGripPressed = 0.6f;
 constexpr float kTriggerPressed = 0.6f;
+// Menus: a direction presses past kMenuPress and lets go below kMenuRelease, one axis at a time.
+constexpr float kMenuPress = 0.55f;
+constexpr float kMenuRelease = 0.35f;
+// Field: an octant holds until the stick is this far past its edge.
+constexpr float kOctantHysteresis = 8.0f * kPi / 180.0f;
 
 }  // namespace
 
@@ -132,11 +137,56 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
         // Stick up is "forward" along moveBasisYaw.
         Vec3 local{mx / mag * scaled, 0.0f, -my / mag * scaled};
         analogMove_ = Quat::Yaw(moveBasisYaw).Rotate(local);
-        held |= DpadFromDirection(mx, my, moveBasisYaw - gameCameraYaw);
+        if (!menuStick_) held |= FieldDpad(mx, my, moveBasisYaw - gameCameraYaw);
     } else {
         analogMove_ = {};
+        octant_ = -1;
+    }
+    if (menuStick_) {
+        held |= MenuDpad(mx, my);
+        octant_ = -1;
+    } else {
+        menuDir_ = 0;
     }
     held_ = held;
+}
+
+uint16_t InputMapper::MenuDpad(float x, float y) {
+    // A menu moves its cursor on each new press, so a stick wandering between directions (or
+    // into a diagonal) skips items: hold one axis until the stick clearly leaves it.
+    const float mag = std::sqrt(x * x + y * y);
+    auto dominant = [&]() -> uint16_t {
+        if (std::fabs(x) > std::fabs(y)) return x > 0 ? kDsRight : kDsLeft;
+        return y > 0 ? kDsUp : kDsDown;
+    };
+    if (mag < kMenuRelease) {
+        menuDir_ = 0;
+    } else if (menuDir_ == 0) {
+        if (mag >= kMenuPress) menuDir_ = dominant();
+    } else {
+        const bool horizontal = menuDir_ & (kDsLeft | kDsRight);
+        const float along = horizontal ? std::fabs(x) : std::fabs(y);
+        const float across = horizontal ? std::fabs(y) : std::fabs(x);
+        const bool reversed = horizontal ? (x > 0) != (menuDir_ == kDsRight) : (y > 0) != (menuDir_ == kDsUp);
+        if (reversed || across > along * 1.5f) menuDir_ = mag >= kMenuPress ? dominant() : 0;
+    }
+    return menuDir_;
+}
+
+uint16_t InputMapper::FieldDpad(float x, float y, float relativeYaw) {
+    static const uint16_t kOctants[8] = {
+        kDsUp, kDsUp | kDsLeft, kDsLeft, kDsDown | kDsLeft,
+        kDsDown, kDsDown | kDsRight, kDsRight, kDsUp | kDsRight,
+    };
+    const float angle = WrapAngle(std::atan2(-x, y) + relativeYaw);
+    if (octant_ >= 0) {
+        // Stay in the octant while within its 45 degrees plus the margin on either side.
+        const float off = std::fabs(WrapAngle(angle - octant_ * (kPi / 4.0f)));
+        if (off <= kPi / 8.0f + kOctantHysteresis) return kOctants[octant_];
+    }
+    int octant = static_cast<int>(std::lround(angle / (kPi / 4.0f)));
+    octant_ = ((octant % 8) + 8) % 8;
+    return kOctants[octant_];
 }
 
 uint16_t InputMapper::SampleForGameFrame() {

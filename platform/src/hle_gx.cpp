@@ -104,8 +104,15 @@ struct Gx {
     std::vector<Mtx> projList, projShown;
     uint32_t projSerial = 1, projRecorded = 0;
     std::vector<uint8_t> inSceneShown;  // per projShown: draws the scene (else a HUD piece)
+    // NNS_G3dGlb's lens and camera as they were when each projection was first drawn with: the game
+    // may set up the next frame's camera before it swaps, and a camera read at the swap would then
+    // turn the world by the difference whenever the camera swings.
+    struct GlbSnapshot { Mtx lens, camera; bool ok = false; };
+    std::vector<GlbSnapshot> glbList, glbShown;
+    std::vector<Mat4d> toWorldShown;  // per projShown: position-matrix space to world space
     // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
     bool sceneKnown = false;
+    bool sceneHasCamera = false;  // the scene's camera is the game's (not an event scene's stand-in)
     Mat4d sceneLens{}, sceneCamera{}, sceneLensInv{}, sceneCameraInv{};
     bool shownWBuffer = false, shownManualSort = false;
     std::array<int, 4> shownVp{0, 0, 255, 191};  // the viewport when the shown list was swapped in
@@ -235,56 +242,84 @@ uint64_t Fnv(const void *data, size_t n, uint64_t h = 1469598103934665603ull) {
 // the camera when the game flushed it into the projection) is affine. Otherwise it draws a flat
 // piece over the scene (an orthographic HUD element). `toWorld` gets position-matrix space to
 // world space. NNSG3dGlb (decomp: include/nnsys/g3d.h): the lens at +0x08, the camera at +0x4c.
-bool ReadLensAndCamera(Mat4d *lensInv, Mat4d *cameraInv, Mat4d *lens, Mat4d *camera) {
+Gx::GlbSnapshot ReadGlb() {
     static const uint32_t glb = SymbolAddress("NNS_G3dGlb");
-    if (!glb) return false;
-    Mtx l, c = Identity();
-    for (int i = 0; i < 16; ++i) l[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
+    Gx::GlbSnapshot s;
+    if (!glb) return s;
+    s.camera = Identity();
+    for (int i = 0; i < 16; ++i) s.lens[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
     for (int r = 0; r < 4; ++r)
-        for (int k = 0; k < 3; ++k) c[r * 4 + k] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + k)));
-    *lens = ToDouble(l);
-    *camera = ToDouble(c);
-    return Invert(*lens, lensInv) && Invert(*camera, cameraInv);
+        for (int k = 0; k < 3; ++k) s.camera[r * 4 + k] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + k)));
+    s.ok = true;
+    return s;
 }
 
-bool InScene(const Mtx &proj, const Mat4d &lensInv, const Mat4d &cameraInv, Mat4d *toWorld) {
+bool InScene(const Mtx &proj, const Mat4d &lensInv) {
     Mat4d q = MulD(ToDouble(proj), lensInv);
     const double tol = 1e-3;
-    if (toWorld) *toWorld = MulD(q, cameraInv);
     return std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol && std::fabs(q[15] - 1.0) < tol;
 }
 
 // Which projections of the shown list draw the scene, and its lens and camera. Normally the
-// NNS_G3dGlb lens and camera (ReadLensAndCamera, InScene). Event scenes (in-engine cutscenes) set
+// NNS_G3dGlb lens and camera each projection was drawn with (ReadGlb, InScene); the scene's own
+// are those of the projection most of its polygons use. Event scenes (in-engine cutscenes) set
 // the projection without that lens, so none matches: then the perspective projection most
 // polygons use is the scene's lens, with no camera (the polygons stay in camera space). That is
 // not world space, but it draws the same picture at any resolution, which is what the giant
 // screen needs; standing in the world leaves event scenes on the giant screen anyway.
 void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys) {
     g.inSceneShown.assign(projs.size(), 0);
-    g.sceneKnown = ReadLensAndCamera(&g.sceneLensInv, &g.sceneCameraInv, &g.sceneLens, &g.sceneCamera);
-    bool any = false;
-    for (size_t i = 0; g.sceneKnown && i < projs.size(); ++i) {
-        g.inSceneShown[i] = InScene(projs[i], g.sceneLensInv, g.sceneCameraInv, nullptr);
-        any = any || g.inSceneShown[i];
-    }
-    if (any || projs.empty()) return;
+    g.toWorldShown.assign(projs.size(), ToDouble(Identity()));
+    g.sceneKnown = false;
     std::vector<uint32_t> uses(projs.size(), 0);
     for (const WorldPoly &w : polys)
         if (w.proj < uses.size()) ++uses[w.proj];
-    size_t best = 0;
+    int best = -1;
+    Mat4d lens{}, camera{}, lensInv{}, cameraInv{};
+    const Gx::GlbSnapshot *last = nullptr;
+    bool lastOk = false;
+    for (size_t i = 0; i < projs.size() && i < g.glbShown.size(); ++i) {
+        const Gx::GlbSnapshot &s = g.glbShown[i];
+        if (!s.ok) continue;
+        if (!last || s.lens != last->lens || s.camera != last->camera) {
+            last = &s;
+            lens = ToDouble(s.lens);
+            camera = ToDouble(s.camera);
+            lastOk = Invert(lens, &lensInv) && Invert(camera, &cameraInv);
+        }
+        if (!lastOk || !InScene(projs[i], lensInv)) continue;
+        g.inSceneShown[i] = 1;
+        g.toWorldShown[i] = MulD(MulD(ToDouble(projs[i]), lensInv), cameraInv);
+        if (best < 0 || uses[i] > uses[best]) {
+            best = static_cast<int>(i);
+            g.sceneLens = lens;
+            g.sceneCamera = camera;
+            g.sceneLensInv = lensInv;
+            g.sceneCameraInv = cameraInv;
+        }
+    }
+    g.sceneHasCamera = best >= 0;
+    if (best >= 0) {
+        g.sceneKnown = true;
+        return;
+    }
+    if (projs.empty()) return;
+    size_t most = 0;
     for (size_t i = 1; i < uses.size(); ++i)
-        if (uses[i] > uses[best]) best = i;
-    const Mat4d lens = ToDouble(projs[best]);
-    Mat4d lensInv;
+        if (uses[i] > uses[most]) most = i;
+    const Mat4d l = ToDouble(projs[most]);
+    Mat4d lInv;
     // A perspective projection: w follows z (an orthographic one draws flat HUD pieces).
-    if (!uses[best] || std::fabs(lens[11]) < 1e-3 || !Invert(lens, &lensInv)) return;
+    if (!uses[most] || std::fabs(l[11]) < 1e-3 || !Invert(l, &lInv)) return;
     g.sceneKnown = true;
-    g.sceneLens = lens;
-    g.sceneLensInv = lensInv;
+    g.sceneLens = l;
+    g.sceneLensInv = lInv;
     g.sceneCamera = ToDouble(Identity());
     g.sceneCameraInv = g.sceneCamera;
-    for (size_t i = 0; i < projs.size(); ++i) g.inSceneShown[i] = projs[i] == projs[best];
+    for (size_t i = 0; i < projs.size(); ++i) {
+        g.inSceneShown[i] = projs[i] == projs[most];
+        if (g.inSceneShown[i]) g.toWorldShown[i] = MulD(ToDouble(projs[i]), lInv);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -320,6 +355,7 @@ void EmitPolygon(const Vertex *verts, int n) {
     if (((attr >> 4) & 3) == 3) return;  // shadow volumes: not drawn yet
     if (g.projRecorded != g.projSerial || g.projList.empty()) {
         g.projList.push_back(g.proj);
+        g.glbList.push_back(ReadGlb());
         g.projRecorded = g.projSerial;
     }
     if (g.worldList.size() < 2 * kMaxPolygons && n <= 4) {
@@ -724,12 +760,15 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.worldList.clear();
         g.projShown.swap(g.projList);
         g.projList.clear();
+        g.glbShown.swap(g.glbList);
+        g.glbList.clear();
         g.projRecorded = 0;
         SceneOf(g.projShown, g.worldShown);
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
         g.shownVp = {g.vpX1, g.vpY1, g.vpX2, g.vpY2};
+        NoteFrameSwapped();
         break;
     }
     case 0x60:
@@ -1315,6 +1354,141 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
 
 GxWorldStats gWorldStats;
 
+// Markers over things in the field (the lock-on sight over an enemy) are drawn flat on the
+// screen, with a projection of their own, so the capture leaves them in the DS picture. Each run
+// of such polygons near the middle of the screen goes into the world instead: on the game
+// camera's line through its middle, a little in front of the first thing that line meets, at the
+// size it had on the screen, as a sprite. Runs at the screen's edges (HUD pieces) stay out.
+template <typename TextureOf>
+void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &pieces, TextureOf &texture) {
+    const double *li = g.sceneLensInv.data(), *ci = g.sceneCameraInv.data();
+    // A screen point (NDC) to the camera-space point on its line at the near (-1) or far (1) plane.
+    auto unproject = [&](double nx, double ny, double nz, double *cam) {
+        const double v[4] = {nx, ny, nz, 1};
+        double r[4];
+        for (int c = 0; c < 4; ++c) r[c] = v[0] * li[c] + v[1] * li[4 + c] + v[2] * li[8 + c] + v[3] * li[12 + c];
+        for (int k = 0; k < 3; ++k) cam[k] = r[k] / r[3];
+    };
+    auto toWorld = [&](const double *c, double *w) {
+        for (int k = 0; k < 3; ++k) w[k] = c[0] * ci[k] + c[1] * ci[4 + k] + c[2] * ci[8 + k] + ci[12 + k];
+    };
+    // The nearest captured triangle on a world-space segment, as a fraction of it (2 when none).
+    const size_t sceneTriangles = out->triangleFlags.size();
+    auto firstHit = [&](const double *a, const double *b) {
+        double best = 2;
+        const double d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+        for (size_t t = 0; t < sceneTriangles; ++t) {
+            if (out->triangleFlags[t] & (kWorldLine | kWorldBillboard)) continue;
+            const PlatformWorldVertex &p0 = out->vertices[t * 3], &p1 = out->vertices[t * 3 + 1], &p2 = out->vertices[t * 3 + 2];
+            const double e1[3] = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z}, e2[3] = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+            const double h[3] = {d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]};
+            const double det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
+            if (std::fabs(det) < 1e-12) continue;
+            const double s[3] = {a[0] - p0.x, a[1] - p0.y, a[2] - p0.z};
+            const double u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) / det;
+            if (u < 0 || u > 1) continue;
+            const double q[3] = {s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]};
+            const double v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+            if (v < 0 || u + v > 1) continue;
+            const double f = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+            if (f > 0 && f < best) best = f;
+        }
+        return best;
+    };
+    for (size_t first = 0; first < pieces.size();) {
+        size_t end = first + 1;
+        while (end < pieces.size() && pieces[end]->proj == pieces[first]->proj) ++end;
+        // The run's extent on the screen (NDC).
+        double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        bool ok = true;
+        for (size_t i = first; i < end && ok; ++i)
+            for (int k = 0; k < pieces[i]->n; ++k) {
+                const Vertex &v = pieces[i]->v[k];
+                if (!(v.w > 1e-6f)) { ok = false; break; }
+                x0 = std::min<double>(x0, v.x / v.w); x1 = std::max<double>(x1, v.x / v.w);
+                y0 = std::min<double>(y0, v.y / v.w); y1 = std::max<double>(y1, v.y / v.w);
+            }
+        const double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        // Near the middle (not the HUD's corners and bottom strip), and marker-sized.
+        ok = ok && std::fabs(cx) < 0.8 && cy > -0.55 && cy < 0.85 && x1 - x0 < 0.5 && y1 - y0 < 0.6;
+        double camNear[3], camFar[3], wNear[3], wFar[3];
+        double hit = 2;
+        if (ok) {
+            unproject(cx, cy, -1, camNear);
+            unproject(cx, cy, 1, camFar);
+            toWorld(camNear, wNear);
+            toWorld(camFar, wFar);
+            hit = firstHit(wNear, wFar);
+        }
+        if (hit > 1) {
+            first = end;
+            continue;
+        }
+        // A little in front of what it marks (half a unit, about the depth of a Heartless), never
+        // nearer than the near plane.
+        double zHit = camNear[2] + (camFar[2] - camNear[2]) * hit;
+        const double z = std::min(zHit + 0.5, camNear[2] - 1e-3);
+        auto onPlane = [&](double nx, double ny, double *cam) {
+            double a[3], b[3];
+            unproject(nx, ny, -1, a);
+            unproject(nx, ny, 1, b);
+            const double f = (z - a[2]) / (b[2] - a[2]);
+            for (int k = 0; k < 3; ++k) cam[k] = a[k] + (b[k] - a[k]) * f;
+        };
+        double centre[3], centreWorld[3];
+        onPlane(cx, cy, centre);
+        toWorld(centre, centreWorld);
+        if (out->billboard.empty()) out->billboard.assign(out->vertices.size() * 5, 0.0f);
+        out->billboard.resize(out->vertices.size() * 5, 0.0f);
+        for (size_t i = first; i < end; ++i) {
+            const WorldPoly &w = *pieces[i];
+            const uint32_t alpha = (w.attr >> 16) & 31;
+            if (alpha == 0) continue;
+            const int32_t tex = texture(w.texParam, w.palBase);
+            const uint32_t format = (w.texParam >> 26) & 7;
+            uint8_t flags = kWorldFront | kWorldBack | kWorldBillboard;  // a marker shows from either side
+            if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+            if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
+            if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+            PlatformWorldVertex pv[4];
+            double off[4][2];
+            for (int k = 0; k < w.n; ++k) {
+                const Vertex &v = w.v[k];
+                double cam[3], wp[3];
+                onPlane(v.x / v.w, v.y / v.w, cam);
+                toWorld(cam, wp);
+                pv[k].x = static_cast<float>(wp[0]);
+                pv[k].y = static_cast<float>(wp[1]);
+                pv[k].z = static_cast<float>(wp[2]);
+                off[k][0] = cam[0] - centre[0];
+                off[k][1] = cam[1] - centre[1];
+                if (tex >= 0) {
+                    pv[k].u = v.s / out->textures[tex].width;
+                    pv[k].v = v.t / out->textures[tex].height;
+                } else {
+                    pv[k].u = pv[k].v = 0;
+                }
+                auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
+                pv[k].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((alpha * 255 / 31) << 24);
+            }
+            for (int k = 1; k + 1 < w.n; ++k) {
+                for (int j : {0, k, k + 1}) {
+                    out->vertices.push_back(pv[j]);
+                    out->billboard.insert(out->billboard.end(),
+                                          {static_cast<float>(centreWorld[0]), static_cast<float>(centreWorld[1]),
+                                           static_cast<float>(centreWorld[2]), static_cast<float>(off[j][0]),
+                                           static_cast<float>(off[j][1])});
+                }
+                out->triangleTexture.push_back(tex);
+                out->triangleFlags.push_back(flags);
+            }
+        }
+        out->polygonsLeftOut -= static_cast<uint32_t>(end - first);
+        ++gWorldStats.markers;
+        first = end;
+    }
+}
+
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
     out->vertices.clear();
@@ -1325,13 +1499,9 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
     if (!g.sceneKnown) return;
-    const Mat4d &lensD = g.sceneLens, &cameraD = g.sceneCamera, &lensInv = g.sceneLensInv, &cameraInv = g.sceneCameraInv;
-    std::vector<Mat4d> toWorld(g.projShown.size());
-    std::vector<bool> inScene(g.projShown.size(), false);
-    for (size_t i = 0; i < g.projShown.size(); ++i) {
-        toWorld[i] = MulD(MulD(ToDouble(g.projShown[i]), lensInv), cameraInv);
-        inScene[i] = g.inSceneShown[i];
-    }
+    const Mat4d &lensD = g.sceneLens, &cameraD = g.sceneCamera, &cameraInv = g.sceneCameraInv;
+    const std::vector<Mat4d> &toWorld = g.toWorldShown;
+    std::vector<bool> inScene(g.inSceneShown.begin(), g.inSceneShown.end());
 
     out->hasCamera = true;
     for (int i = 0; i < 16; ++i) {
@@ -1404,9 +1574,42 @@ void GxCaptureWorld(PlatformWorld *out) {
         return index;
     };
 
+    out->billboard.clear();
+    // Sprites: runs of polygons with one texture whose every vertex lies at one depth in front of
+    // the game's camera. The run's centre is the middle of its extent across the view.
+    struct Sprite {
+        size_t firstVertex = 0;
+        int32_t tex = -2;
+        uint16_t proj = 0;
+        double z = 0, x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+        std::vector<std::array<double, 2>> across;  // per vertex: camera-space x, y
+    } sprite;
+    auto endSprite = [&]() {
+        if (sprite.tex == -2) return;
+        if (out->billboard.empty()) out->billboard.assign(out->vertices.size() * 5, 0.0f);
+        out->billboard.resize(out->vertices.size() * 5, 0.0f);
+        const double cx = (sprite.x0 + sprite.x1) / 2, cy = (sprite.y0 + sprite.y1) / 2;
+        const double *ci = cameraInv.data();
+        const double wc[3] = {cx * ci[0] + cy * ci[4] + sprite.z * ci[8] + ci[12],
+                              cx * ci[1] + cy * ci[5] + sprite.z * ci[9] + ci[13],
+                              cx * ci[2] + cy * ci[6] + sprite.z * ci[10] + ci[14]};
+        for (size_t i = 0; i < sprite.across.size(); ++i) {
+            float *b = &out->billboard[(sprite.firstVertex + i) * 5];
+            b[0] = static_cast<float>(wc[0]);
+            b[1] = static_cast<float>(wc[1]);
+            b[2] = static_cast<float>(wc[2]);
+            b[3] = static_cast<float>(sprite.across[i][0] - cx);
+            b[4] = static_cast<float>(sprite.across[i][1] - cy);
+        }
+        for (size_t v = sprite.firstVertex; v < out->vertices.size(); v += 3) out->triangleFlags[v / 3] |= kWorldBillboard;
+        sprite.tex = -2;
+        sprite.across.clear();
+    };
+    std::vector<const WorldPoly *> flatPieces;  // drawn with another projection, in screen order
     for (const WorldPoly &w : g.worldShown) {
         if (w.proj >= inScene.size() || !inScene[w.proj]) {
             ++out->polygonsLeftOut;
+            flatPieces.push_back(&w);
             continue;
         }
         const uint32_t alpha = (w.attr >> 16) & 31;
@@ -1437,6 +1640,43 @@ void GxCaptureWorld(PlatformWorld *out) {
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
             pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
         }
+        // Flat across the camera's view (camera space z alike), and sprite-sized.
+        double cs[4][3];
+        bool flat = g.sceneHasCamera && !wire;
+        for (int i = 0; flat && i < w.n; ++i) {
+            const double *c = cameraD.data();
+            const double x = pv[i].x, y = pv[i].y, z = pv[i].z;
+            cs[i][0] = x * c[0] + y * c[4] + z * c[8] + c[12];
+            cs[i][1] = x * c[1] + y * c[5] + z * c[9] + c[13];
+            cs[i][2] = x * c[2] + y * c[6] + z * c[10] + c[14];
+            flat = cs[i][2] < 0 && std::fabs(cs[i][2] - cs[0][2]) < 0.004 + 0.001 * std::fabs(cs[0][2]);
+        }
+        if (flat) {
+            double x0 = cs[0][0], x1 = x0, y0 = cs[0][1], y1 = y0;
+            for (int i = 1; i < w.n; ++i) {
+                x0 = std::min(x0, cs[i][0]); x1 = std::max(x1, cs[i][0]);
+                y0 = std::min(y0, cs[i][1]); y1 = std::max(y1, cs[i][1]);
+            }
+            // Sprites are small; a wall the camera happens to face square on is not one.
+            flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < 1.2 && y1 - y0 < 1.2;
+            const double tol = 0.004 + 0.001 * std::fabs(cs[0][2]);
+            if (flat && !(sprite.tex == tex && sprite.proj == w.proj && std::fabs(sprite.z - cs[0][2]) < tol)) {
+                endSprite();
+                sprite.tex = tex;
+                sprite.proj = w.proj;
+                sprite.z = cs[0][2];
+                sprite.firstVertex = out->vertices.size();
+                sprite.x0 = x0; sprite.x1 = x1; sprite.y0 = y0; sprite.y1 = y1;
+            } else if (flat) {
+                sprite.x0 = std::min(sprite.x0, x0); sprite.x1 = std::max(sprite.x1, x1);
+                sprite.y0 = std::min(sprite.y0, y0); sprite.y1 = std::max(sprite.y1, y1);
+            }
+            if (flat) {
+                for (int i = 1; i + 1 < w.n; ++i)
+                    for (int k : {0, i, i + 1}) sprite.across.push_back({cs[k][0], cs[k][1]});
+            }
+        }
+        if (!flat) endSprite();
         if (wire) {
             for (int i = 0; i < w.n; ++i) {
                 out->vertices.push_back(pv[i]);
@@ -1455,6 +1695,9 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->triangleFlags.push_back(flags);
         }
     }
+    endSprite();
+    if (g.sceneHasCamera && !flatPieces.empty()) PlaceMarkers(out, flatPieces, texture);
+    if (!out->billboard.empty()) out->billboard.resize(out->vertices.size() * 5, 0.0f);
     // BG0's horizontal scroll moves the whole 3D layer on the screen (render2d.cpp, Bg0Scroll3d):
     // the world is drawn that much the other way.
     int scroll = IoReg16(0x10) & 511;

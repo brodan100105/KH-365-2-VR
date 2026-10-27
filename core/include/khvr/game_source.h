@@ -39,12 +39,16 @@ struct WorldTexture {
 enum TexturedTriangleFlags : uint8_t {
     kTriFront = 1, kTriBack = 2, kTriTranslucent = 4, kTriDecal = 8, kTriTexAlpha = 16, kTriDepthWrite = 32,
     kTriLine = 64,  // a wireframe edge: vertices 0 to 1 (2 repeats 1)
+    kTriBillboard = 128,  // part of a sprite facing the game's camera (TexturedWorld::billboard)
 };
 struct TexturedWorld {
     std::vector<TexturedVertex> vertices;  // three per triangle
     std::vector<int32_t> triangleTexture;  // index into textures, -1 for none
     std::vector<uint8_t> triangleFlags;
     std::vector<WorldTexture> textures;
+    // Per vertex, when any triangle has kTriBillboard: its sprite's centre (x, y, z) and the
+    // vertex's offset from it along the game camera's right and up. Five floats, or empty.
+    std::vector<float> billboard;
     uint32_t revision = 0;  // bumped with every new frame of it
     // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
     // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.

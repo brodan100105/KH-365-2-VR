@@ -306,7 +306,12 @@ int WorldTest() {
         cmd(0x10, 2);
         cmd(0x15, 0);
         quad();
+        // The game sets up the next frame's camera (turned and moved) before it swaps: the capture
+        // keeps the camera the quads were drawn with.
+        const double next[12] = {0.8, 0, -0.6, 0, 1, 0, 0.6, 0, 0.8, 3, -2, -10};
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(next[i]));
         cmd(0x50, 0);
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
         static khvr::PlatformWorld w;
         khvr::Platform::Get().CaptureWorld(&w);
         auto near = [](double a, double b) { return std::fabs(a - b) < 0.02; };
@@ -431,10 +436,43 @@ int WorldTest() {
         for (uint8_t f : w.triangleFlags) lines += (f & khvr::kWorldLine) != 0;
         wire = lines == 4 && w.triangleFlags.size() == 4 && (w.vertices[0].color >> 24) == 255;
     }
-    const bool all = a && b && split && scrolled && event && wire;
+    // Sprites: a small quad square to the camera is one (its centre and offsets kept), the same
+    // quad turned is not.
+    bool sprites = false;
+    {
+        auto small = [&](double turn) {
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+            cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);  // centred at (1, 2, 0)
+            const double c = std::cos(turn), s = std::sin(turn);
+            for (double k : {0.25}) {
+                cmd(0x1b, fx(k)); cmd(0x1b, fx(k)); cmd(0x1b, fx(k));
+            }
+            const double rot[9] = {c, 0, -s, 0, 1, 0, s, 0, c};
+            for (int i = 0; i < 9; ++i) cmd(0x1a, fx(rot[i]));
+            quad();
+            cmd(0x50, 0);
+            static khvr::PlatformWorld w;
+            khvr::Platform::Get().CaptureWorld(&w);
+            return w;
+        };
+        khvr::PlatformWorld facing = small(0), turned = small(0.6);
+        bool flagged = facing.triangleFlags.size() == 2 && (facing.triangleFlags[0] & khvr::kWorldBillboard) &&
+                       (facing.triangleFlags[1] & khvr::kWorldBillboard) && facing.billboard.size() == 6 * 5;
+        if (flagged) {
+            const float *b = &facing.billboard[0];  // the first corner: (-0.25, -0.25) from (1, 2, 0)
+            flagged = std::fabs(b[0] - 1) < 0.02 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.02 &&
+                      std::fabs(b[3] + 0.25) < 0.02 && std::fabs(b[4] + 0.25) < 0.02;
+        }
+        sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
+                  turned.billboard.empty();
+    }
+    const bool all = a && b && split && scrolled && event && wire && sprites;
     std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
-                "event scene %d, wireframe %d)\n",
-                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire);
+                "event scene %d, wireframe %d, sprites %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites);
     return all ? 0 : 1;
 }
 

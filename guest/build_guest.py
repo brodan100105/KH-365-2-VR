@@ -56,6 +56,10 @@ CFLAGS = [
     "--target=wasm32", "-ffreestanding", "-nostdinc", "-fno-builtin", "-O2", "-w",
     "-fno-strict-aliasing",  # decompiled code type-puns freely
     "-fwrapv",               # and relies on ARM's wrapping integer arithmetic
+    # Matching decompiled code leaves some locals unset on paths where the ROM passed whatever a
+    # register held (Ov025_MoveGridCursor's nDx / nDy): clang reads that as undefined behaviour and
+    # turns the whole path into a trap. Zeroed locals keep it an ordinary call.
+    "-ftrivial-auto-var-init=zero",
     # mwcc's ARM ABI aligns 64-bit integers (and doubles) to 4 bytes, wasm32 to 8: without this
     # every structure holding one after an odd word (OSContext, with the divider's u64
     # registers) would grow, and code that reaches its fields by offset would miss them.

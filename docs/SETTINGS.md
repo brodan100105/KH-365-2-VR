@@ -17,6 +17,7 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `mode` | View mode | `third_person`, `first_person`, `giant_screen` | `third_person` | Panoramic: stand around Roxas in 6DoF. First person: you are the character. |
 | `stand_in_world` | Stand in the world (experimental) | `true` / `false` | `false` | In gameplay, the game's 3D around you instead of on the giant screen, in the view mode above. For now you see what the game's own camera sees; menus and event scenes stay on the giant screen. |
+| `smooth_motion` | Smooth camera motion | `true` / `false` | `true` | Standing in the world, the view follows Roxas smoothly between the game's frames instead of in its steps, which shake most when he changes direction. |
 | `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or from where you stand. |
 | `mode_switch_button` | Quick mode switch | `true` / `false` | `true` | Hold the right thumbstick click to swap panoramic and first person. |
 
@@ -50,8 +51,8 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `world_scale` | World scale | 0.1 to 3 x | `1` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
-| `eye_height` | Character eye height | 1 to 2.2 m | `1.5` | Eye height of the character you play. |
+| `world_scale` | World scale | 0.5 to 4 x | `1.75` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
+| `eye_height` | Character eye height | 1 to 2.5 m | `1.7` | Eye height of the character you play. |
 | `match_height` | Match character height | `true` / `false` | `true` | Scale the world so your real eye height matches the character's. |
 | `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
@@ -106,6 +107,7 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `refresh_rate` | Refresh rate | `72`, `90`, `120` | `120` | Headset refresh rate. The game runs at its own 60 frames a second; at 120 Hz each of its frames shows for exactly two, which keeps turning smooth. |
 | `draw_while_running` | Draw while the game runs | `true` / `false` | `true` | Draw each frame's screens while the game runs the next one, as the DS does, so heavy scenes keep all their frames. Turn off if pictures ever flicker or tear. |
+| `in_between_frames` | In-between frames | `true` / `false` | `true` | Standing in the world, moving things glide between the game's 60 frames a second at the headset's rate (they show a game frame later). Off: the game's own frames. |
 | `resolution_scale` | Resolution scale | 0.5 to 1.5 x | `1` | Per-eye render resolution relative to the headset's. Applies on restart. |
 | `msaa` | Anti-aliasing | `off`, `2x`, `4x` | `4x` | Multisample anti-aliasing. Applies on restart. |
 | `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp`, `smooth` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth also rounds diagonal edges (Scale4x) instead of showing them as steps. |
@@ -121,6 +123,7 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `top_screen` | HUD (top screen) | `floating`, `head_locked`, `hidden` | `floating` | Where the health bars and command panel are shown. |
 | `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
+| `height` | Panel height | -1 to 0.4 m | `-0.4` | How far below your eyes (negative) or above them the HUD panel sits, so the health bar and commands stay out of the way. Menus are on the giant screen. |
 | `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the floating HUD panels. |
 | `touch_input` | Touch input | `laser`, `direct_touch` | `laser` | How you touch the bottom screen. |
 

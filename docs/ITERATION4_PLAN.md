@@ -51,9 +51,16 @@ and into VR as real geometry around you.
 - [x] First person: the view from Roxas's head, his model hidden: the game's own Roxas is left
       out of the captured world unless **Show body** is Full body; **First person > World scale**.
       (His Keyblade and arms in VR: step 5.)
-- [ ] Smooth motion at the headset's rate: the game runs its logic at 60 frames a second (faster
+- [x] Smooth motion at the headset's rate: the game runs its logic at 60 frames a second (faster
       would play the game faster), so the captured world is interpolated between two game frames
-      for the 90 or 120 Hz display when both have the same polygons.
+      for the 90 or 120 Hz display when both have the same polygons (**Picture > In-between
+      frames**), and the rigs follow Roxas between game frames (**View > Smooth camera motion**).
+      The world is turned back into world space with the camera each projection was drawn with,
+      not the one the game had set up for its next frame when it swapped (that turned the world
+      whenever the game's camera swung).
+- [x] Sprites (munny, orbs, effects) face you: polygons flat across the game camera's view are
+      sprites, turned to face the viewer. Flat markers drawn with their own projection (the
+      lock-on sight) are placed in the world in front of what they mark.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera now: what lies behind it is not submitted at all).
 - [ ] Analog movement and room-scale steps through the game's collision.

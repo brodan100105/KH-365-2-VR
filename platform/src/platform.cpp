@@ -142,9 +142,20 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     return true;
 }
 
+namespace {
+// The player as the game's last SWAP_BUFFERS left it (hle::NoteFrameSwapped).
+std::mutex gSwapPlayerMu;
+PlatformPlayer gSwapPlayer;
+bool gSwapPlayerValid = false;
+}  // namespace
+
 void Platform::Restart() {
     using namespace hle;
     if (gState != PlatformState::Resetting) return;
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        gSwapPlayerValid = false;  // the guest's memory goes
+    }
     SaveFlush();
     ThreadsReset();
     MovieClose();
@@ -232,7 +243,28 @@ void Platform::CaptureWorld(PlatformWorld *out) {
     hle::NoteCaptureTimes(0, 0, std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count());
 }
 
+namespace hle {
+void NoteFrameSwapped() {
+    PlatformPlayer now;
+    Platform::Get().ReadPlayerNow(&now);
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    gSwapPlayer = now;
+    gSwapPlayerValid = true;
+}
+}  // namespace hle
+
 bool Platform::ReadPlayer(PlatformPlayer *out) {
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        if (gSwapPlayerValid) {
+            *out = gSwapPlayer;
+            return out->valid;
+        }
+    }
+    return ReadPlayerNow(out);
+}
+
+bool Platform::ReadPlayerNow(PlatformPlayer *out) {
     using namespace hle;
     *out = PlatformPlayer();
     // As the field's own code finds it (func_ov022_020881f8, Ov022_ScoreCandidateByFacing): the
@@ -420,9 +452,11 @@ void Platform::Heartbeat() {
         gCaptureMsMax = 0.0f;
     }
     if (GxWorldStats &w = gWorldStats; w.captures) {
-        Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture",
-            w.captures, w.triangles, w.textures, w.leftOut);
+        Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture, "
+            "%u markers placed in the world",
+            w.captures, w.triangles, w.textures, w.leftOut, w.markers);
         w.captures = 0;
+        w.markers = 0;
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has

@@ -70,6 +70,26 @@ float TurnController::Update(const Settings &s, float axis, float dt, bool *snap
     return 0.0f;
 }
 
+void MotionSmoother::Reset(const Vec3 &p) {
+    from_ = to_ = pos_ = p;
+    elapsed_ = 0.0f;
+}
+
+Vec3 MotionSmoother::Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown) {
+    elapsed_ += dt;
+    if (gameFrame != frame_ || Length(target - to_) > 1e-6f) {
+        frame_ = gameFrame;
+        // Average the game's frame time, ignoring hitches (loads, pauses) longer than 0.1 s.
+        if (elapsed_ > 0.0f && elapsed_ < 0.1f) interval_ += (elapsed_ - interval_) * 0.2f;
+        from_ = pos_ + shown;
+        to_ = target;
+        elapsed_ = 0.0f;
+    }
+    const float k = Clamp(elapsed_ / std::fmax(interval_, 1e-3f), 0.0f, 1.0f);
+    pos_ = from_ + (to_ - from_) * k;
+    return pos_;
+}
+
 float ThirdPersonScale(const Settings &s) {
     return s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::TpWorldScale);
 }
@@ -89,14 +109,17 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
                                  const TrackingFrame &t) {
     RigOutput out;
     const float scale = ThirdPersonScale(s);
-    const Vec3 target = game.playerPos;
     const float headYaw = YawOf(t.head.orientation);
 
     bool reinit = !initialized_ || t.recenter;
-    if (initialized_ && Length(target - anchor_) > kTeleportMeters * scale) {
+    if (initialized_ && Length(game.playerPos - anchor_) > kTeleportMeters * scale) {
         reinit = true;
         out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     }
+    if (reinit) motion_.Reset(game.playerPos);
+    const Vec3 target = s.Bool(SettingId::ViewSmoothMotion)
+                            ? motion_.Update(game.playerPos, game.frameCounter, t.dt)
+                            : game.playerPos;
     if (reinit) {
         // Look the way the game camera looks, from where you are standing now.
         viewYaw_ = CameraYaw(game.camera) - headYaw;
@@ -173,6 +196,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     }
     if (reinit) {
+        motion_.Reset(game.playerPos);
         // Face the way the character faces, and measure your eye height once so that
         // crouching does not rescale the world.
         bodyYaw_ = game.playerYaw - headYaw;
@@ -203,10 +227,15 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
 
     // The game applies a requested room-scale step on its next frame; until then, show it as
     // already applied so the view does not lag behind your head at the game's frame rate.
+    Vec3 consumed;  // the room-scale steps the game has now applied, which the view already showed
     if (game.frameCounter != lastGameFrame_) {
+        consumed = pendingStep_;
         pendingStep_ = {};
         lastGameFrame_ = game.frameCounter;
     }
+    const Vec3 player = s.Bool(SettingId::ViewSmoothMotion)
+                            ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed)
+                            : game.playerPos;
 
     Vec3 bodyFloor;  // tracking-space floor point that sits on the character's feet
     if (s.Bool(SettingId::FpRoomScale) && game.inGameplay) {
@@ -223,7 +252,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     }
     lastHeadFloor_ = headFloor;
 
-    Vec3 feet = game.playerPos + pendingStep_;
+    Vec3 feet = player + pendingStep_;
     feet.y -= boost * scale_;
     m.translation = feet - m.rotation.Rotate(bodyFloor * scale_);
 

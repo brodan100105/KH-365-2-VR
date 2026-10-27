@@ -39,6 +39,9 @@ std::vector<SettingDef> BuildDefs() {
                   "In gameplay, the game's 3D around you instead of on the giant screen, in the view mode "
                   "above. For now you see what the game's own camera sees; menus and event scenes stay "
                   "on the giant screen."));
+    d.push_back(B(S::ViewSmoothMotion, "View", "smooth_motion", "Smooth camera motion", true,
+                  "Standing in the world, the view follows Roxas smoothly between the game's frames "
+                  "instead of in its steps, which shake most when he changes direction."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
                   "Watch in-engine cutscenes on the giant screen, or from where you stand."));
@@ -86,11 +89,11 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::TpWallFade, "Camera", "wall_fade", "Fade walls", true,
                   "Fade geometry between you and the character."));
     // ---- First person ----
-    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.0f, 0.1f, 3.0f, 0.05f, "x",
+    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.75f, 0.5f, 4.0f, 0.05f, "x",
                   "How big the world looks around you in first person: above 1 larger, below 1 smaller "
                   "(on top of Match character height)."));
-    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 1.5f,
-                  1.0f, 2.2f, 0.05f, "m", "Eye height of the character you play."));
+    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 1.7f,
+                  1.0f, 2.5f, 0.05f, "m", "Eye height of the character you play."));
     d.push_back(B(S::FpMatchCharacterHeight, "First person", "match_height",
                   "Match character height", true,
                   "Scale the world so your real eye height matches the character's."));
@@ -176,6 +179,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::PicParallelCapture, "Picture", "draw_while_running", "Draw while the game runs", true,
                   "Draw each frame's screens while the game runs the next one, as the DS does, so "
                   "heavy scenes keep all their frames. Turn off if pictures ever flicker or tear."));
+    d.push_back(B(S::PicInBetweenFrames, "Picture", "in_between_frames", "In-between frames", true,
+                  "Standing in the world, moving things glide between the game's 60 frames a second "
+                  "at the headset's rate (they show a game frame later). Off: the game's own frames."));
     d.push_back(F(S::PicResolutionScale, "Picture", "resolution_scale", "Resolution scale", 1.0f,
                   0.5f, 1.5f, 0.05f, "x", "Per-eye render resolution relative to the headset's. Applies on restart."));
     d.push_back(E(S::PicMsaa, "Picture", "msaa", "Anti-aliasing", 2, {"off", "2x", "4x"},
@@ -205,6 +211,9 @@ std::vector<SettingDef> BuildDefs() {
                   "Where the health bars and command panel are shown."));
     d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 1.2f, 0.5f, 3.0f, 0.1f, "m",
                   "Distance of the floating panels."));
+    d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.4f, -1.0f, 0.4f, 0.05f, "m",
+                  "How far below your eyes (negative) or above them the HUD panel sits, so the health "
+                  "bar and commands stay out of the way. Menus are on the giant screen."));
     d.push_back(F(S::HudScale, "HUD", "scale", "Panel scale", 1.0f, 0.5f, 2.0f, 0.1f, "x",
                   "Size of the floating HUD panels."));
     d.push_back(E(S::HudTouchInput, "HUD", "touch_input", "Touch input", 0,

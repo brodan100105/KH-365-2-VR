@@ -463,10 +463,10 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     hudPanel_.width = 0.55f * hudScale;
     hudPanel_.height = hudPanel_.width * 0.75f;
     if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
-        hudPanel_.pose = head * Pose{Quat(), {0, -0.05f, -hudDist}};
+        hudPanel_.pose = head * Pose{Quat(), {0, settings_.Get(SettingId::HudHeight), -hudDist}};
     } else {
         Vec3 fwd = Quat::Yaw(hudYaw_).Forward();
-        Vec3 at = head.position + fwd * hudDist + Vec3{0, -0.18f, 0};
+        Vec3 at = head.position + fwd * hudDist + Vec3{0, settings_.Get(SettingId::HudHeight), 0};
         hudPanel_.pose = FacingFrom(at, head.position);
     }
 
@@ -717,6 +717,7 @@ void VrApp::Frame(const XrFrameInput &in) {
     Vec3 camDir = before.camera.target - before.camera.eye;
     float gameCamYaw = YawOf(Vec3{camDir.x, 0, camDir.z});
     float moveBasis = mode == ViewMode::GiantScreen ? gameCamYaw : rig_.moveBasisYaw;
+    mapper_.SetMenuStick(before.menuInput);
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
 
     const AppActions &act = mapper_.actions();
@@ -1010,8 +1011,17 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         if (!game_->texturedWorld().vertices.empty()) {
             // The game's own 3D, captured in world space (View > Stand in the world).
             const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            // Sprites turn to face you: across your view, upright (the world's up stays up).
+            WorldMotion motion;
+            motion.inBetween = settings_.Bool(SettingId::PicInBetweenFrames);
+            motion.sprites = true;
+            const Vec3 f = rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Forward());
+            const Vec3 r{-f.z, 0.0f, f.x};
+            motion.right = Length(r) > 0.05f ? Normalize(r)
+                                             : rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Rotate({1, 0, 0}));
+            motion.up = Normalize(Cross(motion.right, f));
             renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
-                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp);
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
         }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;

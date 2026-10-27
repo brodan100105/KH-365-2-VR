@@ -49,6 +49,10 @@ public:
     const Vec3 &analogMoveWorld() const { return analogMove_; }
     uint16_t heldButtons() const { return held_; }
 
+    // The game shows a menu: the stick then moves its cursor one axis at a time, with a firmer
+    // press and a release point, instead of steering 8 ways relative to the camera.
+    void SetMenuStick(bool menu) { menuStick_ = menu; }
+
     // Quantizes a direction relative to the game camera into the 8-way D-pad.
     static uint16_t DpadFromDirection(float stickX, float stickY, float relativeYaw);
 
@@ -59,6 +63,8 @@ private:
         bool releasing = false;
     };
     void AddPulse(uint16_t bits);
+    uint16_t MenuDpad(float x, float y);
+    uint16_t FieldDpad(float x, float y, float relativeYaw);
 
     uint16_t held_ = 0;           // continuously held buttons this headset frame
     Pulse pulses_[4];
@@ -72,6 +78,9 @@ private:
     bool menuWasDown_ = false;
     uint16_t dodgeDpad_ = 0;
     int dodgeFrames_ = 0;
+    bool menuStick_ = false;
+    uint16_t menuDir_ = 0;  // the menu direction held, 0 none
+    int octant_ = -1;       // the field octant held, -1 none
 };
 
 uint16_t BindingBits(DsBinding b);
