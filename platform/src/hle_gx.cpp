@@ -22,6 +22,8 @@ namespace {
 // Row-major 4x4, 20.12 fixed point. The DS multiplies row vectors: v' = v * M, and a new matrix
 // goes in front of the current one (M = N * M).
 using Mtx = std::array<int32_t, 16>;
+// The same in doubles (the world capture's matrix work).
+using Mat4d = std::array<double, 16>;
 
 Mtx Identity() {
     Mtx m{};
@@ -101,6 +103,9 @@ struct Gx {
     std::vector<Mtx> projList, projShown;
     uint32_t projSerial = 1, projRecorded = 0;
     std::vector<uint8_t> inSceneShown;  // per projShown: draws the scene (else a HUD piece)
+    // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
+    bool sceneKnown = false;
+    Mat4d sceneLens{}, sceneCamera{}, sceneLensInv{}, sceneCameraInv{};
     bool shownWBuffer = false, shownManualSort = false;
     uint32_t vertexCount = 0;
 
@@ -175,7 +180,6 @@ void Apply(const Mtx &m, bool vecToo) {
     g.clipDirty = true;
 }
 
-using Mat4d = std::array<double, 16>;
 
 Mat4d ToDouble(const Mtx &m) {
     Mat4d d;
@@ -242,6 +246,39 @@ bool InScene(const Mtx &proj, const Mat4d &lensInv, const Mat4d &cameraInv, Mat4
     const double tol = 1e-3;
     if (toWorld) *toWorld = MulD(q, cameraInv);
     return std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol && std::fabs(q[15] - 1.0) < tol;
+}
+
+// Which projections of the shown list draw the scene, and its lens and camera. Normally the
+// NNS_G3dGlb lens and camera (ReadLensAndCamera, InScene). Event scenes (in-engine cutscenes) set
+// the projection without that lens, so none matches: then the perspective projection most
+// polygons use is the scene's lens, with no camera (the polygons stay in camera space). That is
+// not world space, but it draws the same picture at any resolution, which is what the giant
+// screen needs; standing in the world leaves event scenes on the giant screen anyway.
+void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys) {
+    g.inSceneShown.assign(projs.size(), 0);
+    g.sceneKnown = ReadLensAndCamera(&g.sceneLensInv, &g.sceneCameraInv, &g.sceneLens, &g.sceneCamera);
+    bool any = false;
+    for (size_t i = 0; g.sceneKnown && i < projs.size(); ++i) {
+        g.inSceneShown[i] = InScene(projs[i], g.sceneLensInv, g.sceneCameraInv, nullptr);
+        any = any || g.inSceneShown[i];
+    }
+    if (any || projs.empty()) return;
+    std::vector<uint32_t> uses(projs.size(), 0);
+    for (const WorldPoly &w : polys)
+        if (w.proj < uses.size()) ++uses[w.proj];
+    size_t best = 0;
+    for (size_t i = 1; i < uses.size(); ++i)
+        if (uses[i] > uses[best]) best = i;
+    const Mat4d lens = ToDouble(projs[best]);
+    Mat4d lensInv;
+    // A perspective projection: w follows z (an orthographic one draws flat HUD pieces).
+    if (!uses[best] || std::fabs(lens[11]) < 1e-3 || !Invert(lens, &lensInv)) return;
+    g.sceneKnown = true;
+    g.sceneLens = lens;
+    g.sceneLensInv = lensInv;
+    g.sceneCamera = ToDouble(Identity());
+    g.sceneCameraInv = g.sceneCamera;
+    for (size_t i = 0; i < projs.size(); ++i) g.inSceneShown[i] = projs[i] == projs[best];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -681,13 +718,7 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.projShown.swap(g.projList);
         g.projList.clear();
         g.projRecorded = 0;
-        {
-            Mat4d lensInv, cameraInv, lens, camera;
-            const bool known = ReadLensAndCamera(&lensInv, &cameraInv, &lens, &camera);
-            g.inSceneShown.assign(g.projShown.size(), 0);
-            for (size_t i = 0; known && i < g.projShown.size(); ++i)
-                g.inSceneShown[i] = InScene(g.projShown[i], lensInv, cameraInv, nullptr);
-        }
+        SceneOf(g.projShown, g.worldShown);
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
@@ -1246,11 +1277,14 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->hasCamera = false;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
-    Mat4d lensD, cameraD, lensInv, cameraInv;
-    if (!ReadLensAndCamera(&lensInv, &cameraInv, &lensD, &cameraD)) return;
+    if (!g.sceneKnown) return;
+    const Mat4d &lensD = g.sceneLens, &cameraD = g.sceneCamera, &lensInv = g.sceneLensInv, &cameraInv = g.sceneCameraInv;
     std::vector<Mat4d> toWorld(g.projShown.size());
     std::vector<bool> inScene(g.projShown.size(), false);
-    for (size_t i = 0; i < g.projShown.size(); ++i) inScene[i] = InScene(g.projShown[i], lensInv, cameraInv, &toWorld[i]);
+    for (size_t i = 0; i < g.projShown.size(); ++i) {
+        toWorld[i] = MulD(MulD(ToDouble(g.projShown[i]), lensInv), cameraInv);
+        inScene[i] = g.inSceneShown[i];
+    }
 
     out->hasCamera = true;
     for (int i = 0; i < 16; ++i) {

@@ -370,9 +370,50 @@ int WorldTest() {
         scrolled = w1.viewport[0] == w0.viewport[0] + 16 && w1.viewport[2] == w0.viewport[2] + 16 && firstFront >= 0 &&
                    firstFrontShifted == firstFront + 16;
     }
-    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d)\n",
-                a && b && split && scrolled ? "ok" : "FAILED", a && b, split, scrolled);
-    return a && b && split && scrolled ? 0 : 1;
+    // An event scene sets its projection without NNS_G3dGlb's lens: with that lens changed, the
+    // scene is still captured (in camera space, through its own projection), lands where the DS
+    // drew it, and the orthographic HUD quad still stays in the DS picture.
+    bool event = false;
+    {
+        // The lens the field left behind: another perspective (near 2, far 40).
+        double stale[16];
+        std::copy(lens, lens + 16, stale);
+        stale[10] = (2.0 + 40) / (2.0 - 40);
+        stale[14] = 2 * 2.0 * 40 / (2.0 - 40);
+        for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(stale[i]));
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        cmd(0x10, 2);
+        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        cmd(0x1c, fx(5)); cmd(0x1c, 0); cmd(0x1c, 0);
+        quad();
+        cmd(0x10, 0);
+        double ortho[16] = {0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, -0.1, 0, 0, 0, 0, 1};
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(ortho[i]));
+        cmd(0x10, 2);
+        cmd(0x15, 0);
+        quad();
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w;
+        khvr::Platform::Get().CaptureWorld(&w);
+        if (w.vertices.size() == 6 && w.polygonsLeftOut == 1 && w.hasCamera) {
+            auto clip = [](const float *m, const float *v, float *out) {
+                for (int r = 0; r < 4; ++r) out[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+            };
+            const khvr::PlatformWorldVertex &c0 = w.vertices[0];
+            float p[4] = {c0.x, c0.y, c0.z, 1}, viewSpace[4], c1[4];
+            clip(w.view, p, viewSpace);
+            clip(w.lens, viewSpace, c1);
+            const double ex = cot / (4.0 / 3.0) * 4 / 10, ey = cot * (-3) / 10;
+            event = std::fabs(c1[0] / c1[3] - ex) < 0.02 && std::fabs(c1[1] / c1[3] - ey) < 0.02;
+        }
+        for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(lens[i]));
+    }
+    const bool all = a && b && split && scrolled && event;
+    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
+                "event scene %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event);
+    return all ? 0 : 1;
 }
 
 // Draws a captured world (khvr_world_N.bin) the way Screen > Game in 3D does, on the CPU: the
