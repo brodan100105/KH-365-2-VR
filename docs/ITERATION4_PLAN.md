@@ -48,18 +48,32 @@ and into VR as real geometry around you.
       runs, and the view mode then draws the captured world through the rig. Still to come: the
       scale from Roxas's height, cutscene detection beyond event scripts, and what the game's
       camera does not see (step 3's camera override).
-- [ ] First person: the view from Roxas's head, his model hidden. In: the game's own Roxas left
-      out of the captured world unless **Show body** is Full body, and **First person > World
-      scale**. To come: the game's Keyblade model in the VR hand instead of the placeholder, and
-      Roxas's arms following yours (IK on his model's bones).
-- [ ] In-engine cutscenes from where you stand (**Cutscenes: Same as gameplay**): event scenes set
-      their own projection, captured now only in camera space (sharp on the giant screen); placing
-      them in the world needs their camera.
+- [x] First person: the view from Roxas's head, his model hidden: the game's own Roxas is left
+      out of the captured world unless **Show body** is Full body; **First person > World scale**.
+      (His Keyblade and arms in VR: step 5.)
+- [ ] Smooth motion at the headset's rate: the game runs its logic at 60 frames a second (faster
+      would play the game faster), so the captured world is interpolated between two game frames
+      for the 90 or 120 Hz display when both have the same polygons.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera now: what lies behind it is not submitted at all).
 - [ ] Analog movement and room-scale steps through the game's collision.
 
-## Step 4: the loading area on the clock tower
+## Step 4: in-engine cutscenes from where you stand
+
+- [ ] **View > Cutscenes: Same as gameplay** in 6DoF: event scenes (ov023) set their own
+      projection, so they are captured now only in camera space (sharp on the giant screen). Find
+      the event camera (where the event script keeps its eye and target) to place the scene in the
+      world, then show it around you like gameplay, with the giant screen as the fallback.
+
+## Step 5: Roxas in VR (first person)
+
+- [ ] The game's own Keyblade in your hand instead of the placeholder: its model from the ROM's
+      files (or picked out of the captured player mesh by its bone), drawn at the VR hand.
+- [ ] Roxas's arms following yours: find his model's skeleton (the player actor's NNS G3D joint
+      matrices), solve two-bone IK for the arms from the controllers, and have the game pose him
+      with it, so Full body shows your own movements.
+
+## Step 6: the loading area on the clock tower
 
 - [ ] The first time you reach the top of the Twilight Town clock tower, its captured geometry and
       textures are saved to the KHDaysVR folder; later boots stand you there instead of in the
