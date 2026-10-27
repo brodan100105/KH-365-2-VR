@@ -43,6 +43,9 @@ struct Track {
     // Allocated when the sequence was prepared (its 0xfe command) but not yet given its data by
     // the 0x93 that opens it: the game's track settings apply to it, but it does not play yet.
     bool opened = true;
+    // In note-wait mode a note with no length holds the track until it has finished (the SDK's
+    // noteFinishWait): a sound effect that ends right after its note keeps it sounding.
+    bool finishWait = false;
     int player = -1;
     uint32_t base = 0, pc = 0;
     int wait = 0;
@@ -502,6 +505,11 @@ uint32_t Read24(Track &t) {
 bool StepTrack(int ti) {
     Track &t = gTrackPool[ti];
     if (!t.active) return false;
+    if (t.finishWait) {
+        for (const Voice &v : gVoice)
+            if (v.on && v.track == ti) return true;
+        t.finishWait = false;
+    }
     if (t.wait > 0 && --t.wait > 0) return true;
     for (int guard = 0; guard < 1024; ++guard) {
         if (t.wait > 0) return true;
@@ -527,7 +535,13 @@ bool StepTrack(int ti) {
             int length = ReadArg(t, t.player, hasSpecial ? special : kArgVlv);
             if (run) {
                 NoteOn(ti, cmd + t.transpose, velocity, length);
-                if (t.noteWait) t.wait = length;
+                if (t.noteWait) {
+                    t.wait = length;
+                    if (length == 0) {
+                        t.finishWait = true;
+                        return true;
+                    }
+                }
             }
             continue;
         }

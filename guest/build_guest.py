@@ -264,8 +264,19 @@ RE_VA_START_MACRO = re.compile(r"#define\s+va_start\(ap,\s*last\)\s*\(\(ap\)\s*=
 RE_VA_INLINE = re.compile(r"\(void \*\)\(\(\(unsigned int\)&(\w+)\s*&\s*~3u\)\s*\+\s*4\)")
 
 
+# Data the decomp names twice: a second name for a table at the same address that nothing
+# defines under that name. wasm-ld resolves an undefined data symbol to address 0 without a
+# word (--allow-undefined), so the second name is replaced by the defined one.
+DATA_RENAMES = {
+    "data_ov002_0207e9f4_default": "data_ov002_0207e9f4",
+    "data_ov002_0207ef80_offsets": "data_ov002_0207ef80",
+}
+RE_DATA_RENAME = re.compile(r"\b(%s)\b" % "|".join(DATA_RENAMES))
+
+
 def patch_source(rel, text, fx):
     """Returns the port's version of one decomp source."""
+    text = RE_DATA_RENAME.sub(lambda m: DATA_RENAMES[m.group(1)], text)
     t = RE_STATIC_LOCAL.sub(lambda m: ("extern" + m.group(1)) if m.group(2) in config_symbols() else m.group(0), text)
     t = RE_CLZ.sub(r"\1 = (\2) ? (unsigned int)__builtin_clz(\2) : 32u;", t)
     t = RE_REGPIN.sub("", t)
@@ -469,6 +480,9 @@ def generate_storage(out):
             ["OSi_IrqDma%d" % i for i in range(4)] + ["OS_IrqDummy"] * 10
     init = [(GLOBAL_BASE + 4 * i, ".int32\t%s" % f) for i, f in enumerate(table)]
     low = list(low_syms.items()) + [("khvr_dtcm", GLOBAL_BASE), ("khvr_shared", 0x027ff000)]
+    # The boot lock word at the end of the shared page (OS_InitLock), which no symbol list names.
+    if "data_027ffff0" not in low_syms:
+        low.append(("data_027ffff0", 0x027ffff0))
     asm.insert(0, "".join("\t.functype\t%s () -> ()\n" % f for f in sorted(set(table))) +
                emit_block("khvr_low", GLOBAL_BASE, LOW_END, low, init, section=".rodata.khvr_low"))
     gen = out / "gen"

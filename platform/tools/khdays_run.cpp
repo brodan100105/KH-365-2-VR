@@ -742,7 +742,7 @@ int SeqTest() {
     w32(bank3 + 0x3c, 1 | 0x40 << 8);
     const uint8_t inst3[10] = {0, 0, 0, 0, 60, 127, 127, 127, 127, 64};  // wave 0 of its archive
     for (int i = 0; i < 10; ++i) w8(bank3 + 0x40 + i, inst3[i]);
-    const uint8_t code3[] = {0x3c, 0x7f, 0x00, 0x80, 0x60, 0xff};  // key 60, length 0; wait 96; end
+    const uint8_t code3[] = {0x3c, 0x7f, 0x00, 0xff};  // key 60, length 0, then the end at once
     for (size_t i = 0; i < sizeof code3; ++i) w8(seq3 + static_cast<uint32_t>(i), code3[i]);
     auto cmd3 = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
         uint32_t at = cmds3 + 0x18 * n;
