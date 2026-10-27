@@ -622,7 +622,9 @@ void VrApp::Frame(const XrFrameInput &in) {
         // to draw it large too.
         const bool headsetDraws3d = settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds;
         decomp_->Set3dScale(headsetDraws3d ? 1 : settings_.Int(SettingId::Pic3dResolution) + 1);
-        decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds);
+        const bool standInWorld = settings_.Bool(SettingId::ViewStandInWorld);
+        decomp_->SetStandInWorld(standInWorld);
+        decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds || standInWorld);
     }
 #endif
     ViewMode mode = EffectiveMode();
@@ -1002,6 +1004,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         Mat4 worldToTracking = Mat4::FromSimilarity(rig_.trackingToWorld.Inverse());
         Mat4 vpWorld = vpTracking * worldToTracking;
         renderer_.DrawTriangles(game_->world(), vpWorld);
+        if (!game_->texturedWorld().vertices.empty()) {
+            // The game's own 3D, captured in world space (View > Stand in the world).
+            const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp);
+        }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
         if (drawPlayer) renderer_.DrawTriangles(game_->player(), vpWorld);

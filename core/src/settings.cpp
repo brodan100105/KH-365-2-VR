@@ -35,6 +35,10 @@ std::vector<SettingDef> BuildDefs() {
                   {"third_person", "first_person", "giant_screen"},
                   {"Panoramic (3rd person)", "First person", "Giant screen"},
                   "Panoramic: stand around Roxas in 6DoF. First person: you are the character."));
+    d.push_back(B(S::ViewStandInWorld, "View", "stand_in_world", "Stand in the world (experimental)", false,
+                  "In gameplay, the game's 3D around you instead of on the giant screen, in the view mode "
+                  "above. For now you see what the game's own camera sees; menus and event scenes stay "
+                  "on the giant screen."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
                   "Watch in-engine cutscenes on the giant screen, or from where you stand."));

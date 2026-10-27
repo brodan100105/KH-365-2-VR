@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -169,8 +170,11 @@ void DecompGame::DriverLoop() {
         if (world) p.CaptureWorld(scratchWorld.get());
         p.NoteDisplay(false, std::chrono::duration<float, std::milli>(clock::now() - captureStart).count());
         if (world) {
+            PlatformPlayer player;
+            p.ReadPlayer(&player);
             std::lock_guard<std::mutex> lock(screensMu_);
             std::swap(scratchWorld, latestWorld_);
+            latestPlayer_ = player;
             ++latestWorldRevision_;
         }
         // The loading area stays for 5 seconds at least, and until either screen shows an
@@ -227,6 +231,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         ++frame_.frameCounter;
     }
     if (!worldCapture_.load()) {
+        frame_.inGameplay = false;
+        frame_.inMenu = true;
         if (!texturedWorld_.vertices.empty()) {
             texturedWorld_ = TexturedWorld();
             ++texturedWorld_.revision;
@@ -259,6 +265,18 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
         std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);
         ++t.revision;
+        // Gameplay, for the view rigs: the player in the field with the world captured, and no
+        // menu, event scene or movie. Otherwise everything stays on the giant screen.
+        const PlatformPlayer &pl = latestPlayer_;
+        const bool playing = standInWorld_.load() && pl.valid && !pl.menu && !pl.event && !screens_.movie &&
+                             w.hasCamera && !w.vertices.empty();
+        frame_.inGameplay = playing;
+        frame_.inMenu = !playing;
+        frame_.inCutscene = false;
+        if (pl.valid) {
+            frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
+            frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});
+        }
         if (w.hasCamera) {
             frame_.camera.eye = {w.eye[0], w.eye[1], w.eye[2]};
             frame_.camera.target = {w.target[0], w.target[1], w.target[2]};

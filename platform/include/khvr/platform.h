@@ -70,6 +70,8 @@ struct PlatformPlayer {
     uint32_t actor = 0;        // guest address of the player actor
     float position[3] = {};    // feet, world space, game units
     float heading = 0.0f;      // radians; facing (sin, 0, cos)
+    bool menu = false;         // the camp menu (ov025, ov008) is running
+    bool event = false;        // an event script (ov023) drives the scene: a cutscene
 };
 
 struct PlatformWorld {

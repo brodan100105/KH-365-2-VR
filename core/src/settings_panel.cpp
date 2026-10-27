@@ -46,7 +46,7 @@ const std::vector<Page> &Pages() {
 
 // The options people change most, under the profiles.
 const SettingId kQuickOptions[] = {
-    SettingId::ViewMode,         SettingId::Passthrough,         SettingId::ScreenPicture,
+    SettingId::ViewMode,         SettingId::ViewStandInWorld,    SettingId::Passthrough,         SettingId::ScreenPicture,
     SettingId::ScreenWidth,      SettingId::ScreenDistance,      SettingId::HandScreenSide,
     SettingId::HandScreenDsSize, SettingId::HandScreenDsHinge,   SettingId::HandScreenDsTwoHands,
 };

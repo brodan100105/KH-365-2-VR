@@ -34,7 +34,11 @@ public:
     const WorldDrawList &world() const override { return world_; }
     const DsScreens &screens() const override { return screens_; }
     const TexturedWorld &texturedWorld() const override { return texturedWorld_; }
-    // Screen > Game in 3D: capture the game's 3D world each frame.
+    // View > Stand in the world: report gameplay (the player in the field, no menu or event
+    // scene) so the app leaves the giant screen for the captured world around you.
+    void SetStandInWorld(bool on) { standInWorld_ = on; }
+    // Screen > Game picture (Sharp, 3D depth) or standing in the world: capture the game's 3D
+    // world each frame.
     void SetWorldCapture(bool on) {
         worldCapture_ = on;
         Platform::Get().SetWorldCapture(on);
@@ -62,6 +66,8 @@ private:
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
+    PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
+    std::atomic<bool> standInWorld_{false};
 
     std::thread driver_;
     std::atomic<bool> stop_{false};

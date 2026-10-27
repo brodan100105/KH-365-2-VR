@@ -43,6 +43,11 @@ and into VR as real geometry around you.
 ## Step 3: standing in the world
 
 - [ ] Panoramic (third person): the captured world around you at the rig's scale, Roxas in front.
+      First slice in: **View > Stand in the world (experimental)** reports gameplay while the
+      player is in the field and neither the camp menu (ov025, ov008) nor an event script (ov023)
+      runs, and the view mode then draws the captured world through the rig. Still to come: the
+      scale from Roxas's height, cutscene detection beyond event scripts, and what the game's
+      camera does not see (step 3's camera override).
 - [ ] First person: the view from Roxas's head, his model hidden.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
       camera now: what lies behind it is not submitted at all).

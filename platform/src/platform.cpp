@@ -251,6 +251,18 @@ bool Platform::ReadPlayer(PlatformPlayer *out) {
     for (int i = 0; i < 3; ++i) out->position[i] = static_cast<int32_t>(Read32(actor + 0x48c + 4 * i)) / 4096.0f;
     const uint32_t node = Read32(actor + 0x20);
     if (ok(node, 0x82)) out->heading = Read16(node + 0x80) * (6.2831853f / 65536.0f);
+    // What else runs, from the object registry's step functions (as the heartbeat lists them):
+    // the camp menu's scene, or an event script's.
+    static const uint32_t objSystem = SymbolAddress("gObjSystem");
+    if (objSystem) {
+        uint32_t obj = Read32(objSystem + 12);
+        for (int i = 0; obj && ok(obj, 0x18) && i < 96; ++i, obj = Read32(obj + 12)) {
+            const char *fn = FunctionName(Read32(obj + 20));
+            if (!fn) continue;
+            if (!std::strncmp(fn, "Ov025_", 6) || !std::strncmp(fn, "Ov008_", 6)) out->menu = true;
+            if (!std::strncmp(fn, "Ov023_", 6)) out->event = true;
+        }
+    }
     out->valid = true;
     return true;
 }
@@ -436,8 +448,9 @@ void Platform::Heartbeat() {
     {
         PlatformPlayer pl;
         if (ReadPlayer(&pl))
-            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg", pl.actor, pl.position[0], pl.position[1],
-                pl.position[2], pl.heading * 57.29578f);
+            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg%s%s", pl.actor, pl.position[0],
+                pl.position[1], pl.position[2], pl.heading * 57.29578f, pl.menu ? ", camp menu" : "",
+                pl.event ? ", event script" : "");
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");

@@ -23,6 +23,7 @@ enum class SettingType { Bool, Float, Int, Enum };
 enum class SettingId : int {
     // View
     ViewMode,
+    ViewStandInWorld,
     CutsceneView,
     ModeSwitchButton,
     // Screen (the giant screen used for cutscenes, menus and "Giant screen" mode)
