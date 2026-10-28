@@ -89,6 +89,7 @@ private:
     FirstPersonRig firstPerson_;
     CutsceneRig cutscene_;
     bool inCutsceneView_ = false;  // the cutscene rig places the view
+    float vignette_ = 0.0f;        // the comfort vignette, eased (0..1 of the way in)
     CombatRecognizer combat_;
     InputMapper mapper_;
     SettingsPanel panel_;

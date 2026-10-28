@@ -193,8 +193,7 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
     // Artificial motion of the view (following, smooth turning) drives the vignette.
     float followSpeed = t.dt > 0 ? Length(anchor_ - before) / scale / t.dt : 0.0f;  // m/s
     float turnSpeed = t.dt > 0 && !snapped ? std::fabs(turn) / t.dt : 0.0f;          // rad/s
-    out.vignette = s.Get(SettingId::ComfortVignette) *
-                   Clamp(followSpeed / 2.0f + turnSpeed / 1.5f, 0.0f, 1.0f);
+    out.vignette = Clamp(followSpeed / 2.0f + turnSpeed / 1.5f, 0.0f, 1.0f);
 
     out.requests.overrideCamera = true;
     out.requests.camera = HeadCamera(out.trackingToWorld, t.head, 10.0f * scale);
@@ -288,7 +287,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
 
     float moving = Clamp(Length(t.moveAxis), 0.0f, 1.0f);
     float turnSpeed = t.dt > 0 && !snapped ? std::fabs(turn) / t.dt : 0.0f;
-    out.vignette = s.Get(SettingId::ComfortVignette) * Clamp(moving + turnSpeed / 1.5f, 0.0f, 1.0f);
+    out.vignette = Clamp(moving + turnSpeed / 1.5f, 0.0f, 1.0f);
     return out;
 }
 
@@ -314,10 +313,18 @@ RigOutput CutsceneRig::Update(const Settings &s, const GameFrame &game, const Tr
         initialized_ = true;
         if (cut || t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     } else {
-        // Follow the camera's moves and turns, smoothed out of the game's frame steps.
+        // Follow the camera's moves and turns, smoothed out of the game's frame steps; that
+        // motion is artificial, so it drives the vignette.
         const float k = 1.0f - std::exp(-8.0f * t.dt);
+        const Vec3 before = eye_;
+        const float yawBefore = cameraYaw_;
         eye_ += (eye - eye_) * k;
         cameraYaw_ = WrapAngle(cameraYaw_ + WrapAngle(cameraYaw - cameraYaw_) * k);
+        if (t.dt > 0) {
+            const float speed = Length(eye_ - before) / scale / t.dt;                       // m/s
+            const float turning = std::fabs(WrapAngle(cameraYaw_ - yawBefore)) / t.dt;      // rad/s
+            out.vignette = Clamp(speed / 2.0f + turning / 1.5f, 0.0f, 1.0f);
+        }
     }
 
     bool snapped = false;

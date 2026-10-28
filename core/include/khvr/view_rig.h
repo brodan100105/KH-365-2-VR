@@ -28,7 +28,7 @@ struct TrackingFrame {
 struct RigOutput {
     Similarity trackingToWorld;   // tracking meters -> game units
     float moveBasisYaw = 0.0f;    // world yaw that "stick forward" points along
-    float vignette = 0.0f;        // 0..1, comfort vignette strength this frame
+    float vignette = 0.0f;        // 0..1, how much artificial motion (moving, turning) there is now
     bool blinkStarted = false;    // a comfort blink should start this frame
     GameRequests requests;        // camera override, player yaw, room-scale step
 };

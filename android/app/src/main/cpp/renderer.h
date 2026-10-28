@@ -74,7 +74,9 @@ public:
     // set it back to 0 for anything else.
     void SetScreenSmoothing(float amount) { smoothing_ = amount; }
     void DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj);
-    void DrawComfortOverlay(float vignette, float blink);
+    // The comfort vignette, `vignette` (0..1) of the way in, `strength` dark at the rim and `size`
+    // of the view at its fullest, and the blink (0..1 black).
+    void DrawComfortOverlay(float vignette, float strength, float size, float blink);
     // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
     // over them. Its textures are kept on the GPU by key and uploaded only when new.
     // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
@@ -88,7 +90,7 @@ private:
     GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1, texSmooth_ = -1, texDsPixel_ = -1;
     float smoothing_ = 0.0f;
     GLint lineMvp_ = -1, lineColor_ = -1;
-    GLint ovVignette_ = -1, ovBlink_ = -1;
+    GLint ovVignette_ = -1, ovBlink_ = -1, ovStrength_ = -1, ovSize_ = -1;
     GLuint vao_ = 0, vbo_ = 0;
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
     GLuint worldProgram_ = 0, worldVbo_ = 0, worldMotionVbo_ = 0;

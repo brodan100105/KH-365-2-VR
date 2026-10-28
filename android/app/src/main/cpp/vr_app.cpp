@@ -17,7 +17,8 @@ namespace khvr {
 namespace {
 
 constexpr float kStickDeadzone = 0.2f;
-constexpr float kNear = 0.05f, kFar = 500.0f;
+// Far enough for a level's sky at any world scale (it clipped in and out at 500).
+constexpr float kNear = 0.05f, kFar = 5000.0f;
 constexpr float kIpd = 0.064f;
 constexpr int kGiantViewW = 1024, kGiantViewH = 768;  // 4:3 like the DS top screen
 
@@ -852,6 +853,12 @@ void VrApp::Frame(const XrFrameInput &in) {
     else if (mode == ViewMode::FirstPerson) rig_ = firstPerson_.Update(settings_, g, t);
     else rig_ = RigOutput{};
     nextRequests_ = rig_.requests;
+    {
+        // The vignette comes in quickly as artificial motion starts and goes out gently after.
+        const float target = settings_.Bool(SettingId::ComfortVignetteOn) && mode != ViewMode::GiantScreen ? rig_.vignette : 0.0f;
+        const float rate = target > vignette_ ? 6.0f : 2.5f;
+        vignette_ += (target - vignette_) * (1.0f - std::exp(-rate * dt));
+    }
     if (rig_.requests.hasRoomScaleStep) pendingRoomScale_ += rig_.requests.roomScaleStep;
     if (rig_.blinkStarted) blinkTime_ = 0.0f;
     if (blinkTime_ >= 0.0f) {
@@ -1185,7 +1192,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         float x = blinkTime_ / len;  // 0..1: fade out, hold, fade in
         blink = x < 0.3f ? x / 0.3f : (x > 0.7f ? (1.0f - x) / 0.3f : 1.0f);
     }
-    renderer_.DrawComfortOverlay(mode == ViewMode::GiantScreen ? 0.0f : rig_.vignette, blink);
+    renderer_.DrawComfortOverlay(vignette_, settings_.Get(SettingId::ComfortVignette),
+                                 settings_.Get(SettingId::ComfortVignetteSize), blink);
 }
 
 }  // namespace khvr

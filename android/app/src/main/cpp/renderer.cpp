@@ -152,12 +152,17 @@ void main() {
 const char *kOverlayFs = R"(#version 300 es
 precision mediump float;
 in vec2 vNdc;
-uniform float uVignette;
+uniform float uVignette;  // how far it has come in (0..1)
+uniform float uStrength;  // its darkness at the rim (0.1..1)
+uniform float uSize;      // how much of the view it covers at its fullest (0.1..1)
 uniform float uBlink;
 out vec4 oColor;
 void main() {
+    // A circle round the middle of the view: clear inside, darkening over a soft band to the
+    // edges. As the vignette comes in, the clear circle shrinks from beyond the edges to its size.
     float r = length(vNdc);
-    float v = uVignette * smoothstep(0.45, 1.05, r);
+    float inner = mix(1.45, mix(1.0, 0.2, uSize), uVignette);
+    float v = uStrength * min(1.0, uVignette * 1.5) * smoothstep(inner, inner + 0.45, r);
     oColor = vec4(0.0, 0.0, 0.0, clamp(max(v, uBlink), 0.0, 1.0));
 })";
 
@@ -291,6 +296,8 @@ bool Renderer::Init() {
     lineColor_ = glGetUniformLocation(lineProgram_, "uColor");
     ovVignette_ = glGetUniformLocation(overlayProgram_, "uVignette");
     ovBlink_ = glGetUniformLocation(overlayProgram_, "uBlink");
+    ovStrength_ = glGetUniformLocation(overlayProgram_, "uStrength");
+    ovSize_ = glGetUniformLocation(overlayProgram_, "uSize");
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     return true;
@@ -603,10 +610,12 @@ void Renderer::DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4
     glDrawArrays(GL_LINES, 0, 2);
 }
 
-void Renderer::DrawComfortOverlay(float vignette, float blink) {
+void Renderer::DrawComfortOverlay(float vignette, float strength, float size, float blink) {
     if (vignette <= 0.001f && blink <= 0.001f) return;
     glUseProgram(overlayProgram_);
     glUniform1f(ovVignette_, vignette);
+    glUniform1f(ovStrength_, strength);
+    glUniform1f(ovSize_, size);
     glUniform1f(ovBlink_, blink);
     glBindVertexArray(vao_);
     glDisableVertexAttribArray(0);

@@ -169,8 +169,13 @@ std::vector<SettingDef> BuildDefs() {
                   15.0f, "deg", "Angle of one snap turn."));
     d.push_back(F(S::ComfortSmoothSpeed, "Comfort", "smooth_speed", "Smooth turn speed", 120.0f,
                   30.0f, 360.0f, 10.0f, "deg/s", "Speed of smooth turning."));
-    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette", 0.4f, 0.0f, 1.0f, 0.05f,
-                  "", "Darkens the edges of the view while you move or turn artificially."));
+    d.push_back(B(S::ComfortVignetteOn, "Comfort", "vignette_on", "Vignette", true,
+                  "Darkens the edges of your view while the view moves or turns without you (the stick, "
+                  "following Roxas, a cutscene's camera), fading in and out smoothly."));
+    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 1.0f, 0.05f,
+                  "", "How dark the vignette gets: 1 is full black, 0.1 faint but still there."));
+    d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_size", "Vignette size", 0.5f, 0.1f, 1.0f,
+                  0.05f, "", "How much of your view the vignette covers at its fullest, from the edges in."));
     d.push_back(B(S::ComfortBlink, "Comfort", "blink", "Blink on cuts", true,
                   "Briefly fade to black when the view jumps (camera cuts, snap turns)."));
     d.push_back(F(S::ComfortBlinkMs, "Comfort", "blink_ms", "Blink length", 150.0f, 50.0f, 500.0f,
