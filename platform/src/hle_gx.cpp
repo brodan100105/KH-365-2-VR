@@ -389,7 +389,8 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
 // (the world's polygons move across its view then). A polygon seen exactly so once stays a HUD
 // piece while it keeps that place, the camera still or not; one that changes (a counter's digit)
 // is one too when it has a HUD piece's texture right where one was. Never what is near Roxas or
-// the cursor's target: a camera turning round them (a soft lock) keeps them in place too.
+// the cursor's target (a camera turning round them, a soft lock, keeps them in place too), nor
+// solid polygons: HUD art is see-through.
 void ClassifyHud(const std::vector<WorldPoly> &polys) {
     g.hudShown.assign(polys.size(), 0);
     if (!g.sceneHasCamera) {
@@ -443,6 +444,10 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
             const double dx = world[0] - a[0], dy = world[1] - a[1], dz = world[2] - a[2];
             if (dx * dx + dy * dy + dz * dz < 2.0 * 2.0) s.clear = false;
         }
+        // HUD art is see-through (alpha, or a palette whose colour 0 is transparent): a solid
+        // polygon (a table's edge as you pass it) is the scene.
+        const uint32_t format = (w.texParam >> 26) & 7, alpha = (w.attr >> 16) & 31;
+        if (!(format != 0 && (format == 1 || format == 6 || alpha < 31 || ((w.texParam >> 29) & 1)))) s.clear = false;
         s.key = key;
         s.same = g.prevKeys.count(key) != 0;
         sameCount += s.same;
@@ -1810,6 +1815,8 @@ void GxCaptureWorld(PlatformWorld *out) {
         sprite.mode = 0;
         sprite.across.clear();
     };
+    float player[3] = {0, 0, 0};
+    const bool hasPlayer = SwapPlayerPosition(player);
     std::vector<const WorldPoly *> flatPieces;  // drawn with another projection, in screen order
     for (const WorldPoly &w : g.worldShown) {
         const size_t index = static_cast<size_t>(&w - g.worldShown.data());
@@ -1851,13 +1858,28 @@ void GxCaptureWorld(PlatformWorld *out) {
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
             pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
         }
+        // Sprites have see-through textures (alpha, or a palette whose colour 0 is transparent):
+        // a face's or a table's solid polygons that happen to lie square to the camera for a frame
+        // are none. Nor is anything on Roxas.
+        bool spriteLike = g.sceneHasCamera && !wire && tex >= 0 &&
+                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
+        if (spriteLike && hasPlayer) {
+            double cx = 0, cy = 0, cz = 0;
+            for (int i = 0; i < w.n; ++i) {
+                cx += pv[i].x / w.n;
+                cy += pv[i].y / w.n;
+                cz += pv[i].z / w.n;
+            }
+            const double dx = cx - player[0], dy = cy - (player[1] + 0.8), dz = cz - player[2];
+            spriteLike = dx * dx + dz * dz > 1.5 * 1.5 || dy < -1.5 || dy > 1.8;
+        }
         // A sprite facing the camera: flat across its view (camera space z alike), sprite-sized.
         double cs[4][3];
         int mode = 0;
         double key[4] = {}, origin[3] = {}, right[3] = {}, up[3] = {};
         double along[4][2];
         const double *ci = cameraInv.data();
-        bool flat = g.sceneHasCamera && !wire;
+        bool flat = spriteLike;
         for (int i = 0; flat && i < w.n; ++i) {
             const double *c = cameraD.data();
             const double x = pv[i].x, y = pv[i].y, z = pv[i].z;
@@ -1873,9 +1895,8 @@ void GxCaptureWorld(PlatformWorld *out) {
                 x0 = std::min(x0, cs[i][0]); x1 = std::max(x1, cs[i][0]);
                 y0 = std::min(y0, cs[i][1]); y1 = std::max(y1, cs[i][1]);
             }
-            // See-through ones (a tree's cut-out) may be large: no wall is see-through.
-            const bool seeThrough = tex >= 0 && ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
-            const double most = seeThrough ? 8.0 : 1.2;
+            // They may be large (a tree's cut-out): no wall is see-through.
+            const double most = 8.0;
             flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < most && y1 - y0 < most * 1.5;
             // A large one standing straight up (a tree) is an upright sprite rather (below): it
             // stays upright when you look down at it.
@@ -1899,8 +1920,7 @@ void GxCaptureWorld(PlatformWorld *out) {
                 along[i][0] = cs[i][0];
                 along[i][1] = cs[i][1];
             }
-        } else if (g.sceneHasCamera && !wire && tex >= 0 &&
-                   ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1))) {
+        } else if (spriteLike) {
             // An upright sprite: a see-through polygon (alpha, or a palette whose colour 0 is
             // transparent: TEXIMAGE_PARAM bit 29) standing straight up, square to the camera about
             // the vertical (its normal along the way to the camera, or the way it looks), to the

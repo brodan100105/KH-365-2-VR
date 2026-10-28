@@ -470,7 +470,7 @@ int WorldTest() {
     // quad turned is not.
     bool sprites = false;
     {
-        auto small = [&](double turn) {
+        auto small = [&](double turn, uint32_t attr = 0x001000c0) {  // see-through (alpha 16)
             cmd(0x10, 0);
             for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
             cmd(0x10, 2);
@@ -482,13 +482,15 @@ int WorldTest() {
             }
             const double rot[9] = {c, 0, -s, 0, 1, 0, s, 0, c};
             for (int i = 0; i < 9; ++i) cmd(0x1a, fx(rot[i]));
-            quad();
+            quad(attr);
             cmd(0x50, 0);
             static khvr::PlatformWorld w;
             khvr::Platform::Get().CaptureWorld(&w);
             return w;
         };
         khvr::PlatformWorld facing = small(0), turned = small(0.6);
+        // The same quad solid (a face, a table top square to the camera): no sprite.
+        const bool solidLeft = small(0, 0x001f00c0).billboard.empty();
         bool flagged = facing.triangleFlags.size() == 2 && (facing.triangleFlags[0] & khvr::kWorldBillboard) &&
                        (facing.triangleFlags[1] & khvr::kWorldBillboard) && facing.billboard.size() == 6 * khvr::kWorldBillboardFloats;
         if (flagged) {
@@ -497,7 +499,7 @@ int WorldTest() {
                       std::fabs(b[3] + 0.25) < 0.02 && std::fabs(b[4] + 0.25) < 0.02;
         }
         sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
-                  turned.billboard.empty() && facing.billboard[5] == 1.0f;
+                  turned.billboard.empty() && facing.billboard[5] == 1.0f && solidLeft;
         // Upright: a see-through tree (alpha 16), 4 wide and 6 tall, standing square to the camera.
         cmd(0x10, 0);
         for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
@@ -565,7 +567,7 @@ int WorldTest() {
             cmd(0x15, 0);  // the HUD piece: in camera space, 5 in front
             cmd(0x1c, fx(-0.5)); cmd(0x1c, fx(0.5)); cmd(0x1c, fx(-5));
             cmd(0x1b, fx(0.25)); cmd(0x1b, fx(0.25)); cmd(0x1b, fx(1));
-            quad();
+            quad(0x001000c0);  // HUD art: see-through
             cmd(0x50, 0);
             khvr::Platform::Get().CaptureWorld(w);
         };
