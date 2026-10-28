@@ -5,6 +5,20 @@ picture (the Day number, the field, cutscenes) at up to 4x the DS's resolution
 (`platform/src/hle_gx.cpp`). The second half takes the same polygons out of the DS's picture
 and into VR as real geometry around you.
 
+## The order from here
+
+1. Step 5, Roxas in first person: the game's Keyblade in your hand (in test); the characters
+   half drawn in third person when Roxas turns away (the game's own culling, to find); his arms
+   following your controllers; full-body VRIK.
+2. Step 5b, magic: from the Keyblade's tip, its effects facing you, aim to cast.
+3. Loose ends of steps 2 and 3: the world's scale from Roxas's height; analog movement and
+   room-scale steps through the game's collision; the rest of the game's culling.
+4. The chosen ideas, in this order: haptics that tell hits apart; hits felt in the picture; guard
+   with the blade across the body; chests by striking or touching; a pointer and a wrist quickbar;
+   sound from where it happens; speech bubbles above the speaker.
+5. Step 6, the clock tower as the loading area.
+6. The open ideas, as chosen.
+
 ## Step 1: the world as geometry (capture, textures, a stereo giant screen)
 
 - [x] **Capture in world space.** Every polygon the game submits, before the DS's own culling and
