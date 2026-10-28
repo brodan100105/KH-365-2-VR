@@ -125,6 +125,40 @@ and into VR as real geometry around you.
 - [ ] Every effect is seen properly in VR: its sprites and particles face your eyes (not the game
       camera or Roxas), the right way up, at the right size and depth; trails, flashes and
       screen-wide effects look right in the headset as well as on the giant screen.
+- [ ] Aim to cast (first person): a spell fires only while the Keyblade points at the target, the
+      one soft-locked or locked on, within a set angle (Combat > Magic aim angle); pointing away,
+      the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
+      where the Keyblade points.
+
+## Step 7: quality of life and immersion (ideas, to pick from)
+
+Proposals, none decided yet; each would be an option in the settings.
+
+- [ ] Haptics that tell hits apart: a light tap for a hit, a heavier one for a finisher or
+      critical, a sharp jolt when Roxas is hit, a buzz on a blocked attack; a faint hum while
+      the Keyblade is out.
+- [ ] Hits felt in the picture: a few frames of hit-stop on finishers, a red pulse at the edges
+      of the view when Roxas takes damage, and an arrow at the edge toward an enemy attacking
+      from outside the view.
+- [ ] Guard by holding the Keyblade in the way: attacks and projectiles that meet the blade are
+      blocked or deflected (the game's own guard), timed for a parry.
+- [ ] Pick things up with your hands: hearts, munny and orbs pulled in when your hand reaches
+      for them; chests opened by striking or touching them.
+- [ ] Items by gesture: a potion used by bringing the off hand to your mouth; the mission gauge
+      and map on your wrist when you look at it.
+- [ ] Lock-on by looking: the enemy you look at (or point the Keyblade at) for a moment
+      becomes the target; flick the stick to change it.
+- [ ] Sound from where it happens: the game's sound effects placed at their source around you
+      (the enemy that growls, the chest that opens), not from the middle of your head.
+- [ ] People talk where they stand: the speech text in a bubble by the speaker instead of on
+      the HUD, turning to face you.
+- [ ] Limit breaks and specials by pose: raise the Keyblade overhead and hold to charge.
+- [ ] Physical movement in the game's abilities: lean into a dodge roll; a real jump for the
+      High Jump; arms out to glide.
+- [ ] The Grey Area and the castle at full scale: the people around you life-sized, a seat on
+      the couches, the mission board as a panel you touch.
+- [ ] A photo mode: freeze the game and walk around the scene, with a snapshot to the headset's
+      gallery.
 
 ## Step 6: the loading area on the clock tower
 
