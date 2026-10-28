@@ -1825,7 +1825,19 @@ void GxCaptureWorld(PlatformWorld *out) {
                 x0 = std::min(x0, cs[i][0]); x1 = std::max(x1, cs[i][0]);
                 y0 = std::min(y0, cs[i][1]); y1 = std::max(y1, cs[i][1]);
             }
-            flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < 1.2 && y1 - y0 < 1.2;
+            // See-through ones (a tree's cut-out) may be large: no wall is see-through.
+            const bool seeThrough = tex >= 0 && ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
+            const double most = seeThrough ? 8.0 : 1.2;
+            flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < most && y1 - y0 < most * 1.5;
+            // A large one standing straight up (a tree) is an upright sprite rather (below): it
+            // stays upright when you look down at it.
+            if (flat && !(x1 - x0 < 1.2 && y1 - y0 < 1.2)) {
+                const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
+                const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
+                const double n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+                const double len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                if (len > 1e-9 && std::fabs(n[1] / len) < 0.02) flat = false;
+            }
         }
         if (flat) {
             mode = 1;
@@ -1839,9 +1851,12 @@ void GxCaptureWorld(PlatformWorld *out) {
                 along[i][0] = cs[i][0];
                 along[i][1] = cs[i][1];
             }
-        } else if (g.sceneHasCamera && !wire && tex >= 0 && (flags & kWorldTranslucent)) {
-            // An upright sprite: a see-through polygon standing straight up, square to the camera
-            // about the vertical (its normal along the way to the camera, or the way it looks).
+        } else if (g.sceneHasCamera && !wire && tex >= 0 &&
+                   ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1))) {
+            // An upright sprite: a see-through polygon (alpha, or a palette whose colour 0 is
+            // transparent: TEXIMAGE_PARAM bit 29) standing straight up, square to the camera about
+            // the vertical (its normal along the way to the camera, or the way it looks), to the
+            // precision of the game's own turning (a couple of degrees).
             const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
             const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
             double n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
@@ -1863,7 +1878,7 @@ void GxCaptureWorld(PlatformWorld *out) {
             if (len > 1e-9 && std::fabs(n[1] / len) < 0.02 && flatUnit(n[0], n[2], &nx, &nz) &&
                 flatUnit(ci[12] - centre[0], ci[14] - centre[2], &tx, &tz) && flatUnit(-ci[8], -ci[10], &fx, &fz)) {
                 const double toCamera = nx * tx + nz * tz, looking = -(nx * fx + nz * fz);
-                const double square = std::cos(0.6 * 3.14159265358979 / 180);
+                const double square = std::cos(2.0 * 3.14159265358979 / 180);
                 if (std::fabs(toCamera) > square || std::fabs(looking) > square) {
                     const double s = (std::fabs(toCamera) > square ? toCamera : looking) < 0 ? -1 : 1;
                     nx *= s;

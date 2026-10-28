@@ -38,5 +38,7 @@ void khvr_host_movie_close(void);
 void khvr_host_lock_on(const void *position, long kind, long locked);
 /* Nonzero when the headset draws the field's cursors itself (standing in the world). */
 int khvr_host_own_cursors(void);
+/* Nonzero when what the game's camera does not see is drawn too (Platform::SetDrawAll). */
+int khvr_host_draw_all(void);
 
 #endif

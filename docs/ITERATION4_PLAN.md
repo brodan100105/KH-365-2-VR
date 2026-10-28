@@ -68,7 +68,10 @@ and into VR as real geometry around you.
       (khvr_host_own_cursors); the headset draws them at the target: yellow arcs turning clockwise
       on an enemy, blue once locked on, green corner marks on people and things.
 - [ ] Camera override and wider culling, so the game draws what you look at (it culls to its own
-      camera: what lies behind it is not submitted at all). First part in: **View > Draw what the
+      camera: what lies behind it is not submitted at all). Enemies: their models take the game
+      camera's 60-degree view cone (Ov107_IsBehindView) as their level of detail
+      (Ov107_AiState_DispatchModelCallbacks); with the setting below they are drawn as in view.
+      First part in: **View > Draw what the
       game's camera does not see** answers the game's BOX_TESTs "visible" (the heartbeat counts
       the boxes out of view). The field does not use BOX_TEST (0 in the Day 11 log): its culling
       is in its own code, still to find (the enemy framework hides and shows models through its

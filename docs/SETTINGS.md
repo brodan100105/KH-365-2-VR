@@ -18,7 +18,7 @@ hands, DS + giant screen) and the options changed most.
 | `mode` | View mode | `third_person`, `first_person`, `giant_screen` | `third_person` | Panoramic: stand around Roxas in 6DoF. First person: you are the character. |
 | `stand_in_world` | Stand in the world (experimental) | `true` / `false` | `false` | In gameplay, the game's 3D around you instead of on the giant screen, in the view mode above. For now you see what the game's own camera sees; menus and event scenes stay on the giant screen. |
 | `smooth_motion` | Smooth camera motion | `true` / `false` | `true` | Standing in the world, the view follows Roxas smoothly between the game's frames instead of in its steps, which shake most when he changes direction. |
-| `draw_all` | Draw what the game's camera does not see | `true` / `false` | `true` | Standing in the world, the game draws enemies and effects around you even where its own camera does not look (it skips those for the DS). Costs some speed. |
+| `draw_all` | Draw what the game's camera does not see | `true` / `false` | `true` | Standing in the world, the game draws enemies around you even where its own camera does not look (it skips those outside its view for the DS). Costs some speed. |
 | `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or from where you stand. |
 | `mode_switch_button` | Quick mode switch | `true` / `false` | `true` | Hold the right thumbstick click to swap panoramic and first person. |
 
@@ -123,16 +123,16 @@ hands, DS + giant screen) and the options changed most.
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
 | `top_screen` | HUD (top screen) | `floating`, `head_locked`, `hidden` | `floating` | Where the health bars and command panel are shown. |
-| `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
-| `height` | Panel height | -1 to 0.4 m | `-0.4` | How far below your eyes (negative) or above them the HUD panel sits, so the health bar and commands stay out of the way. Menus are on the giant screen. |
+| `distance` | Panel distance | 0.5 to 3 m | `0.6` | Distance of the floating panels. |
+| `height` | Panel height | -1 to 0.4 m | `-0.5` | How far below your eyes (negative) or above them the HUD panel sits, so the health bar and commands stay out of the way. Menus are on the giant screen. |
 | `fill_view` | Fill your view | `true` / `false` | `true` | The HUD as large as your view, centred on it, so the health bar and commands sit at its edges as on the DS's screen. Off: a panel of Panel scale at Panel height. |
-| `fill_angle` | View it fills | 30 to 110 deg | `60` | How wide the HUD spans when it fills your view. |
+| `fill_angle` | View it fills | 30 to 110 deg | `90` | How wide the HUD spans when it fills your view. |
 | `offset_x` | Left / right | -40 to 40 deg | `0` | Moves the HUD across your view: negative left, positive right. |
-| `offset_y` | Up / down | -45 to 30 deg | `-12` | Moves the HUD up or down your view: negative down, so the portrait and commands sit below Roxas. |
-| `scale_x` | Width | 0.5 to 2 x | `1` | Stretches the HUD across. |
+| `offset_y` | Up / down | -45 to 30 deg | `-16` | Moves the HUD up or down your view: negative down, so the portrait and commands sit below Roxas. |
+| `scale_x` | Width | 0.5 to 2 x | `1.1` | Stretches the HUD across. |
 | `scale_y` | Height | 0.5 to 2 x | `1` | Stretches the HUD up and down. |
-| `follow_angle` | Follow after turning | 5 to 60 deg | `20` | How far you can look away from the floating HUD before it comes back in front of you. |
-| `follow_delay` | Follow delay | 0 to 10 s | `2.5` | How long you look away before the HUD glides back in front of you, so glancing around does not move it. |
+| `follow_angle` | Follow after turning | 5 to 60 deg | `45` | How far you can look away from the floating HUD before it comes back in front of you. |
+| `follow_delay` | Follow delay | 0 to 10 s | `0` | How long you look away before the HUD glides back in front of you, so glancing around does not move it. |
 | `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the floating HUD panels. |
 | `touch_input` | Touch input | `laser`, `direct_touch` | `laser` | How you touch the bottom screen. |
 

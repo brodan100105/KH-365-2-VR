@@ -43,8 +43,8 @@ std::vector<SettingDef> BuildDefs() {
                   "Standing in the world, the view follows Roxas smoothly between the game's frames "
                   "instead of in its steps, which shake most when he changes direction."));
     d.push_back(B(S::ViewDrawAll, "View", "draw_all", "Draw what the game's camera does not see", true,
-                  "Standing in the world, the game draws enemies and effects around you even where its "
-                  "own camera does not look (it skips those for the DS). Costs some speed."));
+                  "Standing in the world, the game draws enemies around you even where its own camera "
+                  "does not look (it skips those outside its view for the DS). Costs some speed."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
                   "Watch in-engine cutscenes on the giant screen, or from where you stand."));
@@ -212,29 +212,29 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HudTopScreen, "HUD", "top_screen", "HUD (top screen)", 0,
                   {"floating", "head_locked", "hidden"}, {"Floating panel", "Head-locked", "Hidden"},
                   "Where the health bars and command panel are shown."));
-    d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 1.2f, 0.5f, 3.0f, 0.1f, "m",
+    d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 0.6f, 0.5f, 3.0f, 0.1f, "m",
                   "Distance of the floating panels."));
-    d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.4f, -1.0f, 0.4f, 0.05f, "m",
+    d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.5f, -1.0f, 0.4f, 0.05f, "m",
                   "How far below your eyes (negative) or above them the HUD panel sits, so the health "
                   "bar and commands stay out of the way. Menus are on the giant screen."));
     d.push_back(B(S::HudFillView, "HUD", "fill_view", "Fill your view", true,
                   "The HUD as large as your view, centred on it, so the health bar and commands sit at "
                   "its edges as on the DS's screen. Off: a panel of Panel scale at Panel height."));
-    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 60.0f, 30.0f, 110.0f, 5.0f, "deg",
+    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 90.0f, 30.0f, 110.0f, 5.0f, "deg",
                   "How wide the HUD spans when it fills your view."));
     d.push_back(F(S::HudOffsetX, "HUD", "offset_x", "Left / right", 0.0f, -40.0f, 40.0f, 1.0f, "deg",
                   "Moves the HUD across your view: negative left, positive right."));
-    d.push_back(F(S::HudOffsetY, "HUD", "offset_y", "Up / down", -12.0f, -45.0f, 30.0f, 1.0f, "deg",
+    d.push_back(F(S::HudOffsetY, "HUD", "offset_y", "Up / down", -16.0f, -45.0f, 30.0f, 1.0f, "deg",
                   "Moves the HUD up or down your view: negative down, so the portrait and commands sit "
                   "below Roxas."));
-    d.push_back(F(S::HudScaleX, "HUD", "scale_x", "Width", 1.0f, 0.5f, 2.0f, 0.05f, "x",
+    d.push_back(F(S::HudScaleX, "HUD", "scale_x", "Width", 1.1f, 0.5f, 2.0f, 0.05f, "x",
                   "Stretches the HUD across."));
     d.push_back(F(S::HudScaleY, "HUD", "scale_y", "Height", 1.0f, 0.5f, 2.0f, 0.05f, "x",
                   "Stretches the HUD up and down."));
-    d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 20.0f, 5.0f, 60.0f, 5.0f,
+    d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 45.0f, 5.0f, 60.0f, 5.0f,
                   "deg", "How far you can look away from the floating HUD before it comes back in front "
                   "of you."));
-    d.push_back(F(S::HudFollowDelay, "HUD", "follow_delay", "Follow delay", 2.5f, 0.0f, 10.0f, 0.5f, "s",
+    d.push_back(F(S::HudFollowDelay, "HUD", "follow_delay", "Follow delay", 0.0f, 0.0f, 10.0f, 0.5f, "s",
                   "How long you look away before the HUD glides back in front of you, so glancing "
                   "around does not move it."));
     d.push_back(F(S::HudScale, "HUD", "scale", "Panel scale", 1.0f, 0.5f, 2.0f, 0.1f, "x",
