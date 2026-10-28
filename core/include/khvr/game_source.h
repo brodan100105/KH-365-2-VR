@@ -98,6 +98,13 @@ public:
         static const TexturedWorld empty;
         return empty;
     }
+    // The game's own weapon (Roxas's Keyblade) as last seen, for your hand: in the hand's frame
+    // (WeaponFrame::ToHand: grip at the origin, the blade along -Z, one blade length a unit).
+    // Empty until the game has drawn it.
+    virtual const TexturedWorld &heldWeapon() const {
+        static const TexturedWorld empty;
+        return empty;
+    }
     // The character's own triangles, kept apart so first person can hide them.
     virtual const WorldDrawList &player() const {
         static const WorldDrawList empty;

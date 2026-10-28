@@ -119,7 +119,16 @@ struct PlatformWorld {
     float lockOnAt[3] = {0, 0, 0};
     int lockOnKind = 0;
     bool lockOnLocked = false;
+    // Per triangle, which of Roxas's models it is of (kWorldModel...), 0 none of his; and per
+    // vertex (x, y, z), where the game put it in its model's own space, before the DS's matrices
+    // (game units). Both empty when the capture has none of his. Not in files.
+    std::vector<uint8_t> triangleModel;
+    std::vector<float> local;
 };
+// Roxas's own model, and the models attached to his (kWorldModelAttached + i the i-th, up to
+// kWorldAttachedMax): his Keyblade.
+constexpr uint8_t kWorldModelPlayer = 1, kWorldModelAttached = 2;
+constexpr int kWorldAttachedMax = 4;
 
 // A captured world to a file and back (world_file.cpp).
 bool PlatformWorldWrite(const std::string &path, const PlatformWorld &w);

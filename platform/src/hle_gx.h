@@ -39,6 +39,8 @@ struct GxWorldStats {
     uint32_t hudPieces = 0;  // polygons kept on the HUD as fixed in front of the game's camera
     uint32_t boxesInView = 0, boxesOutOfView = 0;  // BOX_TEST answers the camera's view gave
     uint32_t eventPlaced = 0, eventCameraSpace = 0;  // event scene frames placed in the world, or not
+    // Polygons the last capture had of Roxas's own model and of those attached to him.
+    uint32_t playerPolygons = 0, attachedPolygons[4] = {};
 };
 extern GxWorldStats gWorldStats;
 // BOX_TEST answers "visible" always (Platform::SetDrawAll).
@@ -46,6 +48,8 @@ extern std::atomic<bool> gDrawAll;
 // The field's cursor is on a target at this guest VecFx32 this frame (khvr_host_lock_on): its
 // kind (1, 3 enemies, 2 the field's entries) and whether it is locked on.
 void GxNoteLockOn(uint32_t position, int kind, bool locked);
+// The polygons from here on are of this model (PlayerModelTag; 0 none of Roxas's).
+void GxModelBegin(int tag);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

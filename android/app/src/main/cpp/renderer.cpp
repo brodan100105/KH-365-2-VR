@@ -154,14 +154,20 @@ precision mediump float;
 in vec2 vNdc;
 uniform float uVignette;  // how far it has come in (0..1)
 uniform float uStrength;  // its darkness at the rim (0.1..1)
-uniform float uSize;      // how much of the view it covers at its fullest (0.1..1)
+uniform float uSize;      // how much of the view it covers at its fullest (0.1..2)
+uniform vec4 uEye;        // this eye's view edges as tangents: left, right, down, up
+uniform vec4 uBoth;       // both eyes' view together, the same way
 uniform float uBlink;
 out vec4 oColor;
 void main() {
-    // A circle round the middle of the view: clear inside, darkening over a soft band to the
-    // edges. As the vignette comes in, the clear circle shrinks from beyond the edges to its size.
-    float r = length(vNdc);
-    float inner = mix(1.45, mix(1.0, 0.2, uSize), uVignette);
+    // One circle round the middle of both eyes' view together, so each eye sees the same circle
+    // at the same angles (its own outer side darkens, not the side toward the nose): clear inside,
+    // darkening over a soft band to the edges. As the vignette comes in, the clear circle shrinks
+    // from beyond the edges to its size.
+    vec2 t = mix(uEye.xz, uEye.yw, vNdc * 0.5 + 0.5);
+    vec2 p = t / vec2(t.x < 0.0 ? -uBoth.x : uBoth.y, t.y < 0.0 ? -uBoth.z : uBoth.w);
+    float r = length(p);
+    float inner = mix(1.45, mix(1.0, 0.2, uSize * 0.5), uVignette);
     float v = uStrength * min(1.0, uVignette * 1.5) * smoothstep(inner, inner + 0.45, r);
     oColor = vec4(0.0, 0.0, 0.0, clamp(max(v, uBlink), 0.0, 1.0));
 })";
@@ -282,8 +288,6 @@ bool Renderer::Init() {
     worldSprites_ = glGetUniformLocation(worldProgram_, "uSprites");
     worldRight_ = glGetUniformLocation(worldProgram_, "uRight");
     worldUp_ = glGetUniformLocation(worldProgram_, "uUp");
-    glGenBuffers(1, &worldVbo_);
-    glGenBuffers(1, &worldMotionVbo_);
     litMvp_ = glGetUniformLocation(litProgram_, "uMvp");
     litAlpha_ = glGetUniformLocation(litProgram_, "uAlpha");
     litLight_ = glGetUniformLocation(litProgram_, "uLight");
@@ -298,6 +302,8 @@ bool Renderer::Init() {
     ovBlink_ = glGetUniformLocation(overlayProgram_, "uBlink");
     ovStrength_ = glGetUniformLocation(overlayProgram_, "uStrength");
     ovSize_ = glGetUniformLocation(overlayProgram_, "uSize");
+    ovEye_ = glGetUniformLocation(overlayProgram_, "uEye");
+    ovBoth_ = glGetUniformLocation(overlayProgram_, "uBoth");
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     return true;
@@ -335,16 +341,21 @@ void Renderer::DrawTriangles(const WorldDrawList &list, const Mat4 &viewProj, fl
 }
 
 void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
-                                 const WorldMotion &motion) {
+                                 const WorldMotion &motion, int slot) {
     if (world.vertices.empty()) return;
+    WorldCache &c = worldCaches_[slot];
+    if (!c.worldVbo) {
+        glGenBuffers(1, &c.worldVbo);
+        glGenBuffers(1, &c.worldMotionVbo);
+    }
     ++worldFrames_;
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (world.revision != worldRevision_) {
-        worldRevision_ = world.revision;
+    if (world.revision != c.worldRevision) {
+        c.worldRevision = world.revision;
         // The time between game frames, averaged, leaving out hitches (loads, pauses).
-        const double since = now - revisionTime_;
-        if (since > 0.004 && since < 0.1) gameFrameSeconds_ += (since - gameFrameSeconds_) * 0.2;
-        revisionTime_ = now;
+        const double since = now - c.revisionTime;
+        if (since > 0.004 && since < 0.1) c.gameFrameSeconds += (since - c.gameFrameSeconds) * 0.2;
+        c.revisionTime = now;
         // Where each vertex was in the previous frame, when that frame held the same triangles.
         const size_t triangleCount = world.vertices.size() / 3;
         constexpr size_t kB = TexturedWorld::kBillboardFloats;
@@ -355,7 +366,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             const uint64_t key = tex >= 0 && static_cast<size_t>(tex) < world.textures.size() ? world.textures[tex].key : 0;
             signature[t] = (key * 0x100000001b3ull) ^ world.triangleFlags[t];
         }
-        motionMatched_ = signature == prevTriangles_ && prevPositions_.size() == world.vertices.size();
+        c.motionMatched = signature == c.prevTriangles && c.prevPositions.size() == world.vertices.size();
         std::vector<Vec3> centres(world.vertices.size());
         for (size_t i = 0; i < world.vertices.size(); ++i)
             centres[i] = sprites ? Vec3{world.billboard[i * kB], world.billboard[i * kB + 1], world.billboard[i * kB + 2]}
@@ -371,7 +382,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         const size_t triangles = world.vertices.size() / 3;
         std::vector<TexturedVertex> sorted;
         sorted.reserve(world.vertices.size() * 2);
-        worldBatches_.clear();
+        c.worldBatches.clear();
         auto cullOf = [&](size_t t) {
             const uint8_t f = world.triangleFlags[t];
             const bool front = f & kTriFront, back = f & kTriBack;
@@ -382,24 +393,24 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             const bool decal = world.triangleFlags[t] & kTriDecal;
             const bool lines = world.triangleFlags[t] & kTriLine;
             const int cull = lines ? 0 : cullOf(t);
-            WorldBatch *b = worldBatches_.empty() ? nullptr : &worldBatches_.back();
+            WorldBatch *b = c.worldBatches.empty() ? nullptr : &c.worldBatches.back();
             if (!b || b->texture != tex || b->blend != blend || b->depthWrite != depthWrite || b->decal != decal ||
                 b->cut != cut || b->cull != cull || b->lines != lines)
-                worldBatches_.push_back(
+                c.worldBatches.push_back(
                     {tex, blend, depthWrite, decal, cut, cull, lines, static_cast<GLint>(sorted.size()), 0});
             const int n = lines ? 2 : 3;  // an edge is its first two vertices
             const bool sprite = sprites && (world.triangleFlags[t] & kTriBillboard);
             for (int k = 0; k < n; ++k) {
                 const size_t i = t * 3 + k;
                 sorted.push_back(world.vertices[i]);
-                const Vec3 &p = motionMatched_ ? prevPositions_[i] : world.vertices[i].position;
-                const Vec3 &pc = motionMatched_ ? prevCenters_[i] : centres[i];
+                const Vec3 &p = c.motionMatched ? c.prevPositions[i] : world.vertices[i].position;
+                const Vec3 &pc = c.motionMatched ? c.prevCenters[i] : centres[i];
                 const Vec3 &c = centres[i];
                 const float sx = sprite ? world.billboard[i * kB + 3] : 0.0f, sy = sprite ? world.billboard[i * kB + 4] : 0.0f;
                 const float kind = sprite ? world.billboard[i * kB + 5] : 0.0f;
                 motionData.insert(motionData.end(), {p.x, p.y, p.z, pc.x, pc.y, pc.z, c.x, c.y, c.z, sx, sy, kind});
             }
-            worldBatches_.back().count += n;
+            c.worldBatches.back().count += n;
         };
         std::vector<size_t> pass1, pass2, pass3;
         for (size_t t = 0; t < triangles; ++t) {
@@ -434,16 +445,16 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         for (size_t t : pass1) add(t, false, true, 0.02f);
         for (size_t t : pass2) add(t, false, true, 0.99f);
         for (size_t t : pass3) add(t, true, (world.triangleFlags[t] & kTriDepthWrite) != 0, 0.02f);
-        glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
+        glBindBuffer(GL_ARRAY_BUFFER, c.worldVbo);
         glBufferData(GL_ARRAY_BUFFER, sorted.size() * sizeof(TexturedVertex), sorted.data(), GL_STREAM_DRAW);
-        glBindBuffer(GL_ARRAY_BUFFER, worldMotionVbo_);
+        glBindBuffer(GL_ARRAY_BUFFER, c.worldMotionVbo);
         glBufferData(GL_ARRAY_BUFFER, motionData.size() * sizeof(float), motionData.data(), GL_STREAM_DRAW);
-        prevTriangles_ = std::move(signature);
-        prevPositions_.resize(world.vertices.size());
-        for (size_t i = 0; i < world.vertices.size(); ++i) prevPositions_[i] = world.vertices[i].position;
-        prevCenters_ = std::move(centres);
+        c.prevTriangles = std::move(signature);
+        c.prevPositions.resize(world.vertices.size());
+        for (size_t i = 0; i < world.vertices.size(); ++i) c.prevPositions[i] = world.vertices[i].position;
+        c.prevCenters = std::move(centres);
         // Textures: reuse what the GPU has by key, upload the new ones.
-        worldTextureIds_.assign(world.textures.size(), 0);
+        c.worldTextureIds.assign(world.textures.size(), 0);
         for (size_t i = 0; i < world.textures.size(); ++i) {
             const WorldTexture &t = world.textures[i];
             GpuTexture &g = worldTextures_[t.key];
@@ -461,7 +472,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap(t.repeatT, t.flipT));
             }
             g.lastUsed = worldFrames_;
-            worldTextureIds_[i] = g.id;
+            c.worldTextureIds[i] = g.id;
         }
         // Textures not used for a while (about ten seconds at 72 Hz, both eyes) go.
         for (auto it = worldTextures_.begin(); it != worldTextures_.end();) {
@@ -473,12 +484,17 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             }
         }
     }
+    // Each slot keeps its textures in use while it draws (another slot's rebuild drops the rest).
+    for (const WorldTexture &t : world.textures) {
+        auto it = worldTextures_.find(t.key);
+        if (it != worldTextures_.end()) it->second.lastUsed = worldFrames_;
+    }
     glUseProgram(worldProgram_);
     glUniformMatrix4fv(worldMvp_, 1, GL_FALSE, viewProj.m);
     glUniform1i(worldSampler_, 0);
     // A game frame behind: the previous frame's positions now, the newest after a game frame.
-    const float blend = motion.inBetween && motionMatched_
-                            ? static_cast<float>(std::clamp((now - revisionTime_) / gameFrameSeconds_, 0.0, 1.0))
+    const float blend = motion.inBetween && c.motionMatched
+                            ? static_cast<float>(std::clamp((now - c.revisionTime) / c.gameFrameSeconds, 0.0, 1.0))
                             : 1.0f;
     glUniform1f(worldBlend_, blend);
     glUniform1i(worldSprites_, motion.sprites ? 1 : 0);
@@ -494,7 +510,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     glUniform4f(worldFade_, f[0], f[1], f[2], f[3]);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, c.worldVbo);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -504,7 +520,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
                           reinterpret_cast<void *>(offsetof(TexturedVertex, u)));
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TexturedVertex),
                           reinterpret_cast<void *>(offsetof(TexturedVertex, color)));
-    glBindBuffer(GL_ARRAY_BUFFER, worldMotionVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, c.worldMotionVbo);
     for (int a = 3; a <= 6; ++a) {
         glEnableVertexAttribArray(a);
         glVertexAttribPointer(a, 3, GL_FLOAT, GL_FALSE, 12 * sizeof(float), reinterpret_cast<void *>((a - 3) * 3 * sizeof(float)));
@@ -513,7 +529,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     // Equal depths pass: pass 3 draws pass 2's triangles again over themselves.
     glDepthFunc(GL_LEQUAL);
     glFrontFace(GL_CCW);  // the DS's front faces are counterclockwise too
-    for (const WorldBatch &b : worldBatches_) {
+    for (const WorldBatch &b : c.worldBatches) {
         SetBlend(b.blend);
         glDepthMask(b.depthWrite ? GL_TRUE : GL_FALSE);
         glUniform1f(worldCut_, b.cut);
@@ -523,11 +539,11 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
             glEnable(GL_CULL_FACE);
             glCullFace(b.cull == 1 ? GL_BACK : GL_FRONT);
         }
-        const bool textured = b.texture >= 0 && static_cast<size_t>(b.texture) < worldTextureIds_.size();
+        const bool textured = b.texture >= 0 && static_cast<size_t>(b.texture) < c.worldTextureIds.size();
         glUniform1i(worldUseTex_, textured ? 1 : 0);
         glUniform1i(worldDecal_, b.decal ? 1 : 0);
         if (textured) {
-            glBindTexture(GL_TEXTURE_2D, worldTextureIds_[b.texture]);
+            glBindTexture(GL_TEXTURE_2D, c.worldTextureIds[b.texture]);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, nearest ? GL_NEAREST : GL_LINEAR);
         }
         // A wireframe edge is one DS pixel wide on its 256 x 192 screen: a few headset pixels.
@@ -610,9 +626,12 @@ void Renderer::DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4
     glDrawArrays(GL_LINES, 0, 2);
 }
 
-void Renderer::DrawComfortOverlay(float vignette, float strength, float size, float blink) {
+void Renderer::DrawComfortOverlay(float vignette, float strength, float size, float blink,
+                                  const float eye[4], const float both[4]) {
     if (vignette <= 0.001f && blink <= 0.001f) return;
     glUseProgram(overlayProgram_);
+    glUniform4fv(ovEye_, 1, eye);
+    glUniform4fv(ovBoth_, 1, both);
     glUniform1f(ovVignette_, vignette);
     glUniform1f(ovStrength_, strength);
     glUniform1f(ovSize_, size);

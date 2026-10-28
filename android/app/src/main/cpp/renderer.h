@@ -75,14 +75,20 @@ public:
     void SetScreenSmoothing(float amount) { smoothing_ = amount; }
     void DrawLine(const Vec3 &a, const Vec3 &b, uint32_t color, const Mat4 &viewProj);
     // The comfort vignette, `vignette` (0..1) of the way in, `strength` dark at the rim and `size`
-    // of the view at its fullest, and the blink (0..1 black).
-    void DrawComfortOverlay(float vignette, float strength, float size, float blink);
+    // of the view at its fullest, and the blink (0..1 black). `eye` is this eye's view and `both`
+    // both eyes' together, as tangents of their edges (left, right, down, up): the vignette is one
+    // circle round both.
+    void DrawComfortOverlay(float vignette, float strength, float size, float blink,
+                            const float eye[4], const float both[4]);
     // The game's textured world (already lit by the DS): opaque triangles, then translucent ones
     // over them. Its textures are kept on the GPU by key and uploaded only when new.
     // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
     // `motion`: see WorldMotion.
+    // `slot`: each world drawn every frame has its own (0 the game's world, 1 the Keyblade in
+    // your hand), so they do not take turns rebuilding.
+    static constexpr int kWorldSlots = 2;
     void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
-                           const WorldMotion &motion = WorldMotion());
+                           const WorldMotion &motion = WorldMotion(), int slot = 0);
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
@@ -90,19 +96,12 @@ private:
     GLint texMvp_ = -1, texAlpha_ = -1, texSampler_ = -1, texSmooth_ = -1, texDsPixel_ = -1;
     float smoothing_ = 0.0f;
     GLint lineMvp_ = -1, lineColor_ = -1;
-    GLint ovVignette_ = -1, ovBlink_ = -1, ovStrength_ = -1, ovSize_ = -1;
+    GLint ovVignette_ = -1, ovBlink_ = -1, ovStrength_ = -1, ovSize_ = -1, ovEye_ = -1, ovBoth_ = -1;
     GLuint vao_ = 0, vbo_ = 0;
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
-    GLuint worldProgram_ = 0, worldVbo_ = 0, worldMotionVbo_ = 0;
+    GLuint worldProgram_ = 0;
     GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1, worldCut_ = -1;
     GLint worldBlend_ = -1, worldSprites_ = -1, worldRight_ = -1, worldUp_ = -1;
-    // In-between frames: the previous revision's triangles (texture key and flags) and vertex
-    // positions and sprite centres, in its order; when the new revision's match, its vertices
-    // glide from these.
-    std::vector<uint64_t> prevTriangles_;
-    std::vector<Vec3> prevPositions_, prevCenters_;
-    double revisionTime_ = 0.0, gameFrameSeconds_ = 1.0 / 60.0;
-    bool motionMatched_ = false;
     struct WorldBatch {
         int32_t texture;  // index into the world's textures, -1 none
         bool blend, depthWrite, decal;
@@ -112,14 +111,26 @@ private:
         GLint first;
         GLsizei count;
     };
-    std::vector<WorldBatch> worldBatches_;
-    uint32_t worldRevision_ = ~0u;
+    // What DrawTexturedWorld keeps of one textured world between its revisions (a slot each).
+    struct WorldCache {
+        GLuint worldVbo = 0, worldMotionVbo = 0;
+        // In-between frames: the previous revision's triangles (texture key and flags) and vertex
+        // positions and sprite centres, in its order; when the new revision's match, its vertices
+        // glide from these.
+        std::vector<uint64_t> prevTriangles;
+        std::vector<Vec3> prevPositions, prevCenters;
+        double revisionTime = 0.0, gameFrameSeconds = 1.0 / 60.0;
+        bool motionMatched = false;
+        std::vector<WorldBatch> worldBatches;
+        uint32_t worldRevision = ~0u;
+        std::vector<GLuint> worldTextureIds;  // per texture of the current revision
+    };
+    WorldCache worldCaches_[kWorldSlots];
     struct GpuTexture {
         GLuint id = 0;
         uint32_t lastUsed = 0;
     };
     std::unordered_map<uint64_t, GpuTexture> worldTextures_;
-    std::vector<GLuint> worldTextureIds_;  // per texture of the current revision
     uint32_t worldFrames_ = 0;
     std::vector<float> scratch_;
 };

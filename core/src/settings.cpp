@@ -180,8 +180,10 @@ std::vector<SettingDef> BuildDefs() {
                   "smoothly. Never on the giant screen."));
     d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 1.0f, 0.05f,
                   "", "How dark the vignette gets: 1 is full black, 0.1 faint but still there."));
-    d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_size", "Vignette size", 0.5f, 0.1f, 1.0f,
-                  0.05f, "", "How much of your view the vignette covers at its fullest, from the edges in."));
+    // A new key: the size's scale changed (1 is the old 0.5), so an old file's value is not used.
+    d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_area", "Vignette size", 1.0f, 0.1f, 2.0f,
+                  0.05f, "", "How much of your view the vignette covers at its fullest, from the edges "
+                  "in: one circle round both eyes. 2 leaves only a small clear circle."));
     d.push_back(B(S::ComfortBlink, "Comfort", "blink", "Blink on cuts", true,
                   "Briefly fade to black when the view jumps (camera cuts, snap turns)."));
     d.push_back(F(S::ComfortBlinkMs, "Comfort", "blink_ms", "Blink length", 150.0f, 50.0f, 500.0f,

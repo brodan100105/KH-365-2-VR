@@ -51,6 +51,7 @@ struct Vertex {
     float r, g, b;
     float s, t;
     float px, py, pz;  // through the position matrix only (the world capture's starting point)
+    float lx, ly, lz;  // as given (VTX), in its model's own space
 };
 
 constexpr int kMaxPolyVerts = 10;  // a quad clipped by six planes
@@ -70,6 +71,7 @@ struct WorldPoly {
     int n = 0;
     uint32_t attr = 0, texParam = 0, palBase = 0;
     uint16_t proj = 0;  // index into the frame's projection matrices
+    uint8_t model = 0;  // of which of Roxas's models (GxModelBegin), 0 none
 };
 constexpr int kW = 256, kH = 192;
 
@@ -84,6 +86,7 @@ struct Gx {
     bool clipDirty = false;
 
     int16_t vx = 0, vy = 0, vz = 0;  // the last vertex, 4.12
+    uint8_t model = 0;  // the model being drawn (GxModelBegin)
     uint8_t cr = 31, cg = 31, cb = 31;  // vertex colour, 5 bits a channel
     int16_t rawS = 0, rawT = 0;  // TEXCOORD as given (12.4)
     int32_t s = 0, t = 0;        // after the texture matrix (12.4)
@@ -538,6 +541,7 @@ void EmitPolygon(const Vertex *verts, int n) {
         w.texParam = g.texParam;
         w.palBase = g.palBase;
         w.proj = static_cast<uint16_t>(g.projList.size() - 1);
+        w.model = g.model;
         g.worldList.push_back(w);
     }
     if (g.list.size() >= kMaxPolygons) return;
@@ -613,6 +617,9 @@ void SubmitVertex() {
     v.px = static_cast<float>((x * pm[0] + y * pm[4] + z * pm[8] + 0x1000ll * pm[12]) >> 12);
     v.py = static_cast<float>((x * pm[1] + y * pm[5] + z * pm[9] + 0x1000ll * pm[13]) >> 12);
     v.pz = static_cast<float>((x * pm[2] + y * pm[6] + z * pm[10] + 0x1000ll * pm[14]) >> 12);
+    v.lx = static_cast<float>(x) / 4096.0f;
+    v.ly = static_cast<float>(y) / 4096.0f;
+    v.lz = static_cast<float>(z) / 4096.0f;
 
     Vertex *st = g.strip;
     st[g.stripCount++] = v;
@@ -1678,6 +1685,8 @@ void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &piec
     }
 }
 
+void GxModelBegin(int tag) { g.model = static_cast<uint8_t>(tag); }
+
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
     // The game's thread alone writes the pending sight (and moves it to the shown one at the swap).
@@ -1698,6 +1707,10 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->triangleTexture.clear();
     out->triangleFlags.clear();
     out->textures.clear();
+    out->triangleModel.clear();
+    out->local.clear();
+    gWorldStats.playerPolygons = 0;
+    std::fill(std::begin(gWorldStats.attachedPolygons), std::end(gWorldStats.attachedPolygons), 0u);
     out->hasCamera = false;
     out->worldSpace = false;
     out->eventScene = false;
@@ -2030,9 +2043,29 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->vertices.push_back(pv[i + 1]);
             out->triangleTexture.push_back(tex);
             out->triangleFlags.push_back(flags);
+            if (w.model) {
+                // Roxas's: which of his models, and where in its own space (for his Keyblade in
+                // your hand). The rest stay zero.
+                out->triangleModel.resize(out->triangleFlags.size(), 0);
+                out->triangleModel.back() = w.model;
+                out->local.resize(out->vertices.size() * 3, 0.0f);
+                for (int k = 0; k < 3; ++k) {
+                    const Vertex &v = w.v[k == 0 ? 0 : i + k - 1];
+                    float *l = &out->local[(out->vertices.size() - 3 + k) * 3];
+                    l[0] = v.lx;
+                    l[1] = v.ly;
+                    l[2] = v.lz;
+                }
+                if (w.model == kWorldModelPlayer) ++gWorldStats.playerPolygons;
+                else if (w.model - kWorldModelAttached < kWorldAttachedMax) ++gWorldStats.attachedPolygons[w.model - kWorldModelAttached];
+            }
         }
     }
     endSprite();
+    if (!out->triangleModel.empty()) {
+        out->triangleModel.resize(out->triangleFlags.size(), 0);
+        out->local.resize(out->vertices.size() * 3, 0.0f);
+    }
     if (g.sceneHasCamera && !flatPieces.empty()) PlaceMarkers(out, flatPieces, texture);
     if (!out->billboard.empty()) out->billboard.resize(out->vertices.size() * kWorldBillboardFloats, 0.0f);
     // BG0's horizontal scroll moves the whole 3D layer on the screen (render2d.cpp, Bg0Scroll3d):

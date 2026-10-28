@@ -36,6 +36,7 @@ public:
     const WorldDrawList &world() const override { return world_; }
     const DsScreens &screens() const override { return screens_; }
     const TexturedWorld &texturedWorld() const override { return texturedWorld_; }
+    const TexturedWorld &heldWeapon() const override { return heldWeapon_; }
     // View > Stand in the world: report gameplay (the player in the field, no menu or event
     // scene) so the app leaves the giant screen for the captured world around you.
     void SetStandInWorld(bool on) { standInWorld_ = on; }
@@ -82,6 +83,9 @@ private:
     WorldDrawList world_;
     DsScreens screens_;
     TexturedWorld texturedWorld_;
+    TexturedWorld heldWeapon_;
+    // From a capture with Roxas's models: his Keyblade, in the hand's frame, into heldWeapon_.
+    void TakeHeldWeapon(const PlatformWorld &w);
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;

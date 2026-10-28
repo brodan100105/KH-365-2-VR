@@ -966,11 +966,22 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
             if (h == weapon || dual) {
-                // Shaft, guard and teeth of a Kingdom Key, along the axis swings are measured on.
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);
                 Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip);
+                const TexturedWorld &held = game_->heldWeapon();
+                if (!held.vertices.empty()) {
+                    const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+                    const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
+                    // The game's own Keyblade, its blade along the axis swings are measured on
+                    // and as long as they take it to be.
+                    const Mat4 model = Mat4::FromSimilarity({len, q, g.position});
+                    renderer_.DrawTexturedWorld(held, vpTracking * model,
+                                                nearest, WorldMotion(), 1);
+                    continue;
+                }
+                // Until the game has drawn its own: shaft, guard and teeth of a Kingdom Key.
                 AddOrientedBox(&props, g.position + axis * (len * 0.5f), {0.016f, 0.016f, len * 0.5f}, q,
                                Rgba(205, 205, 220));
                 AddOrientedBox(&props, g.position + axis * 0.07f, {0.08f, 0.02f, 0.015f}, q, Rgba(230, 200, 70));
@@ -1197,8 +1208,21 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         float x = blinkTime_ / len;  // 0..1: fade out, hold, fade in
         blink = x < 0.3f ? x / 0.3f : (x > 0.7f ? (1.0f - x) / 0.3f : 1.0f);
     }
+    // The vignette is one circle round both eyes' view together.
+    auto edges = [](const XrFovf &f, float out[4]) {
+        out[0] = std::tan(f.angleLeft);
+        out[1] = std::tan(f.angleRight);
+        out[2] = std::tan(f.angleDown);
+        out[3] = std::tan(f.angleUp);
+    };
+    float mine[4], left[4], right[4];
+    edges(in.eyes[eye].fov, mine);
+    edges(in.eyes[0].fov, left);
+    edges(in.eyes[1].fov, right);
+    const float both[4] = {std::min(left[0], right[0]), std::max(left[1], right[1]),
+                           std::min(left[2], right[2]), std::max(left[3], right[3])};
     renderer_.DrawComfortOverlay(vignette_, settings_.Get(SettingId::ComfortVignette),
-                                 settings_.Get(SettingId::ComfortVignetteSize), blink);
+                                 settings_.Get(SettingId::ComfortVignetteSize), blink, mine, both);
 }
 
 }  // namespace khvr

@@ -318,6 +318,10 @@ u32 w2c_env_khvr_host_own_cursors(struct w2c_env *) { return gOwnCursors ? 1 : 0
 
 u32 w2c_env_khvr_host_draw_all(struct w2c_env *) { return gDrawAll ? 1 : 0; }
 
+void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(PlayerModelTag(obj)); }
+
+void w2c_env_khvr_host_model_end(struct w2c_env *) { GxModelBegin(0); }
+
 void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
     if (ReadString(what) == "scene request") SnapshotOnSceneRequest(a);
     const char *fn = FunctionName(b);

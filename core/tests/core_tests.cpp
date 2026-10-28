@@ -8,6 +8,7 @@
 
 #include "khvr/combat.h"
 #include "khvr/demo_game.h"
+#include "khvr/held_weapon.h"
 #include "khvr/input_mapper.h"
 #include "khvr/math.h"
 #include "khvr/settings.h"
@@ -152,6 +153,25 @@ TEST(SettingsIniRoundTrip) {
     CHECK_NEAR(b.Get(SettingId::TpDistance), 2.25f, 1e-6f);
     CHECK(b.Bool(SettingId::Passthrough));
     CHECK(b.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
+}
+
+TEST(WeaponFrameFromGripAlongBlade) {
+    // A key along +Y from its grip at the origin (length 2), teeth towards -X at the tip.
+    std::vector<Vec3> pts{{0, -0.1f, 0}, {0.05f, 0, 0}, {0, 2, 0}, {-0.3f, 1.9f, 0}, {0, 1, 0.02f}};
+    WeaponFrame f = FindWeaponFrame(pts);
+    CHECK(f.valid);
+    CHECK_NEAR(f.length, 2.0f, 1e-4f);
+    const Vec3 tip = f.ToHand({0, 2, 0});
+    CHECK_NEAR(tip.z, -1.0f, 1e-4f);
+    CHECK_NEAR(tip.x, 0.0f, 1e-4f);
+    const Vec3 teeth = f.ToHand({-0.3f, 1.9f, 0});
+    CHECK(teeth.x > 0.1f);
+    CHECK_NEAR(Length(f.ToHand({0, 0, 0})), 0.0f, 1e-5f);
+    // Centred on itself: the grip goes near the end the origin is closest to... here the -Y end.
+    std::vector<Vec3> mid{{0, -1, 0}, {0, 1.2f, 0}, {0.2f, 1.1f, 0}};
+    WeaponFrame m = FindWeaponFrame(mid);
+    CHECK(m.valid);
+    CHECK(Dot(m.grip, m.blade) < -0.5f);
 }
 
 TEST(SettingsComfortProfiles) {

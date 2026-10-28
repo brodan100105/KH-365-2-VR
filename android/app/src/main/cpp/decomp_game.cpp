@@ -1,5 +1,7 @@
 #include "decomp_game.h"
 
+#include "khvr/held_weapon.h"
+
 #include <dirent.h>
 
 #include <aaudio/AAudio.h>
@@ -328,9 +330,14 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         static_assert(TexturedWorld::kBillboardFloats == kWorldBillboardFloats, "one layout");
         const bool sprites = w.billboard.size() == w.vertices.size() * kB;
         t.vertices.reserve(w.vertices.size());
+        // The capture knows Roxas's own models (his and the Keyblade attached to him): those go,
+        // exactly. Without them (not found), the polygons in and around his body.
+        const bool tagged = w.triangleModel.size() == w.triangleFlags.size() &&
+                            std::find(w.triangleModel.begin(), w.triangleModel.end(), kWorldModelPlayer) != w.triangleModel.end();
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
-            if (hide && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
+            if (hide && tagged && w.triangleModel[tri] != 0) continue;
+            if (hide && !tagged && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
             for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
             t.triangleTexture.push_back(w.triangleTexture[tri]);
             t.triangleFlags.push_back(w.triangleFlags[tri]);  // the same bits (kTriFront ...)
@@ -350,6 +357,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             b.flipT = a.flipT;
             b.rgba = a.rgba;
         }
+        TakeHeldWeapon(w);
         t.lockOn = w.lockOn;
         t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
         t.manualSort = w.manualSort;
@@ -392,6 +400,68 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             std::copy(w.view, w.view + 16, frame_.camera.view);
         }
     }
+}
+
+void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
+    const size_t triangles = w.triangleFlags.size();
+    if (w.triangleModel.size() != triangles || w.local.size() != w.vertices.size() * 3) return;
+    // Of the models attached to Roxas, the longest is his Keyblade.
+    int best = -1;
+    WeaponFrame frame;
+    for (int a = 0; a < kWorldAttachedMax; ++a) {
+        std::vector<Vec3> points;
+        for (size_t t = 0; t < triangles; ++t)
+            if (w.triangleModel[t] == kWorldModelAttached + a)
+                for (int k = 0; k < 3; ++k) {
+                    const float *l = &w.local[(t * 3 + k) * 3];
+                    points.push_back({l[0], l[1], l[2]});
+                }
+        if (points.size() < 9) continue;
+        WeaponFrame f = FindWeaponFrame(points);
+        if (f.valid && (best < 0 || f.length > frame.length)) {
+            best = a;
+            frame = f;
+        }
+    }
+    if (best < 0) return;  // not drawn this frame: the last one stays
+    TexturedWorld &k = heldWeapon_;
+    k.vertices.clear();
+    k.triangleTexture.clear();
+    k.triangleFlags.clear();
+    k.textures.clear();
+    std::vector<int32_t> remap(w.textures.size(), -1);
+    for (size_t t = 0; t < triangles; ++t) {
+        if (w.triangleModel[t] != kWorldModelAttached + best) continue;
+        for (int i = 0; i < 3; ++i) {
+            const PlatformWorldVertex &v = w.vertices[t * 3 + i];
+            const float *l = &w.local[(t * 3 + i) * 3];
+            k.vertices.push_back({frame.ToHand({l[0], l[1], l[2]}), v.u, v.v, v.color});
+        }
+        int32_t tex = w.triangleTexture[t];
+        if (tex >= 0 && static_cast<size_t>(tex) < w.textures.size()) {
+            if (remap[tex] < 0) {
+                const PlatformWorldTexture &a = w.textures[tex];
+                WorldTexture b;
+                b.key = a.key;
+                b.width = a.width;
+                b.height = a.height;
+                b.repeatS = a.repeatS;
+                b.repeatT = a.repeatT;
+                b.flipS = a.flipS;
+                b.flipT = a.flipT;
+                b.rgba = a.rgba;
+                remap[tex] = static_cast<int32_t>(k.textures.size());
+                k.textures.push_back(std::move(b));
+            }
+            tex = remap[tex];
+        } else {
+            tex = -1;
+        }
+        k.triangleTexture.push_back(tex);
+        // Its sprite-ness is the world's business: in the hand it is plain triangles.
+        k.triangleFlags.push_back(w.triangleFlags[t] & static_cast<uint8_t>(~kTriBillboard));
+    }
+    ++k.revision;
 }
 
 std::vector<std::string> DecompGame::Status(size_t lines) const {

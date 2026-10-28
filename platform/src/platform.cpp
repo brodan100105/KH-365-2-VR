@@ -267,6 +267,85 @@ bool SwapEventScene() {
 }
 
 std::atomic<bool> gOwnCursors{false};
+
+namespace {
+bool GuestRange(uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); }
+
+// Roxas's scene node (the player actor's +0x20) and the nodes attached to it, in order: a node's
+// children start at +0xc0 and go on through +0xc4 (SceneNode_AttachToModelJoint). Each node's
+// render object is at its +0x20.
+int PlayerNodes(uint32_t actor, uint32_t *nodes, int max) {
+    if (!actor || !GuestRange(actor, 0x24)) return 0;
+    const uint32_t node = Read32(actor + 0x20);
+    if (!GuestRange(node, 0xcc)) return 0;
+    int n = 0;
+    nodes[n++] = node;
+    for (uint32_t c = Read32(node + 0xc0); c && GuestRange(c, 0xcc) && n < max; c = Read32(c + 0xc4)) nodes[n++] = c;
+    return n;
+}
+}  // namespace
+
+int PlayerModelTag(uint32_t obj) {
+    uint32_t actor = 0;
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        if (gSwapPlayerValid && gSwapPlayer.valid) actor = gSwapPlayer.actor;
+    }
+    uint32_t nodes[1 + kWorldAttachedMax];
+    const int n = PlayerNodes(actor, nodes, 1 + kWorldAttachedMax);
+    for (int i = 0; i < n; ++i)
+        if (obj == nodes[i] + 0x20) return i == 0 ? kWorldModelPlayer : kWorldModelAttached + i - 1;
+    return 0;
+}
+
+// Name `index` of an NNS G3D resource dictionary (NNSG3dResDict: its entries' header at
+// +ofsEntry, u16 at +6, holds the offset of the 16-byte names), "" when out of range.
+std::string DictName(uint32_t dict, uint32_t index) {
+    if (!GuestRange(dict, 8)) return "";
+    const uint32_t count = Read8(dict + 1);
+    if (index >= count) return "";
+    const uint32_t entries = dict + Read16(dict + 6);
+    if (!GuestRange(entries, 4)) return "";
+    const uint32_t name = entries + Read16(entries + 2) + index * 16;
+    if (!GuestRange(name, 16)) return "";
+    std::string out;
+    for (int i = 0; i < 16; ++i) {
+        const char c = static_cast<char>(Read8(name + i));
+        if (!c) break;
+        out += c >= 32 && c < 127 ? c : '?';
+    }
+    return out;
+}
+
+// For the heartbeat: what is attached to Roxas and where (the joint of his model), with the
+// number of joints of each attached model.
+std::string PlayerAttachments() {
+    uint32_t actor = 0;
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        if (gSwapPlayerValid && gSwapPlayer.valid) actor = gSwapPlayer.actor;
+    }
+    uint32_t nodes[1 + kWorldAttachedMax];
+    const int n = PlayerNodes(actor, nodes, 1 + kWorldAttachedMax);
+    if (n == 0) return "";
+    auto jointsOf = [](uint32_t node) {
+        const uint32_t mdl = Read32(node + 0x24);
+        return GuestRange(mdl, 0x48) ? mdl + 0x40 : 0u;  // the model's joint (node) dictionary
+    };
+    const uint32_t mine = jointsOf(nodes[0]);
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "his model %u joints", mine ? Read8(mine + 1) : 0u);
+    std::string out = buf;
+    for (int i = 1; i < n; ++i) {
+        const uint32_t theirs = jointsOf(nodes[i]);
+        const uint16_t joint = Read16(nodes[i] + 0xc8);
+        std::snprintf(buf, sizeof buf, "; %d: on joint %u '%s', %u joints (the first '%s')", i, joint,
+                      mine ? DictName(mine, joint).c_str() : "", theirs ? Read8(theirs + 1) : 0u,
+                      theirs ? DictName(theirs, 0).c_str() : "");
+        out += buf;
+    }
+    return out;
+}
 }  // namespace hle
 
 void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
@@ -521,6 +600,12 @@ void Platform::Heartbeat() {
             Log("  event scene: %u frames placed in the world with the game's camera, %u in camera space only",
                 w.eventPlaced, w.eventCameraSpace);
         w.eventPlaced = w.eventCameraSpace = 0;
+        // Roxas's models (for his Keyblade in your hand): what is attached to him, and how many
+        // of the last capture's polygons each had.
+        const std::string attached = PlayerAttachments();
+        if (!attached.empty() || w.playerPolygons)
+            Log("  Roxas: %s | polygons: his %u, attached %u %u %u %u", attached.empty() ? "no model found" : attached.c_str(),
+                w.playerPolygons, w.attachedPolygons[0], w.attachedPolygons[1], w.attachedPolygons[2], w.attachedPolygons[3]);
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has

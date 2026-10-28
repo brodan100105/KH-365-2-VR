@@ -106,9 +106,25 @@ and into VR as real geometry around you.
 
 - [ ] The game's own Keyblade in your hand instead of the placeholder: its model from the ROM's
       files (or picked out of the captured player mesh by its bone), drawn at the VR hand.
+      First version (to test): NNS_G3dDraw tells the capture which render object each polygon is
+      of; Roxas's (the player actor's scene node) and the models attached to his joints
+      (SceneNode_AttachToModelJoint: the node's children) are tagged, with their vertices in their
+      own model space. First person hides exactly those; the longest attached model is taken as
+      the Keyblade, its grip at its origin and its blade to its farthest point, and drawn along
+      the controller's blade axis at Keyblade length. The heartbeat names the joints they are
+      attached to and how many joints each has (for the arm IK next).
 - [ ] Roxas's arms following yours: find his model's skeleton (the player actor's NNS G3D joint
       matrices), solve two-bone IK for the arms from the controllers, and have the game pose him
       with it, so Full body shows your own movements.
+
+## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
+
+- [ ] The game's own magic effects (Fire, Blizzard, Thunder, Aero...), unchanged, start at the tip
+      of the Keyblade in your hand and travel the way you point it, instead of from Roxas's
+      on-screen position.
+- [ ] Every effect is seen properly in VR: its sprites and particles face your eyes (not the game
+      camera or Roxas), the right way up, at the right size and depth; trails, flashes and
+      screen-wide effects look right in the headset as well as on the giant screen.
 
 ## Step 6: the loading area on the clock tower
 

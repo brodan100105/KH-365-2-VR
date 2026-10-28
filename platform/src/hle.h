@@ -22,6 +22,10 @@ bool SwapPlayerPosition(float out[3]);
 bool SwapEventScene();
 // Standing in the world: the headset draws the field's cursors (khvr_host_own_cursors).
 extern std::atomic<bool> gOwnCursors;
+// Which of Roxas's models a render object (guest address) is, by the player of the last
+// SWAP_BUFFERS: kWorldModelPlayer his own, kWorldModelAttached + i the i-th one attached to him
+// (his Keyblade), 0 another.
+int PlayerModelTag(uint32_t obj);
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
