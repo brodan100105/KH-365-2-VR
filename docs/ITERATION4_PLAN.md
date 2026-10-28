@@ -130,7 +130,7 @@ and into VR as real geometry around you.
       the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
       where the Keyblade points.
 
-## Step 7: quality of life and immersion (ideas, to pick from)
+## Ideas: quality of life and immersion (to pick from)
 
 Proposals, none decided yet; each would be an option in the settings.
 
