@@ -153,7 +153,7 @@ const char *kOverlayFs = R"(#version 300 es
 precision mediump float;
 in vec2 vNdc;
 uniform float uVignette;  // how far it has come in (0..1)
-uniform float uStrength;  // its darkness at the rim (0.1..1)
+uniform float uStrength;  // its darkness at the rim (0.1..3: above 1 full black further in)
 uniform float uSize;      // how much of the view it covers at its fullest (0.1..2)
 uniform vec4 uEye;        // this eye's view edges as tangents: left, right, down, up
 uniform vec4 uBoth;       // both eyes' view together, the same way

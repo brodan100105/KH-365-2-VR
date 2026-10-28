@@ -71,7 +71,8 @@ struct WorldPoly {
     int n = 0;
     uint32_t attr = 0, texParam = 0, palBase = 0;
     uint16_t proj = 0;  // index into the frame's projection matrices
-    uint8_t model = 0;  // of which of Roxas's models (GxModelBegin), 0 none
+    uint32_t obj = 0;   // the render object NNS_G3dDraw drew it of (GxModelBegin), 0 none
+    uint8_t model = 0;  // of which of Roxas's models (GxCaptureWorld), 0 none
 };
 constexpr int kW = 256, kH = 192;
 
@@ -86,7 +87,7 @@ struct Gx {
     bool clipDirty = false;
 
     int16_t vx = 0, vy = 0, vz = 0;  // the last vertex, 4.12
-    uint8_t model = 0;  // the model being drawn (GxModelBegin)
+    uint32_t obj = 0;  // the render object being drawn (GxModelBegin)
     uint8_t cr = 31, cg = 31, cb = 31;  // vertex colour, 5 bits a channel
     int16_t rawS = 0, rawT = 0;  // TEXCOORD as given (12.4)
     int32_t s = 0, t = 0;        // after the texture matrix (12.4)
@@ -541,7 +542,7 @@ void EmitPolygon(const Vertex *verts, int n) {
         w.texParam = g.texParam;
         w.palBase = g.palBase;
         w.proj = static_cast<uint16_t>(g.projList.size() - 1);
-        w.model = g.model;
+        w.obj = g.obj;
         g.worldList.push_back(w);
     }
     if (g.list.size() >= kMaxPolygons) return;
@@ -1685,7 +1686,7 @@ void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &piec
     }
 }
 
-void GxModelBegin(int tag) { g.model = static_cast<uint8_t>(tag); }
+void GxModelBegin(uint32_t obj) { g.obj = obj; }
 
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
@@ -1695,6 +1696,75 @@ void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     g.lockOnPendingLocked = locked;
     g.lockOnPending = true;
     ++gWorldStats.lockOns;
+}
+
+// Roxas's own models among the render objects drawn (NNS_G3dDraw): those whose polygons all lie
+// right where he stands. The one with the most polygons is his; the others (his Keyblade) are
+// attached to him, by their number of polygons. Tags each worldShown polygon (WorldPoly::model).
+void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, const std::vector<bool> &inScene) {
+    for (WorldPoly &w : g.worldShown) w.model = 0;
+    GxWorldStats &st = gWorldStats;
+    st.objectsDrawn = 0;
+    st.playerObj = 0;
+    st.playerPolygons = 0;
+    for (int i = 0; i < kWorldAttachedMax; ++i) {
+        st.attachedObj[i] = 0;
+        st.attachedPolygons[i] = 0;
+        st.attachedLength[i] = 0;
+    }
+    struct Box {
+        double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
+        double localFar = 0;  // farthest vertex from its model's origin
+        uint32_t polygons = 0;
+    };
+    std::unordered_map<uint32_t, Box> boxes;
+    for (const WorldPoly &w : g.worldShown) {
+        if (!w.obj) continue;
+        Box &b = boxes[w.obj];
+        if (w.proj >= inScene.size() || !inScene[w.proj]) {
+            b.polygons = 0x80000000u;  // drawn for the HUD: none of his
+            continue;
+        }
+        const Mat4d &m = toWorld[w.proj];
+        for (int i = 0; i < w.n; ++i) {
+            const Vertex &v = w.v[i];
+            const double x = v.px / 4096.0, y = v.py / 4096.0, z = v.pz / 4096.0;
+            const double p[3] = {x * m[0] + y * m[4] + z * m[8] + m[12], x * m[1] + y * m[5] + z * m[9] + m[13],
+                                 x * m[2] + y * m[6] + z * m[10] + m[14]};
+            for (int k = 0; k < 3; ++k) {
+                b.lo[k] = std::min(b.lo[k], p[k]);
+                b.hi[k] = std::max(b.hi[k], p[k]);
+            }
+            b.localFar = std::max(b.localFar, std::sqrt(double(v.lx) * v.lx + double(v.ly) * v.ly + double(v.lz) * v.lz));
+        }
+        ++b.polygons;
+    }
+    st.objectsDrawn = static_cast<uint32_t>(boxes.size());
+    if (!player) return;
+    // On him: within a body's reach of his feet, and no larger than him with his Keyblade raised.
+    std::vector<std::pair<uint32_t, const Box *>> his;
+    for (const auto &[obj, b] : boxes) {
+        if (b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
+        const double reach = 1.3;
+        const bool on = b.lo[0] > player[0] - reach && b.hi[0] < player[0] + reach && b.lo[2] > player[2] - reach &&
+                        b.hi[2] < player[2] + reach && b.lo[1] > player[1] - 0.4 && b.hi[1] < player[1] + 3.0;
+        if (on) his.push_back({obj, &b});
+    }
+    if (his.empty()) return;
+    std::sort(his.begin(), his.end(), [](const auto &a, const auto &b) { return a.second->polygons > b.second->polygons; });
+    std::unordered_map<uint32_t, uint8_t> tag;
+    tag[his[0].first] = kWorldModelPlayer;
+    st.playerObj = his[0].first;
+    st.playerPolygons = his[0].second->polygons;
+    for (size_t i = 1; i < his.size() && i <= static_cast<size_t>(kWorldAttachedMax); ++i) {
+        tag[his[i].first] = static_cast<uint8_t>(kWorldModelAttached + i - 1);
+        st.attachedObj[i - 1] = his[i].first;
+        st.attachedPolygons[i - 1] = his[i].second->polygons;
+        st.attachedLength[i - 1] = static_cast<float>(his[i].second->localFar);
+    }
+    for (WorldPoly &w : g.worldShown)
+        if (w.obj)
+            if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
 }
 
 void GxCaptureWorld(PlatformWorld *out) {
@@ -1709,8 +1779,6 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->textures.clear();
     out->triangleModel.clear();
     out->local.clear();
-    gWorldStats.playerPolygons = 0;
-    std::fill(std::begin(gWorldStats.attachedPolygons), std::end(gWorldStats.attachedPolygons), 0u);
     out->hasCamera = false;
     out->worldSpace = false;
     out->eventScene = false;
@@ -1833,6 +1901,7 @@ void GxCaptureWorld(PlatformWorld *out) {
     };
     float player[3] = {0, 0, 0};
     const bool hasPlayer = SwapPlayerPosition(player);
+    TagPlayerModels(hasPlayer ? player : nullptr, toWorld, inScene);
     std::vector<const WorldPoly *> flatPieces;  // drawn with another projection, in screen order
     for (const WorldPoly &w : g.worldShown) {
         const size_t index = static_cast<size_t>(&w - g.worldShown.data());
@@ -2056,8 +2125,6 @@ void GxCaptureWorld(PlatformWorld *out) {
                     l[1] = v.ly;
                     l[2] = v.lz;
                 }
-                if (w.model == kWorldModelPlayer) ++gWorldStats.playerPolygons;
-                else if (w.model - kWorldModelAttached < kWorldAttachedMax) ++gWorldStats.attachedPolygons[w.model - kWorldModelAttached];
             }
         }
     }

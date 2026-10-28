@@ -178,8 +178,9 @@ std::vector<SettingDef> BuildDefs() {
                   "Standing in the world, darkens the edges of your view while the view moves or turns "
                   "without you (the stick, following Roxas, a cutscene's camera), fading in and out "
                   "smoothly. Never on the giant screen."));
-    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 1.0f, 0.05f,
-                  "", "How dark the vignette gets: 1 is full black, 0.1 faint but still there."));
+    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 3.0f, 0.05f,
+                  "", "How dark the vignette gets: 0.1 faint but still there, 1 full black at the edges; "
+                  "above 1 the full black reaches further in over its soft edge."));
     // A new key: the size's scale changed (1 is the old 0.5), so an old file's value is not used.
     d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_area", "Vignette size", 1.0f, 0.1f, 2.0f,
                   0.05f, "", "How much of your view the vignette covers at its fullest, from the edges "
