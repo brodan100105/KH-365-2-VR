@@ -510,6 +510,10 @@ void Platform::Heartbeat() {
         }
         w.hudPieces = 0;
         w.boxesInView = w.boxesOutOfView = 0;
+        if (w.eventPlaced || w.eventCameraSpace)
+            Log("  event scene: %u frames placed in the world with the game's camera, %u in camera space only",
+                w.eventPlaced, w.eventCameraSpace);
+        w.eventPlaced = w.eventCameraSpace = 0;
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has

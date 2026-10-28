@@ -699,6 +699,7 @@ void VrApp::Frame(const XrFrameInput &in) {
         decomp_->SetStandInWorld(standInWorld);
         decomp_->SetDrawAll(standInWorld && settings_.Bool(SettingId::ViewDrawAll));
         decomp_->SetOwnCursors(standInWorld);
+        decomp_->SetCutscenesInWorld(settings_.Enum<CutsceneView>(SettingId::CutsceneView) == CutsceneView::SameAsGameplay);
         decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
         decomp_->SetHidePlayer(lastMode_ == ViewMode::FirstPerson &&
                                settings_.Enum<BodyDisplay>(SettingId::FpShowBody) != BodyDisplay::FullBody);

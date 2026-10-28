@@ -49,6 +49,9 @@ public:
     void SetDrawAll(bool on) { Platform::Get().SetDrawAll(on); }
     // The headset draws the field's cursors at their targets; the game leaves its own out.
     void SetOwnCursors(bool on) { Platform::Get().SetOwnCursors(on); }
+    // View > Cutscenes is Same as gameplay: in-engine cutscenes placed in the world count as
+    // gameplay for the view rigs.
+    void SetCutscenesInWorld(bool on) { cutscenesInWorld_ = on; }
     // Screen > Game picture (Sharp, 3D depth) or standing in the world: capture the game's 3D
     // world each frame.
     void SetWorldCapture(bool on) {
@@ -84,6 +87,7 @@ private:
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
     PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
     std::atomic<bool> standInWorld_{false};
+    std::atomic<bool> cutscenesInWorld_{false};
     bool hidePlayer_ = false;
     // The drawing thread (Picture > Draw while the game runs) and its hand-off.
     std::atomic<bool> parallel_{true};

@@ -87,9 +87,13 @@ and into VR as real geometry around you.
 ## Step 4: in-engine cutscenes from where you stand
 
 - [ ] **View > Cutscenes: Same as gameplay** in 6DoF: event scenes (ov023) set their own
-      projection, so they are captured now only in camera space (sharp on the giant screen). Find
-      the event camera (where the event script keeps its eye and target) to place the scene in the
-      world, then show it around you like gameplay, with the giant screen as the fallback.
+      projection (their zoom), not NNS_G3dGlb's lens. Their scripts drive the engine's camera
+      objects (Camera_Init on the event block's cameras), so NNS_G3dGlb's camera (+0x4c) is the
+      event camera: first slice in, the scene's lens is its most used perspective projection and
+      that camera places it in the world (or, folded into the projection, it comes in world space
+      already); with Same as gameplay such a scene counts as gameplay for the view rigs, and the
+      heartbeat counts the frames placed ("event scene: ... placed in the world"). To check in the
+      headset: the scene where it belongs, the view on camera cuts, scenes without the player.
 
 ## Step 5: Roxas in VR (first person)
 

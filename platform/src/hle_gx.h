@@ -38,6 +38,7 @@ struct GxWorldStats {
     uint32_t lockOns = 0;  // frames the game placed its lock-on sight since then
     uint32_t hudPieces = 0;  // polygons kept on the HUD as fixed in front of the game's camera
     uint32_t boxesInView = 0, boxesOutOfView = 0;  // BOX_TEST answers the camera's view gave
+    uint32_t eventPlaced = 0, eventCameraSpace = 0;  // event scene frames placed in the world, or not
 };
 extern GxWorldStats gWorldStats;
 // BOX_TEST answers "visible" always (Platform::SetDrawAll).

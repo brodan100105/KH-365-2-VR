@@ -358,14 +358,17 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
         std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);
         ++t.revision;
-        // Gameplay, for the view rigs: the player in the field with the world captured, and no
-        // menu, event scene or movie. Otherwise everything stays on the giant screen.
+        // Gameplay, for the view rigs: the player in the field with the world captured in world
+        // space, and no menu or movie. An event scene (an in-engine cutscene) too when View >
+        // Cutscenes is Same as gameplay and its camera placed it in the world (its player may be
+        // gone: the view stays where it was). Otherwise everything stays on the giant screen.
         const PlatformPlayer &pl = latestPlayer_;
-        const bool playing = standInWorld_.load() && pl.valid && !pl.menu && !pl.event && !screens_.movie &&
-                             w.hasCamera && !w.vertices.empty();
+        const bool event = pl.event || w.eventScene;
+        const bool placed = standInWorld_.load() && w.worldSpace && !w.vertices.empty() && !screens_.movie;
+        const bool playing = placed && !pl.menu && (event ? cutscenesInWorld_.load() : pl.valid);
         frame_.inGameplay = playing;
         frame_.inMenu = !playing;
-        frame_.inCutscene = false;
+        frame_.inCutscene = event;
         if (pl.valid) {
             frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
             frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});

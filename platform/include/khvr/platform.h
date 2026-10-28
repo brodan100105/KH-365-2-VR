@@ -87,6 +87,10 @@ struct PlatformWorld {
     std::vector<PlatformWorldTexture> textures;
     // The game's camera for this frame, in the same space.
     bool hasCamera = false;
+    // In world space (the game's camera known): gameplay, and event scenes whose camera is found.
+    // Otherwise (an event scene's lens without it) camera space, for the giant screen only.
+    bool worldSpace = false;
+    bool eventScene = false;  // drawn with an event scene's own lens
     float eye[3] = {0, 0, 0}, target[3] = {0, 0, -1}, up[3] = {0, 1, 0};
     float fovY = 0, nearZ = 0, farZ = 0;  // radians, game units
     // The game's own lens and camera (world to view) matrices, exactly as the DS used them. The

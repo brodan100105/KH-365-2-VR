@@ -47,7 +47,8 @@ std::vector<SettingDef> BuildDefs() {
                   "does not look (it skips those outside its view for the DS). Costs some speed."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
-                  "Watch in-engine cutscenes on the giant screen, or from where you stand."));
+                  "Watch in-engine cutscenes on the giant screen, or standing in the scene like gameplay "
+                  "(with Stand in the world; scenes whose camera cannot be placed stay on the giant screen)."));
     d.push_back(B(S::ModeSwitchButton, "View", "mode_switch_button", "Quick mode switch", true,
                   "Hold the right thumbstick click to swap panoramic and first person."));
     // ---- Screen ----

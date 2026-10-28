@@ -423,7 +423,31 @@ int WorldTest() {
             clip(w.view, p, viewSpace);
             clip(w.lens, viewSpace, c1);
             const double ex = cot / (4.0 / 3.0) * 4 / 10, ey = cot * (-3) / 10;
-            event = std::fabs(c1[0] / c1[3] - ex) < 0.02 && std::fabs(c1[1] / c1[3] - ey) < 0.02;
+            // Placed in the world with the camera the event drives (NNS_G3dGlb's): the quad's
+            // corner where it is, (4, -1, 0).
+            event = std::fabs(c1[0] / c1[3] - ex) < 0.02 && std::fabs(c1[1] / c1[3] - ey) < 0.02 && w.worldSpace &&
+                    w.eventScene && std::fabs(c0.x - 4) < 0.02 && std::fabs(c0.y + 1) < 0.02 && std::fabs(c0.z) < 0.02;
+            std::printf("  event scene: corner (%.2f %.2f %.2f), world space %d\n", c0.x, c0.y, c0.z, w.worldSpace);
+        }
+        // The event folds its camera into its projection: the polygons come in world space.
+        {
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            for (int i = 0; i < 12; ++i) cmd(0x19, fx(cam[i]));
+            cmd(0x10, 2);
+            cmd(0x15, 0);
+            cmd(0x1c, fx(5)); cmd(0x1c, 0); cmd(0x1c, 0);
+            quad();
+            cmd(0x50, 0);
+            static khvr::PlatformWorld w;
+            khvr::Platform::Get().CaptureWorld(&w);
+            const bool folded = w.vertices.size() == 6 && w.worldSpace && std::fabs(w.vertices[0].x - 4) < 0.02 &&
+                                std::fabs(w.vertices[0].y + 1) < 0.02 && std::fabs(w.vertices[0].z) < 0.02;
+            std::printf("  event scene, camera in its projection: %zu vertices, corner (%.2f %.2f %.2f), world space %d\n",
+                        w.vertices.size(), w.vertices.empty() ? 0.0 : w.vertices[0].x,
+                        w.vertices.empty() ? 0.0 : w.vertices[0].y, w.vertices.empty() ? 0.0 : w.vertices[0].z,
+                        w.worldSpace);
+            event = event && folded;
         }
         for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(lens[i]));
     }

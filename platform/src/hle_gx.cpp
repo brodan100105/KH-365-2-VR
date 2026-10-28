@@ -128,7 +128,8 @@ struct Gx {
     bool lockOnPendingLocked = false, lockOnShownLocked = false;
     // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
     bool sceneKnown = false;
-    bool sceneHasCamera = false;  // the scene's camera is the game's (not an event scene's stand-in)
+    bool sceneHasCamera = false;  // the scene is placed in the world (the game's camera known)
+    bool eventScene = false;      // an event scene's own lens (not NNS_G3dGlb's)
     Mat4d sceneLens{}, sceneCamera{}, sceneLensInv{}, sceneCameraInv{};
     bool shownWBuffer = false, shownManualSort = false;
     std::array<int, 4> shownVp{0, 0, 255, 191};  // the viewport when the shown list was swapped in
@@ -317,6 +318,7 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
         }
     }
     g.sceneHasCamera = best >= 0;
+    g.eventScene = false;
     if (best >= 0) {
         g.sceneKnown = true;
         return;
@@ -334,10 +336,52 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
     g.sceneLensInv = lInv;
     g.sceneCamera = ToDouble(Identity());
     g.sceneCameraInv = g.sceneCamera;
+    // An event scene's own lens (its zoom), with the camera its script drives through the engine's
+    // camera (NNS_G3dGlb +0x4c, as recorded with the projection): when the projection is a lens
+    // alone, the polygons come in camera space and that camera places them in the world; when it
+    // holds the camera too (camera^-1 x projection is a lens), they come in world space already.
+    // Otherwise the scene stays in camera space (the giant screen still draws it).
+    auto pureLens = [](const Mat4d &m) {
+        const double tol = 1e-3 * (std::fabs(m[0]) + std::fabs(m[5]) + 1);
+        return std::fabs(m[1]) < tol && std::fabs(m[2]) < tol && std::fabs(m[3]) < tol && std::fabs(m[4]) < tol &&
+               std::fabs(m[6]) < tol && std::fabs(m[7]) < tol && std::fabs(m[12]) < tol && std::fabs(m[13]) < tol &&
+               std::fabs(m[15]) < tol && m[0] > 0 && m[5] > 0;
+    };
+    Mat4d evCamera = ToDouble(Identity()), evCameraInv = evCamera, evLens = l, evLensInv = lInv;
+    bool placed = false;
+    if (most < g.glbShown.size() && g.glbShown[most].ok) {
+        evCamera = ToDouble(g.glbShown[most].camera);
+        if (Invert(evCamera, &evCameraInv)) {
+            if (pureLens(l)) {
+                placed = true;
+            } else {
+                const Mat4d inner = MulD(evCameraInv, l);
+                Mat4d innerInv;
+                if (pureLens(inner) && Invert(inner, &innerInv)) {
+                    evLens = inner;
+                    evLensInv = innerInv;
+                    placed = true;
+                }
+            }
+        }
+    }
+    if (placed) {
+        g.sceneLens = evLens;
+        g.sceneLensInv = evLensInv;
+        g.sceneCamera = evCamera;
+        g.sceneCameraInv = evCameraInv;
+        g.sceneHasCamera = true;
+        ++gWorldStats.eventPlaced;
+    } else {
+        ++gWorldStats.eventCameraSpace;
+    }
     for (size_t i = 0; i < projs.size(); ++i) {
         g.inSceneShown[i] = projs[i] == projs[most];
-        if (g.inSceneShown[i]) g.toWorldShown[i] = MulD(ToDouble(projs[i]), lInv);
+        if (!g.inSceneShown[i]) continue;
+        g.toCameraShown[i] = MulD(ToDouble(projs[i]), g.sceneLensInv);
+        g.toWorldShown[i] = MulD(g.toCameraShown[i], g.sceneCameraInv);
     }
+    g.eventScene = true;
 }
 
 // Which polygons of the shown list are HUD pieces drawn in 3D: fixed in front of the game's
@@ -1648,6 +1692,8 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->triangleFlags.clear();
     out->textures.clear();
     out->hasCamera = false;
+    out->worldSpace = false;
+    out->eventScene = false;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
     if (!g.sceneKnown) return;
@@ -1656,6 +1702,8 @@ void GxCaptureWorld(PlatformWorld *out) {
     std::vector<bool> inScene(g.inSceneShown.begin(), g.inSceneShown.end());
 
     out->hasCamera = true;
+    out->worldSpace = g.sceneHasCamera;
+    out->eventScene = g.eventScene;
     for (int i = 0; i < 16; ++i) {
         out->lens[i] = static_cast<float>(lensD[i]);
         out->view[i] = static_cast<float>(cameraD[i]);
