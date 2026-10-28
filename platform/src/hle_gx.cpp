@@ -72,6 +72,7 @@ struct WorldPoly {
     uint32_t attr = 0, texParam = 0, palBase = 0;
     uint16_t proj = 0;  // index into the frame's projection matrices
     uint32_t obj = 0;   // the render object NNS_G3dDraw drew it of (GxModelBegin), 0 none
+    uint32_t joint = 0;  // its position matrix (hashed): the same for a model's joint in a frame
     uint8_t model = 0;  // of which of Roxas's models (GxCaptureWorld), 0 none
 };
 constexpr int kW = 256, kH = 192;
@@ -543,6 +544,7 @@ void EmitPolygon(const Vertex *verts, int n) {
         w.palBase = g.palBase;
         w.proj = static_cast<uint16_t>(g.projList.size() - 1);
         w.obj = g.obj;
+        w.joint = static_cast<uint32_t>(Fnv(g.pos.data(), sizeof(int32_t) * 16));
         g.worldList.push_back(w);
     }
     if (g.list.size() >= kMaxPolygons) return;
@@ -1740,8 +1742,11 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         ++b.polygons;
     }
     st.objectsDrawn = static_cast<uint32_t>(boxes.size());
+    st.objectsMin = std::min(st.objectsMin, st.objectsDrawn);
+    st.objectsMax = std::max(st.objectsMax, st.objectsDrawn);
     if (!player) return;
     // On him: within a body's reach of his feet, and no larger than him with his Keyblade raised.
+    // His own stands over his feet, a body tall; someone standing next to him does not.
     std::vector<std::pair<uint32_t, const Box *>> his;
     for (const auto &[obj, b] : boxes) {
         if (b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
@@ -1750,8 +1755,16 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
                         b.hi[2] < player[2] + reach && b.lo[1] > player[1] - 0.4 && b.hi[1] < player[1] + 3.0;
         if (on) his.push_back({obj, &b});
     }
-    if (his.empty()) return;
-    std::sort(his.begin(), his.end(), [](const auto &a, const auto &b) { return a.second->polygons > b.second->polygons; });
+    auto overFeet = [&](const Box &b) {
+        return b.lo[0] < player[0] + 0.3 && b.hi[0] > player[0] - 0.3 && b.lo[2] < player[2] + 0.3 &&
+               b.hi[2] > player[2] - 0.3 && b.hi[1] - b.lo[1] > 0.8;
+    };
+    std::sort(his.begin(), his.end(), [&](const auto &a, const auto &b) {
+        const bool fa = overFeet(*a.second), fb = overFeet(*b.second);
+        if (fa != fb) return fa;
+        return a.second->polygons > b.second->polygons;
+    });
+    if (his.empty() || !overFeet(*his[0].second)) return;
     std::unordered_map<uint32_t, uint8_t> tag;
     tag[his[0].first] = kWorldModelPlayer;
     st.playerObj = his[0].first;
@@ -1765,6 +1778,61 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     for (WorldPoly &w : g.worldShown)
         if (w.obj)
             if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
+    // His Keyblade inside his own model: one joint's polygons (one position matrix), long and
+    // thin, about his height in length. With none attached, it is taken as the Keyblade.
+    std::unordered_map<uint32_t, std::vector<std::array<double, 3>>> joints;
+    std::unordered_map<uint32_t, uint32_t> jointPolygons;
+    for (const WorldPoly &w : g.worldShown) {
+        if (w.obj != st.playerObj || w.proj >= inScene.size() || !inScene[w.proj]) continue;
+        const Mat4d &m = toWorld[w.proj];
+        auto &pts = joints[w.joint];
+        ++jointPolygons[w.joint];
+        for (int i = 0; i < w.n; ++i) {
+            const Vertex &v = w.v[i];
+            const double x = v.px / 4096.0, y = v.py / 4096.0, z = v.pz / 4096.0;
+            pts.push_back({x * m[0] + y * m[4] + z * m[8] + m[12], x * m[1] + y * m[5] + z * m[9] + m[13],
+                           x * m[2] + y * m[6] + z * m[10] + m[14]});
+        }
+    }
+    st.playerJoints = static_cast<uint32_t>(joints.size());
+    st.keyJointPolygons = 0;
+    st.keyJointLength = 0;
+    uint32_t keyJoint = 0;
+    double bestLength = 0;
+    for (const auto &[joint, pts] : joints) {
+        if (jointPolygons[joint] < 6) continue;
+        // Its length: the two points farthest apart (from the first, then from that one); its
+        // width: the farthest any point lies off the line between them.
+        auto far = [&](const std::array<double, 3> &from) {
+            const std::array<double, 3> *best = &from;
+            double d = -1;
+            for (const auto &p : pts) {
+                const double e = (p[0] - from[0]) * (p[0] - from[0]) + (p[1] - from[1]) * (p[1] - from[1]) +
+                                 (p[2] - from[2]) * (p[2] - from[2]);
+                if (e > d) { d = e; best = &p; }
+            }
+            return *best;
+        };
+        const auto a = far(pts[0]), b = far(a);
+        const double ab[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+        const double length = std::sqrt(ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]);
+        if (length < 0.6 || length > 2.5) continue;
+        double width = 0;
+        for (const auto &p : pts) {
+            const double ap[3] = {p[0] - a[0], p[1] - a[1], p[2] - a[2]};
+            const double c[3] = {ap[1] * ab[2] - ap[2] * ab[1], ap[2] * ab[0] - ap[0] * ab[2], ap[0] * ab[1] - ap[1] * ab[0]};
+            width = std::max(width, std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]) / length);
+        }
+        if (width > 0.3 * length || length <= bestLength) continue;
+        bestLength = length;
+        keyJoint = joint;
+    }
+    if (keyJoint && !st.attachedObj[0]) {
+        st.keyJointPolygons = jointPolygons[keyJoint];
+        st.keyJointLength = static_cast<float>(bestLength);
+        for (WorldPoly &w : g.worldShown)
+            if (w.obj == st.playerObj && w.joint == keyJoint) w.model = kWorldModelAttached;
+    }
 }
 
 void GxCaptureWorld(PlatformWorld *out) {

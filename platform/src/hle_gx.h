@@ -44,6 +44,12 @@ struct GxWorldStats {
     uint32_t objectsDrawn = 0, playerObj = 0, playerPolygons = 0;
     uint32_t attachedObj[4] = {}, attachedPolygons[4] = {};
     float attachedLength[4] = {};
+    // His model's joints (position matrices) and the one taken as his Keyblade, when it is part
+    // of his model: its polygons and length (game units).
+    uint32_t playerJoints = 0, keyJointPolygons = 0;
+    float keyJointLength = 0;
+    // The fewest and most render objects a capture had since the last heartbeat.
+    uint32_t objectsMin = ~0u, objectsMax = 0;
 };
 extern GxWorldStats gWorldStats;
 // BOX_TEST answers "visible" always (Platform::SetDrawAll).

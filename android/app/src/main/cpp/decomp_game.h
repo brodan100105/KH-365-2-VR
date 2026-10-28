@@ -100,6 +100,9 @@ private:
     bool eventAnchored_ = false;  // a cutscene without the player has its view's place
     HidePlayer hidePlayer_ = HidePlayer::None;
     float headCut_ = 0.8f;
+    float lastFeet_[3] = {};
+    bool hasLastFeet_ = false;
+    double movingUntil_ = 0.0;  // steady-clock seconds until which he counts as moving
     // The drawing thread (Picture > Draw while the game runs) and its hand-off.
     std::atomic<bool> parallel_{true};
     std::thread capture_;

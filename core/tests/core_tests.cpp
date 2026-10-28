@@ -481,7 +481,7 @@ TEST(CombatSwingDetected) {
     float dt = 1.0f / 90.0f;
     for (int i = 0; i < 10; ++i) r.Update(s, Swing(0, dt, i, false));
     for (int i = 0; i < 40; ++i) {
-        CombatFrame f = r.Update(s, Swing(4.0f, dt, i, true));
+        CombatFrame f = r.Update(s, Swing(6.0f, dt, i, true));  // the hand at 2.2 m/s
         if (f.swingStarted) {
             ++swings;
             kind = f.swing.kind;

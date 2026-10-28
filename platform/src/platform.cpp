@@ -546,7 +546,20 @@ void Platform::Heartbeat() {
                 std::snprintf(b, sizeof b, ", %u polygons, %.2f from its origin", w.attachedPolygons[i], w.attachedLength[i]);
                 line += "; on him " + where(w.attachedObj[i]) + b;
             }
-            Log("  Roxas: %u models drawn; %s", w.objectsDrawn, line.c_str());
+            if (w.playerObj) {
+                char b[96];
+                std::snprintf(b, sizeof b, "; %u joints", w.playerJoints);
+                line += b;
+                if (w.keyJointPolygons) {
+                    std::snprintf(b, sizeof b, ", his Keyblade a joint of %u polygons, %.2f long", w.keyJointPolygons,
+                                  w.keyJointLength);
+                    line += b;
+                }
+            }
+            Log("  Roxas: %u models drawn (%u to %u since the last heartbeat); %s", w.objectsDrawn, w.objectsMin,
+                w.objectsMax, line.c_str());
+            w.objectsMin = ~0u;
+            w.objectsMax = 0;
         }
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();

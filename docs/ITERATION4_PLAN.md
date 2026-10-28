@@ -116,6 +116,13 @@ and into VR as real geometry around you.
 - [ ] Roxas's arms following yours: find his model's skeleton (the player actor's NNS G3D joint
       matrices), solve two-bone IK for the arms from the controllers, and have the game pose him
       with it, so Full body shows your own movements.
+- [ ] Full-body VRIK (the goal for first person): his upper body stays under the headset (the
+      torso follows your head's position and turns with your body, not the run cycle); his hands
+      are at your controllers, the Keyblade in the weapon hand; his elbows and shoulders bend to
+      reach them (two-bone IK with the elbow hint from the hand's roll and the shoulder); his
+      legs keep the game's animation, used only while he moves (standing still, they stand), a
+      blend of animation below the hips and tracking above. Until then, Body without head hides
+      him while he moves (his run cycle carried him in front of the view).
 
 ## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
 
@@ -130,28 +137,33 @@ and into VR as real geometry around you.
       the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
       where the Keyblade points.
 
-## Ideas: quality of life and immersion (to pick from)
+## Ideas: quality of life and immersion
 
-Proposals, none decided yet; each would be an option in the settings.
+Each would be an option in the settings. Chosen by the user (in this order of priority, after
+Step 5): haptics that tell hits apart; hits felt in the picture; guard by holding the blade across
+the body; chests opened by striking or touching them; a pointer and a wrist quickbar for items
+(potions); sound from where it happens; speech bubbles above the speaker. The rest are open.
 
-- [ ] Haptics that tell hits apart: a light tap for a hit, a heavier one for a finisher or
+- [ ] Haptics that tell hits apart (chosen): a light tap for a hit, a heavier one for a finisher or
       critical, a sharp jolt when Roxas is hit, a buzz on a blocked attack; a faint hum while
       the Keyblade is out.
-- [ ] Hits felt in the picture: a few frames of hit-stop on finishers, a red pulse at the edges
+- [ ] Hits felt in the picture (chosen): a few frames of hit-stop on finishers, a red pulse at the edges
       of the view when Roxas takes damage, and an arrow at the edge toward an enemy attacking
       from outside the view.
-- [ ] Guard by holding the Keyblade in the way: attacks and projectiles that meet the blade are
-      blocked or deflected (the game's own guard), timed for a parry.
-- [ ] Pick things up with your hands: hearts, munny and orbs pulled in when your hand reaches
-      for them; chests opened by striking or touching them.
-- [ ] Items by gesture: a potion used by bringing the off hand to your mouth; the mission gauge
-      and map on your wrist when you look at it.
+- [ ] Guard by holding the Keyblade across your body (chosen): attacks and projectiles that meet
+      the blade are blocked or deflected (the game's own guard), timed for a parry.
+- [ ] Chests opened by striking or touching them (chosen); later hearts, munny and orbs pulled
+      in when your hand reaches for them.
+- [ ] A wrist quickbar (chosen): turn the off-hand wrist up to see a few quick slots (potions,
+      ethers, the deck's shortcuts) and pick one with the pointer or a touch of the other hand;
+      a pointer option for menus and targets. Later: a potion by bringing the off hand to your
+      mouth; the mission gauge and map on the wrist.
 - [ ] Lock-on by looking: the enemy you look at (or point the Keyblade at) for a moment
       becomes the target; flick the stick to change it.
-- [ ] Sound from where it happens: the game's sound effects placed at their source around you
+- [ ] Sound from where it happens (chosen): the game's sound effects placed at their source around you
       (the enemy that growls, the chest that opens), not from the middle of your head.
-- [ ] People talk where they stand: the speech text in a bubble by the speaker instead of on
-      the HUD, turning to face you.
+- [ ] People talk where they stand (chosen): the speech text in a bubble above the speaker
+      instead of on the HUD, turning to face you.
 - [ ] Limit breaks and specials by pose: raise the Keyblade overhead and hold to charge.
 - [ ] Physical movement in the game's abilities: lean into a dodge roll; a real jump for the
       High Jump; arms out to glide.

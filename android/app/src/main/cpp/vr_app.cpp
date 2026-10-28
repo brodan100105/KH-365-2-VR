@@ -971,8 +971,10 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
-            // Without his head, Roxas holds the game's own Keyblade: none in the VR hand.
-            if ((h == weapon || dual) && body != BodyDisplay::WithoutHead) {
+            // Without his head, the game's own Keyblade (when it is found) is in your hand, and no
+            // placeholder.
+            const bool gameKeyblade = !game_->heldWeapon().vertices.empty();
+            if ((h == weapon || dual) && (body != BodyDisplay::WithoutHead || gameKeyblade)) {
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);

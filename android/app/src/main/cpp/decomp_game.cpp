@@ -303,8 +303,20 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // Roxas's own polygons: every vertex within a body-sized cylinder on his feet (game units
         // are about a meter; the field's Roxas is some 1.6 tall).
         const PlatformPlayer &me = latestPlayer_;
-        const bool hide = hidePlayer_ == HidePlayer::All && me.valid;
-        const bool hideHead = hidePlayer_ == HidePlayer::Head && me.valid;
+        // Body without head: while he runs, his running pose and the view's smoothing put his body
+        // in front of you, so all of him goes until he has stood still a moment.
+        const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (me.valid && hasLastFeet_) {
+            const float dx = me.position[0] - lastFeet_[0], dz = me.position[2] - lastFeet_[2];
+            if (dx * dx + dz * dz > 0.012f * 0.012f) movingUntil_ = now + 0.35;
+        }
+        if (me.valid) {
+            std::copy(me.position, me.position + 3, lastFeet_);
+            hasLastFeet_ = true;
+        }
+        const bool running = now < movingUntil_;
+        const bool hide = me.valid && (hidePlayer_ == HidePlayer::All || (hidePlayer_ == HidePlayer::Head && running));
+        const bool hideHead = hidePlayer_ == HidePlayer::Head && me.valid && !running;
         auto onPlayer = [&](const PlatformWorldVertex &v) {
             const float dx = v.x - me.position[0], dz = v.z - me.position[2], dy = v.y - me.position[1];
             return dx * dx + dz * dz < 0.55f * 0.55f && dy > -0.2f && dy < 2.2f;
@@ -359,6 +371,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
             if (hideHead && his(tri) && inHead(v)) continue;
+            // His Keyblade is in your hand.
+            if (hideHead && tagged && w.triangleModel[tri] >= kWorldModelAttached) continue;
             if (hide && tagged && w.triangleModel[tri] != 0) continue;
             if (hide && !tagged && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
             for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
