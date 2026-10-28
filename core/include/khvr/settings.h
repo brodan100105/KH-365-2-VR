@@ -63,6 +63,8 @@ enum class SettingId : int {
     CombatMotion,
     CombatPhysicalHits,
     CombatSwingSpeed,
+    CombatArmSpeed,
+    CombatArmDistance,
     CombatSwingCooldown,
     CombatAimAssist,
     CombatGuardGesture,

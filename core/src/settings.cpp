@@ -136,6 +136,12 @@ std::vector<SettingDef> BuildDefs() {
                   "Attacks only land where the Keyblade touches an enemy."));
     d.push_back(F(S::CombatSwingSpeed, "Combat", "swing_speed", "Swing threshold", 2.2f, 1.0f,
                   6.0f, 0.1f, "m/s", "Blade-tip speed a swing needs to count as an attack."));
+    d.push_back(F(S::CombatArmSpeed, "Combat", "arm_speed", "Arm swing speed", 1.0f, 0.0f, 3.0f, 0.1f, "m/s",
+                  "How fast your hand itself must move for a swing to attack, so the arm swings and not "
+                  "just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone."));
+    d.push_back(F(S::CombatArmDistance, "Combat", "arm_distance", "Swing length", 0.25f, 0.0f, 0.8f, 0.05f, "m",
+                  "How far your hand must travel in one fast motion before the swing attacks: longer "
+                  "asks for a full swing (the attack comes that much later in it). 0: at once."));
     d.push_back(F(S::CombatSwingCooldown, "Combat", "swing_cooldown", "Swing cooldown", 0.22f,
                   0.05f, 0.8f, 0.01f, "s", "Minimum time between two swings."));
     d.push_back(F(S::CombatAimAssist, "Combat", "aim_assist", "Aim assist", 0.5f, 0.0f, 1.0f,

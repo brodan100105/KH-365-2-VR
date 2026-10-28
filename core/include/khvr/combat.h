@@ -71,6 +71,9 @@ private:
         bool hasPrev = false;
         Vec3 prevTip;
         Vec3 velocity;           // smoothed tip velocity
+        Vec3 prevGrip;
+        Vec3 gripVelocity;       // smoothed hand velocity
+        float armPath = 0.0f;    // metres the hand has travelled in the current fast motion
         int fastFrames = 0;      // consecutive frames above the threshold
         bool inSwing = false;
         float cooldown = 0.0f;   // seconds until the next swing may start

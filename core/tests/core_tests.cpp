@@ -442,16 +442,35 @@ TEST(SmootherPlaysStepsOutBetweenGameFrames) {
 
 // ---------------------------------------------------------------- combat
 
-CombatInput Swing(float tipSpeed, float dt, int frame, bool moving) {
+// A horizontal swing at `tipSpeed`: the whole arm about the shoulder (the hand on a 0.5 m
+// circle, turning with it), or the wrist alone (the hand still, the controller turning).
+CombatInput Swing(float tipSpeed, float dt, int frame, bool moving, bool wristOnly = false) {
     CombatInput in;
     in.dt = dt;
     in.head.position = {0, 1.6f, 0};
     in.handValid[1] = true;
-    in.hands[1].position = {0.2f, 1.2f, -0.3f};
-    // Rotate the controller about +Y so the tip sweeps horizontally.
-    float yaw = moving ? -frame * tipSpeed * dt / CombatRecognizer::kBladeLength : 0.0f;
+    const float arm = 0.5f;
+    const float radius = wristOnly ? CombatRecognizer::kBladeLength : arm + CombatRecognizer::kBladeLength;
+    float yaw = moving ? -frame * tipSpeed * dt / radius : 0.0f;
+    const Vec3 shoulder{0.2f, 1.2f, 0.2f};
+    in.hands[1].position = wristOnly ? Vec3{0.2f, 1.2f, -0.3f} : shoulder + Quat::Yaw(yaw).Rotate({0, 0, -arm});
     in.hands[1].orientation = Quat::Yaw(yaw);
     return in;
+}
+
+TEST(CombatWristFlickIsNotASwing) {
+    Settings s;
+    CombatRecognizer r;
+    float dt = 1.0f / 90.0f;
+    int swings = 0;
+    for (int i = 0; i < 30; ++i) swings += r.Update(s, Swing(5.0f, dt, i, true, true)).swingStarted;
+    CHECK(swings == 0);
+    // With the arm checks off, the tip alone counts.
+    s.Set(SettingId::CombatArmSpeed, 0.0f);
+    s.Set(SettingId::CombatArmDistance, 0.0f);
+    CombatRecognizer r2;
+    for (int i = 0; i < 30; ++i) swings += r2.Update(s, Swing(5.0f, dt, i, true, true)).swingStarted;
+    CHECK(swings == 1);
 }
 
 TEST(CombatSwingDetected) {
@@ -461,7 +480,7 @@ TEST(CombatSwingDetected) {
     SwingKind kind = SwingKind::Thrust;
     float dt = 1.0f / 90.0f;
     for (int i = 0; i < 10; ++i) r.Update(s, Swing(0, dt, i, false));
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 40; ++i) {
         CombatFrame f = r.Update(s, Swing(4.0f, dt, i, true));
         if (f.swingStarted) {
             ++swings;

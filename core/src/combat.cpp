@@ -71,12 +71,21 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
             continue;
         }
         Vec3 tip = BladeTip(in.hands[h], length, gripAngle);
+        const Vec3 grip = in.hands[h].position;
         if (st.hasPrev) {
             Vec3 raw = (tip - st.prevTip) / in.dt;
             float k = 1.0f - std::exp(-in.dt / kVelocitySmoothing);
             st.velocity = Lerp(st.velocity, raw, k);
+            st.gripVelocity = Lerp(st.gripVelocity, (grip - st.prevGrip) / in.dt, k);
+            // The hand's path through one fast motion: it must be the arm swinging, not the wrist.
+            const float armSpeed = s.Get(SettingId::CombatArmSpeed);
+            if (Length(st.gripVelocity) > armSpeed * 0.5f && Length(st.velocity) > threshold * kEndFraction)
+                st.armPath += Length(grip - st.prevGrip);
+            else
+                st.armPath = 0.0f;
         }
         st.prevTip = tip;
+        st.prevGrip = grip;
         st.hasPrev = true;
 
         bool armed = motion && (h == weaponHand || dual);
@@ -91,7 +100,9 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
             continue;
         }
         st.fastFrames = speed > threshold ? st.fastFrames + 1 : 0;
-        if (st.fastFrames >= kFramesToStart && st.cooldown <= 0.0f && !out.swingStarted) {
+        const bool arm = Length(st.gripVelocity) >= s.Get(SettingId::CombatArmSpeed) &&
+                         st.armPath >= s.Get(SettingId::CombatArmDistance);
+        if (st.fastFrames >= kFramesToStart && arm && st.cooldown <= 0.0f && !out.swingStarted) {
             st.inSwing = true;
             st.fastFrames = 0;
             out.swingStarted = true;
