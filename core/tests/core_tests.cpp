@@ -541,6 +541,18 @@ TEST(CombatStickFlickDodges) {
     CombatRecognizer r;
     CombatInput in;
     in.dt = 1.0f / 90.0f;
+    // Without an enemy on the cursor a flick does nothing (it opened the Grey Area's menu).
+    {
+        CombatRecognizer idle;
+        bool any = false;
+        for (int i = 0; i < 20; ++i) idle.Update(s, in);
+        in.moveAxis = {1, 0, 0};
+        for (int i = 0; i < 2; ++i) any |= idle.Update(s, in).dodge;
+        in.moveAxis = {};
+        any |= idle.Update(s, in).dodge;
+        CHECK(!any);
+    }
+    in.enemyTargeted = true;
     for (int i = 0; i < 20; ++i) r.Update(s, in);
     in.moveAxis = {1, 0, 0};
     CHECK(!r.Update(s, in).dodge);  // not yet: it could be the start of walking
@@ -617,6 +629,23 @@ TEST(MapperFieldOctantHysteresis) {
     CHECK(dpad(35) == (kDsUp | kDsLeft));
     CHECK(dpad(20) == (kDsUp | kDsLeft));       // and back just past it: still up-left
     CHECK(dpad(10) == kDsUp);
+}
+
+TEST(MapperTriggersAreLAndRInMenus) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    c.trigger[0] = 0.55f;  // a light pull
+    c.trigger[1] = 0.55f;
+    m.SetMenuStick(true);  // a menu or a tutorial's pages
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK((m.heldButtons() & (kDsL | kDsR)) == (kDsL | kDsR));
+    c.trigger[0] = 0.4f;  // easing off a little holds it
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(m.heldButtons() & kDsL);
+    c.trigger[0] = 0.1f;
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(!(m.heldButtons() & kDsL));
 }
 
 TEST(MapperSwingPulse) {

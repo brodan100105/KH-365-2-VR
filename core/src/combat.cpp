@@ -180,7 +180,9 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
     float mag = Length(in.moveAxis);
     if (mag < 0.2f) {
         if (flickPending_) {
-            if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick) {
+            // Only with an enemy on the cursor: a quick tap of the stick while walking about the
+            // Grey Area pressed the dodge button there, which opens the game's menu.
+            if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick && in.enemyTargeted) {
                 out.dodge = true;
                 out.dodgeDirection = flickDirection_;
             }

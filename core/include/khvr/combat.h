@@ -51,8 +51,9 @@ struct CombatInput {
     bool handValid[2] = {false, false};
     float trigger[2] = {0, 0};   // analog trigger value per hand
     Vec3 moveAxis;               // left stick
-    // The field's cursor is on an enemy (soft or locked): magic is cast only then, so pulling
-    // the off-hand trigger elsewhere (the Grey Area) presses nothing.
+    // The field's cursor is on an enemy (soft or locked): magic is cast and the stick flick
+    // dodges only then, so pulling the off-hand trigger or tapping the stick elsewhere (the Grey
+    // Area, where those buttons open the game's menu) presses nothing.
     bool enemyTargeted = false;
 };
 

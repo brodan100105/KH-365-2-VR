@@ -1800,7 +1800,7 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     uint32_t keyJoint = 0;
     double bestLength = 0;
     for (const auto &[joint, pts] : joints) {
-        if (jointPolygons[joint] < 6) continue;
+        if (jointPolygons[joint] < 12) continue;
         // Its length: the two points farthest apart (from the first, then from that one); its
         // width: the farthest any point lies off the line between them.
         auto far = [&](const std::array<double, 3> &from) {

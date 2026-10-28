@@ -453,7 +453,8 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
                     const float *l = &w.local[(t * 3 + k) * 3];
                     points.push_back({l[0], l[1], l[2]});
                 }
-        if (points.size() < 9) continue;
+        // A Keyblade has some dozens of triangles; a handful (an effect, a shadow on him) is not one.
+        if (points.size() < 16 * 3) continue;
         WeaponFrame f = FindWeaponFrame(points);
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;

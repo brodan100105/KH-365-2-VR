@@ -72,8 +72,8 @@ hands, DS + giant screen) and the options changed most.
 | `motion_combat` | Motion combat | `true` / `false` | `true` | Swing the controller to attack (first person). |
 | `physical_hits` | Physical hits only | `true` / `false` | `false` | Attacks only land where the Keyblade touches an enemy. |
 | `swing_speed` | Swing threshold | 1 to 6 m/s | `2.2` | Blade-tip speed a swing needs to count as an attack. |
-| `arm_swing_speed` | Arm swing speed | 0 to 4 m/s | `1.5` | How fast your hand itself must move for a swing to attack, so the arm swings and not just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone. |
-| `swing_length` | Swing length | 0 to 1.2 m | `0.4` | How far your hand must travel in one fast motion before the swing attacks: longer asks for a full swing (the attack comes that much later in it). 0: at once. |
+| `arm_swing_speed2` | Arm swing speed | 0 to 4 m/s | `1.3` | How fast your hand itself must move for a swing to attack, so the arm swings and not just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone. |
+| `swing_length2` | Swing length | 0 to 1.2 m | `0.33` | How far your hand must travel in one fast motion before the swing attacks: longer asks for a full swing (the attack comes that much later in it). 0: at once. |
 | `swing_delay` | Swing cooldown | 0.05 to 1.5 s | `0.35` | Minimum time between two swings. |
 | `aim_assist` | Aim assist | 0 to 1 | `0.5` | How strongly swings turn the character toward the nearest enemy. |
 | `guard_gesture` | Guard gesture | `true` / `false` | `true` | Hold the Keyblade across your body to block. |

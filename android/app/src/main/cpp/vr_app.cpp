@@ -1181,6 +1181,9 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
         if (drawPlayer) renderer_.DrawTriangles(game_->player(), vpWorld);
     }
+    // Your hands and the Keyblade over the world: inside Roxas's body (Body without head) or a
+    // wall they would be hidden.
+    if (lastMode_ == ViewMode::FirstPerson) glClear(GL_DEPTH_BUFFER_BIT);
     DrawProps(in, vpTracking);
 
     // Panels float in front of the world: never let a pillar, the floor or the character cut into

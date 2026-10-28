@@ -9,7 +9,9 @@ namespace {
 constexpr float kStickDeadzone = 0.2f;
 constexpr float kHoldSeconds = 0.8f;   // menu / right stick long press
 constexpr float kGripPressed = 0.6f;
-constexpr float kTriggerPressed = 0.6f;
+// Triggers press at half way and let go only near the top, so a light or wavering pull (paging a
+// tutorial with L/R) neither misses nor flickers.
+constexpr float kTriggerPressed = 0.5f, kTriggerReleased = 0.3f;
 // Menus: a direction presses past kMenuPress and lets go below kMenuRelease, one axis at a time.
 constexpr float kMenuPress = 0.55f;
 constexpr float kMenuRelease = 0.35f;
@@ -95,26 +97,31 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     }
     rightStickWasDown_ = c.stickClick[1];
 
+    for (int h = 0; h < 2; ++h)
+        triggerDown_[h] = c.trigger[h] > (triggerDown_[h] ? kTriggerReleased : kTriggerPressed);
+
     // ---- Buttons ----
     if (c.a) held |= kDsA;
     if (c.b) held |= kDsB;
     if (c.x) held |= kDsX;
     if (c.y) held |= kDsY;
     if (c.stickClick[0]) held |= kDsSelect;
-    const bool firstPerson = mode == ViewMode::FirstPerson;
+    // In a menu or a tutorial's pages the triggers are L and R in every view (first person keeps
+    // one for magic otherwise, and the pages turn with L/R).
+    const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_;
     if (firstPerson) {
         // The weapon hand's grip holds the Keyblade; the off hand's grip is the lock-on button.
         // Triggers: the off hand casts (Combat > Magic); the weapon-hand trigger is L.
         int weapon = s.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
         if (c.grip[1 - weapon] > kGripPressed)
             held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlLockOnButton));
-        if (c.trigger[weapon] > kTriggerPressed) held |= kDsL;
+        if (triggerDown_[weapon]) held |= kDsL;
         if (s.Enum<MagicGesture>(SettingId::CombatMagicGesture) == MagicGesture::Button &&
-            c.trigger[1 - weapon] > kTriggerPressed)
+            triggerDown_[1 - weapon])
             held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlMagicButton));
     } else {
-        if (c.trigger[0] > kTriggerPressed) held |= kDsL;
-        if (c.trigger[1] > kTriggerPressed) held |= kDsR;
+        if (triggerDown_[0]) held |= kDsL;
+        if (triggerDown_[1]) held |= kDsR;
     }
 
     // ---- Gestures ----

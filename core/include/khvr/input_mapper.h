@@ -80,6 +80,7 @@ private:
     uint16_t dodgeDpad_ = 0;
     int dodgeFrames_ = 0;
     bool menuStick_ = false;
+    bool triggerDown_[2] = {false, false};  // each trigger pressed (with hysteresis)
     uint16_t menuDir_ = 0;  // the menu direction held, 0 none
     int octant_ = -1;       // the field octant held, -1 none
 };
