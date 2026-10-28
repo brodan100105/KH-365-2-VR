@@ -94,10 +94,11 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
+| `profile` | Comfort profile | `custom`, `low`, `medium`, `high` | `medium` | Sets the options below for how much motion you are used to. Low: the vignette at full strength and snap turning. Medium: no vignette, snap turning. High: no vignette, smooth turning. Changing them yourself makes it Custom. |
 | `turn` | Turning | `snap`, `smooth`, `off` | `snap` | Right stick turning. |
 | `snap_angle` | Snap angle | 15 to 90 deg | `45` | Angle of one snap turn. |
 | `smooth_speed` | Smooth turn speed | 30 to 360 deg/s | `120` | Speed of smooth turning. |
-| `vignette_on` | Vignette | `true` / `false` | `true` | Darkens the edges of your view while the view moves or turns without you (the stick, following Roxas, a cutscene's camera), fading in and out smoothly. |
+| `vignette_on` | Vignette | `true` / `false` | `false` | Standing in the world, darkens the edges of your view while the view moves or turns without you (the stick, following Roxas, a cutscene's camera), fading in and out smoothly. Never on the giant screen. |
 | `vignette` | Vignette strength | 0.1 to 1 | `0.6` | How dark the vignette gets: 1 is full black, 0.1 faint but still there. |
 | `vignette_size` | Vignette size | 0.1 to 1 | `0.5` | How much of your view the vignette covers at its fullest, from the edges in. |
 | `blink` | Blink on cuts | `true` / `false` | `true` | Briefly fade to black when the view jumps (camera cuts, snap turns). |

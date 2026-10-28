@@ -154,6 +154,28 @@ TEST(SettingsIniRoundTrip) {
     CHECK(b.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
 }
 
+TEST(SettingsComfortProfiles) {
+    Settings s;
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Medium);
+    CHECK(!s.Bool(SettingId::ComfortVignetteOn));
+    s.SetEnum(SettingId::ComfortProfile, ComfortProfile::Low);
+    CHECK(s.Bool(SettingId::ComfortVignetteOn));
+    CHECK_NEAR(s.Get(SettingId::ComfortVignette), 1.0f, 1e-6f);
+    CHECK(s.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Snap);
+    s.SetEnum(SettingId::ComfortProfile, ComfortProfile::High);
+    CHECK(!s.Bool(SettingId::ComfortVignetteOn));
+    CHECK(s.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
+    s.SetEnum(SettingId::ComfortTurn, TurnMode::Snap);  // now what Medium sets
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Medium);
+    s.SetEnum(SettingId::ComfortTurn, TurnMode::Off);
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Custom);
+    // A file from before the profiles: its vignette was on only by the old default.
+    Settings old;
+    old.LoadIni("[Comfort]\nturn = smooth\nvignette_on = true\n");
+    CHECK(!old.Bool(SettingId::ComfortVignetteOn));
+    CHECK(old.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::High);
+}
+
 TEST(SettingsIniWarnings) {
     Settings s;
     std::vector<std::string> w;

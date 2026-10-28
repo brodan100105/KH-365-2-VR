@@ -855,9 +855,14 @@ void VrApp::Frame(const XrFrameInput &in) {
     nextRequests_ = rig_.requests;
     {
         // The vignette comes in quickly as artificial motion starts and goes out gently after.
-        const float target = settings_.Bool(SettingId::ComfortVignetteOn) && mode != ViewMode::GiantScreen ? rig_.vignette : 0.0f;
-        const float rate = target > vignette_ ? 6.0f : 2.5f;
-        vignette_ += (target - vignette_) * (1.0f - std::exp(-rate * dt));
+        // Only standing in the world: on the giant screen it is gone at once.
+        if (!settings_.Bool(SettingId::ComfortVignetteOn) || mode == ViewMode::GiantScreen) {
+            vignette_ = 0.0f;
+        } else {
+            const float target = rig_.vignette;
+            const float rate = target > vignette_ ? 6.0f : 2.5f;
+            vignette_ += (target - vignette_) * (1.0f - std::exp(-rate * dt));
+        }
     }
     if (rig_.requests.hasRoomScaleStep) pendingRoomScale_ += rig_.requests.roomScaleStep;
     if (rig_.blinkStarted) blinkTime_ = 0.0f;

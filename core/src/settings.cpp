@@ -163,15 +163,21 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::CtrlLockOnButton, "Controls", "lock_on", "Grip presses", 5, btnKeys,
                   btnLabels, "DS button the off-hand grip presses in first person (lock-on)."));
     // ---- Comfort ----
+    d.push_back(E(S::ComfortProfile, "Comfort", "profile", "Comfort profile", 2,
+                  {"custom", "low", "medium", "high"}, {"Custom", "Low", "Medium", "High"},
+                  "Sets the options below for how much motion you are used to. Low: the vignette at "
+                  "full strength and snap turning. Medium: no vignette, snap turning. High: no "
+                  "vignette, smooth turning. Changing them yourself makes it Custom."));
     d.push_back(E(S::ComfortTurn, "Comfort", "turn", "Turning", 0, {"snap", "smooth", "off"},
                   {"Snap", "Smooth", "Off"}, "Right stick turning."));
     d.push_back(F(S::ComfortSnapAngle, "Comfort", "snap_angle", "Snap angle", 45.0f, 15.0f, 90.0f,
                   15.0f, "deg", "Angle of one snap turn."));
     d.push_back(F(S::ComfortSmoothSpeed, "Comfort", "smooth_speed", "Smooth turn speed", 120.0f,
                   30.0f, 360.0f, 10.0f, "deg/s", "Speed of smooth turning."));
-    d.push_back(B(S::ComfortVignetteOn, "Comfort", "vignette_on", "Vignette", true,
-                  "Darkens the edges of your view while the view moves or turns without you (the stick, "
-                  "following Roxas, a cutscene's camera), fading in and out smoothly."));
+    d.push_back(B(S::ComfortVignetteOn, "Comfort", "vignette_on", "Vignette", false,
+                  "Standing in the world, darkens the edges of your view while the view moves or turns "
+                  "without you (the stick, following Roxas, a cutscene's camera), fading in and out "
+                  "smoothly. Never on the giant screen."));
     d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 1.0f, 0.05f,
                   "", "How dark the vignette gets: 1 is full black, 0.1 faint but still there."));
     d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_size", "Vignette size", 0.5f, 0.1f, 1.0f,
@@ -380,6 +386,47 @@ const std::vector<const char *> &SettingTabs() {
 Settings::Settings() { ResetAll(); }
 
 float Settings::Set(SettingId id, float value) {
+    const float before = Get(id);
+    value = Store(id, value);
+    if (value != before) {
+        if (id == SettingId::ComfortProfile) ApplyComfortProfile();
+        else if (id == SettingId::ComfortTurn || id == SettingId::ComfortVignetteOn) MatchComfortProfile();
+    }
+    return value;
+}
+
+void Settings::ApplyComfortProfile() {
+    switch (Enum<ComfortProfile>(SettingId::ComfortProfile)) {
+    case ComfortProfile::Custom: return;
+    case ComfortProfile::Low:
+        Store(SettingId::ComfortVignetteOn, 1.0f);
+        Store(SettingId::ComfortVignette, 1.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Snap));
+        return;
+    case ComfortProfile::Medium:
+        Store(SettingId::ComfortVignetteOn, 0.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Snap));
+        return;
+    case ComfortProfile::High:
+        Store(SettingId::ComfortVignetteOn, 0.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Smooth));
+        return;
+    }
+}
+
+// The profile names what the turning and vignette options are set to.
+void Settings::MatchComfortProfile() {
+    const bool vignette = Bool(SettingId::ComfortVignetteOn);
+    ComfortProfile p = ComfortProfile::Custom;
+    switch (Enum<TurnMode>(SettingId::ComfortTurn)) {
+    case TurnMode::Snap: p = vignette ? ComfortProfile::Low : ComfortProfile::Medium; break;
+    case TurnMode::Smooth: p = vignette ? ComfortProfile::Custom : ComfortProfile::High; break;
+    case TurnMode::Off: break;
+    }
+    Store(SettingId::ComfortProfile, static_cast<float>(p));
+}
+
+float Settings::Store(SettingId id, float value) {
     const SettingDef &d = DefOf(id);
     if (std::isnan(value)) value = d.defaultValue;
     switch (d.type) {
@@ -452,6 +499,7 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
     std::istringstream in(text);
     std::string raw, section;
     int lineNo = 0;
+    bool comfortSeen = false, profileSeen = false;
     while (std::getline(in, raw)) {
         ++lineNo;
         std::string line = Trim(raw);
@@ -470,6 +518,8 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
         for (const SettingDef &d : SettingDefs())
             if (section == d.tab && key == d.key) def = &d;
         if (!def) { warn(lineNo, "unknown option [" + section + "] " + key); continue; }
+        comfortSeen |= std::strcmp(def->tab, "Comfort") == 0;
+        profileSeen |= def->id == SettingId::ComfortProfile;
 
         switch (def->type) {
         case SettingType::Bool:
@@ -496,6 +546,9 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
         }
         }
     }
+    // Files from before the comfort profiles had the vignette on only because it was the default
+    // then; it is off by default now.
+    if (comfortSeen && !profileSeen) SetBool(SettingId::ComfortVignetteOn, false);
 }
 
 std::string Settings::SaveIni() const {

@@ -77,6 +77,7 @@ enum class SettingId : int {
     CtrlJumpButton,
     CtrlLockOnButton,
     // Comfort
+    ComfortProfile,
     ComfortTurn,
     ComfortSnapAngle,
     ComfortSmoothSpeed,
@@ -151,6 +152,9 @@ enum class Hand : int { Left = 0, Right = 1 };
 enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
+// Low: vignette at full strength and snap turning; Medium: snap turning; High: smooth turning.
+// Custom is anything else the options below it were set to.
+enum class ComfortProfile : int { Custom = 0, Low = 1, Medium = 2, High = 3 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
 enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
 enum class GamePicture : int { Ds = 0, Sharp = 1, Depth = 2 };
@@ -212,6 +216,10 @@ public:
     unsigned revision() const { return revision_; }
 
 private:
+    float Store(SettingId id, float value);
+    void ApplyComfortProfile();
+    void MatchComfortProfile();
+
     float values_[static_cast<int>(SettingId::Count)];
     unsigned revision_ = 0;
 };
