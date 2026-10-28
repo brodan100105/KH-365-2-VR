@@ -163,6 +163,12 @@ std::vector<SettingDef> BuildDefs() {
                   "Controller vibration on hits, blocks and swings."));
     // ---- Controls ----
     // The defaults follow the game's Type A controls; change them here if you play Type B.
+    d.push_back(E(S::CtrlFirstPersonButtons, "Controls", "first_person_buttons", "First person buttons", 0,
+                  {"same", "first_person"}, {"Same as other views", "First person profile"},
+                  "Same as other views: every button presses what it does in third person (the triggers "
+                  "L and R); the gestures (swing, guard, dodge flick) add to them. First person profile: "
+                  "the weapon hand's trigger is L, the other hand's trigger casts (pointing at an enemy) "
+                  "and its grip locks on."));
     const std::vector<const char *> btnKeys{"a", "b", "x", "y", "l", "r", "none"};
     const std::vector<const char *> btnLabels{"A", "B", "X", "Y", "L", "R", "None"};
     d.push_back(E(S::CtrlAttackButton, "Controls", "attack", "Swing presses", 0, btnKeys, btnLabels,
@@ -176,7 +182,8 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::CtrlJumpButton, "Controls", "jump", "Physical jump presses", 1, btnKeys,
                   btnLabels, "DS button a physical jump presses."));
     d.push_back(E(S::CtrlLockOnButton, "Controls", "lock_on", "Grip presses", 5, btnKeys,
-                  btnLabels, "DS button the off-hand grip presses in first person (lock-on)."));
+                  btnLabels, "DS button the off-hand grip presses in first person (lock-on), with First person "
+                  "buttons: First person profile."));
     // ---- Comfort ----
     d.push_back(E(S::ComfortProfile, "Comfort", "profile", "Comfort profile", 2,
                   {"custom", "low", "medium", "high"}, {"Custom", "Low", "Medium", "High"},

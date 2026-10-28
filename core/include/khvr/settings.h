@@ -73,6 +73,7 @@ enum class SettingId : int {
     CombatDodge,
     CombatHaptics,
     // Controls (which DS button each gesture presses)
+    CtrlFirstPersonButtons,
     CtrlAttackButton,
     CtrlGuardButton,
     CtrlDodgeButton,
@@ -155,6 +156,9 @@ enum class Hand : int { Left = 0, Right = 1 };
 enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
+// First person's buttons: the same as every other view, or the first person profile (the
+// weapon-hand trigger L, the off-hand trigger casts, the off-hand grip locks on).
+enum class FirstPersonButtons : int { Same = 0, Profile = 1 };
 // Low: vignette at full strength and snap turning; Medium: snap turning; High: smooth turning.
 // Custom is anything else the options below it were set to.
 enum class ComfortProfile : int { Custom = 0, Low = 1, Medium = 2, High = 3 };

@@ -108,7 +108,8 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     if (c.stickClick[0]) held |= kDsSelect;
     // In a menu or a tutorial's pages the triggers are L and R in every view (first person keeps
     // one for magic otherwise, and the pages turn with L/R).
-    const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_;
+    const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_ &&
+                             s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile;
     if (firstPerson) {
         // The weapon hand's grip holds the Keyblade; the off hand's grip is the lock-on button.
         // Triggers: the off hand casts (Combat > Magic); the weapon-hand trigger is L.

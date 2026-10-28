@@ -648,6 +648,21 @@ TEST(MapperTriggersAreLAndRInMenus) {
     CHECK(!(m.heldButtons() & kDsL));
 }
 
+TEST(MapperFirstPersonButtonsSameByDefault) {
+    Settings s;
+    ControllerState c;
+    c.trigger[0] = 1.0f;
+    c.trigger[1] = 1.0f;
+    InputMapper same;
+    same.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK((same.heldButtons() & (kDsL | kDsR)) == (kDsL | kDsR));  // as in third person
+    s.SetEnum(SettingId::CtrlFirstPersonButtons, FirstPersonButtons::Profile);
+    InputMapper profile;
+    profile.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(profile.heldButtons() & kDsL);      // the weapon (right) hand's trigger
+    CHECK(!(profile.heldButtons() & kDsR));   // the other trigger casts instead
+}
+
 TEST(MapperSwingPulse) {
     Settings s;
     InputMapper m;

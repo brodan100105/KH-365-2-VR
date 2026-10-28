@@ -150,7 +150,9 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         bool pressed = in.trigger[off] > 0.75f;
         bool released = in.trigger[off] < 0.35f;
         HandState &st = hands_[off];
+        // The off-hand trigger casts only with the first person button profile: otherwise it is R.
         if (s.Enum<MagicGesture>(SettingId::CombatMagicGesture) == MagicGesture::PointAndTrigger &&
+            s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile &&
             in.handValid[off] && pressed && !st.triggerHeld && in.enemyTargeted) {
             Vec3 point = in.hands[off].orientation.Forward();
             Vec3 look = in.head.orientation.Forward();

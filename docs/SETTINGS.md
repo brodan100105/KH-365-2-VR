@@ -86,12 +86,13 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
+| `first_person_buttons` | First person buttons | `same`, `first_person` | `same` | Same as other views: every button presses what it does in third person (the triggers L and R); the gestures (swing, guard, dodge flick) add to them. First person profile: the weapon hand's trigger is L, the other hand's trigger casts (pointing at an enemy) and its grip locks on. |
 | `attack` | Swing presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `a` | DS button a Keyblade swing presses (the attack command). |
 | `guard` | Guard presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `y` | DS button held while you hold the guard pose (Block). |
 | `dodge` | Dodge presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `y` | DS button a dodge flick presses, with the flick direction held (Dodge Roll). |
 | `magic` | Cast presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `x` | DS button pointing and pulling the trigger presses (the selected command). |
 | `jump` | Physical jump presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `b` | DS button a physical jump presses. |
-| `lock_on` | Grip presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `r` | DS button the off-hand grip presses in first person (lock-on). |
+| `lock_on` | Grip presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `r` | DS button the off-hand grip presses in first person (lock-on), with First person buttons: First person profile. |
 
 ## Comfort
 
