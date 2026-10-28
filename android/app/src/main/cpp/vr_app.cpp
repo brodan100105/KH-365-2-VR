@@ -791,7 +791,25 @@ void VrApp::Frame(const XrFrameInput &in) {
             ci.trigger[h] = buttons.trigger[h];
         }
         ci.moveAxis = t.moveAxis;
+        {
+            const TexturedWorld &tw = game_->texturedWorld();
+            ci.enemyTargeted = tw.lockOn && (tw.lockOnKind == 1 || tw.lockOnKind == 3);
+        }
         combat = combat_.Update(settings_, ci);
+#ifdef KHVR_HAS_GAME
+        // What the gestures press, into the boot log (a menu opening by itself can be traced).
+        if (decomp_) {
+            auto note = [&](const char *what, SettingId button) {
+                Platform::Get().LogLine(std::string("input: ") + what + " gesture presses " +
+                                        settings_.FormatValue(button));
+            };
+            if (combat.swingStarted) note("swing", SettingId::CtrlAttackButton);
+            if (combat.castMagic) note("cast", SettingId::CtrlMagicButton);
+            if (combat.guardStarted) note("guard", SettingId::CtrlGuardButton);
+            if (combat.dodge) note("dodge", SettingId::CtrlDodgeButton);
+            if (combat.jump) note("jump", SettingId::CtrlJumpButton);
+        }
+#endif
         combatPtr = &combat;
         for (int h = 0; h < 2; ++h) xr_->Haptic(h, combat.hapticAmplitude[h], combat.hapticSeconds[h]);
     }
@@ -804,6 +822,9 @@ void VrApp::Frame(const XrFrameInput &in) {
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
 
     const AppActions &act = mapper_.actions();
+#ifdef KHVR_HAS_GAME
+    if (decomp_ && act.pressedStart) Platform::Get().LogLine("input: the menu button presses START");
+#endif
     if (act.openSettingsPanel) {
         if (panel_.isOpen()) {
             panel_.Close();

@@ -49,6 +49,10 @@ GameCamera HeadCamera(const Similarity &toWorld, const Pose &head, float lookDis
     return c;
 }
 
+// A standing person's eye height (m): third person puts your eyes this plus Viewpoint height
+// above the character's floor at a recenter.
+constexpr float kStandingEyeHeight = 1.6f;
+
 float SeatedBoost(const Settings &s) {
     return s.Bool(SettingId::ComfortSeated) ? s.Get(SettingId::ComfortSeatedHeight) : 0.0f;
 }
@@ -133,6 +137,8 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
     if (reinit) {
         // Look the way the game camera looks, from where you are standing now.
         viewYaw_ = CameraYaw(game.camera) - headYaw;
+        placedHead_ = t.head.position;
+        placedHeadYaw_ = headYaw;
         anchor_ = target;
         initialized_ = true;
         if (t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
@@ -181,9 +187,13 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
     viewYaw_ = WrapAngle(viewYaw_ + turn);
     if (snapped) out.blinkStarted |= s.Bool(SettingId::ComfortBlink);
 
-    // The character stands `distance` in front of the tracking origin and `height` below it.
-    Vec3 placement{0.0f, -(s.Get(SettingId::TpHeight) + SeatedBoost(s)),
-                   -s.Get(SettingId::TpDistance)};
+    // The character stands `distance` in front of where your head was when the view was placed,
+    // the way it looked, with your eyes a standing person's eye height plus `height` above its
+    // floor: wherever you stood and however tall you are when you recenter.
+    const Vec3 ahead = Quat::Yaw(placedHeadYaw_).Rotate({0.0f, 0.0f, -s.Get(SettingId::TpDistance)});
+    Vec3 placement{placedHead_.x + ahead.x,
+                   placedHead_.y - (kStandingEyeHeight + s.Get(SettingId::TpHeight) + SeatedBoost(s)),
+                   placedHead_.z + ahead.z};
     out.trackingToWorld.scale = scale;
     out.trackingToWorld.rotation = Quat::Yaw(viewYaw_);
     out.trackingToWorld.translation = anchor_ - out.trackingToWorld.rotation.Rotate(placement * scale);

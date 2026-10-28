@@ -151,7 +151,7 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         bool released = in.trigger[off] < 0.35f;
         HandState &st = hands_[off];
         if (s.Enum<MagicGesture>(SettingId::CombatMagicGesture) == MagicGesture::PointAndTrigger &&
-            in.handValid[off] && pressed && !st.triggerHeld) {
+            in.handValid[off] && pressed && !st.triggerHeld && in.enemyTargeted) {
             Vec3 point = in.hands[off].orientation.Forward();
             Vec3 look = in.head.orientation.Forward();
             // The hand has to point roughly where you look.

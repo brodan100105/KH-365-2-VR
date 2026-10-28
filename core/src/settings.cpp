@@ -83,7 +83,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::TpDistance, "Camera", "distance", "Distance behind", 3.0f, 0.0f, 10.0f,
                   0.25f, "m", "How far in front of you the character stands."));
     d.push_back(F(S::TpHeight, "Camera", "height", "Viewpoint height", 1.0f, -1.0f, 6.0f, 0.25f,
-                  "m", "How far your floor sits above the character's floor."));
+                  "m", "How far your eyes sit above a standing person's (1.6 m) over the character's floor, "
+                  "measured from your head when you recenter (right stick click), however tall you "
+                  "are or wherever you stand."));
     d.push_back(E(S::TpFollow, "Camera", "follow", "Follow", 0, {"smooth", "locked", "teleport"},
                   {"Smooth", "Locked", "Teleport when far"},
                   "How the view follows the character. Teleport is the most comfortable."));

@@ -30,6 +30,7 @@ struct AppActions {
     bool openSettingsPanel = false;  // menu held
     bool recenter = false;           // right stick tapped
     bool toggleViewMode = false;     // right stick held (View > Quick mode switch)
+    bool pressedStart = false;       // menu tapped: START went to the game (for the boot log)
 };
 
 class InputMapper {

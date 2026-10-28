@@ -72,7 +72,10 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
         }
     } else {
         // A short press of the menu button is START.
-        if (menuWasDown_ && !settingsFired_) AddPulse(kDsStart);
+        if (menuWasDown_ && !settingsFired_) {
+            AddPulse(kDsStart);
+            actions_.pressedStart = true;
+        }
         menuHeld_ = 0.0f;
         settingsFired_ = false;
     }

@@ -51,6 +51,9 @@ struct CombatInput {
     bool handValid[2] = {false, false};
     float trigger[2] = {0, 0};   // analog trigger value per hand
     Vec3 moveAxis;               // left stick
+    // The field's cursor is on an enemy (soft or locked): magic is cast only then, so pulling
+    // the off-hand trigger elsewhere (the Grey Area) presses nothing.
+    bool enemyTargeted = false;
 };
 
 // Where the blade tip is for a grip pose: the Keyblade points along the controller's -Z,

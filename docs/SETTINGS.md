@@ -42,7 +42,7 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `world_scale` | World scale | 0.02 to 1.5 x | `1` | 1 is life size; small values turn the level into a diorama. |
 | `distance` | Distance behind | 0 to 10 m | `3` | How far in front of you the character stands. |
-| `height` | Viewpoint height | -1 to 6 m | `1` | How far your floor sits above the character's floor. |
+| `height` | Viewpoint height | -1 to 6 m | `1` | How far your eyes sit above a standing person's (1.6 m) over the character's floor, measured from your head when you recenter (right stick click), however tall you are or wherever you stand. |
 | `follow` | Follow | `smooth`, `locked`, `teleport` | `smooth` | How the view follows the character. Teleport is the most comfortable. |
 | `follow_speed` | Follow speed | 0.5 to 10 | `3` | How quickly the view catches up in Smooth mode. |
 | `deadzone` | Follow dead zone | 0 to 4 m | `0.5` | The character can move this far before the view follows. |

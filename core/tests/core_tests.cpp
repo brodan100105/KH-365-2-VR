@@ -336,6 +336,22 @@ TEST(ThirdPersonFollowsCameraSettlingAfterSpawn) {
     CHECK_NEAR(rig.viewYaw(), settled, 1e-4f);
 }
 
+TEST(ThirdPersonRecenterPlacesYouFromYourHead) {
+    Settings s;
+    s.SetEnum(SettingId::TpFollow, FollowMode::Locked);
+    ThirdPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    // Recentering sitting (eyes at 1.1 m) a metre to the side of the room's origin: your eyes
+    // still go to 1.6 m + Viewpoint height above the character's floor, Distance behind it.
+    TrackingFrame t = MakeTracking({1.0f, 1.1f, 0.5f});
+    t.recenter = true;
+    RigOutput o = rig.Update(s, g, t);
+    const float scale = o.trackingToWorld.scale;
+    const Vec3 eye = o.trackingToWorld.Transform(t.head.position);
+    CHECK_NEAR(eye.y / scale, 1.6f + s.Get(SettingId::TpHeight), 1e-3f);
+    CHECK_NEAR(Length(Vec3{eye.x, 0, eye.z}) / scale, s.Get(SettingId::TpDistance), 1e-3f);
+}
+
 TEST(ThirdPersonSnapTurnAroundCharacter) {
     Settings s;
     ThirdPersonRig rig;

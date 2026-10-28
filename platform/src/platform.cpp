@@ -650,6 +650,8 @@ std::string Platform::crashReason() const {
 
 std::vector<std::string> Platform::RecentLog(size_t lines) const { return hle::RecentLogLines(lines); }
 
+void Platform::LogLine(const std::string &line) { hle::Log("%s", line.c_str()); }
+
 }  // namespace khvr
 
 extern "C" void khvr_count(uint32_t index) {

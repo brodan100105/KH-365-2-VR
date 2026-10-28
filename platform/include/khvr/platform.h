@@ -199,6 +199,8 @@ public:
     std::string crashReason() const;
     // The last lines of the boot log, for the in-headset status panel.
     std::vector<std::string> RecentLog(size_t lines) const;
+    // A line from the app into the boot log (what a gesture pressed, ...).
+    void LogLine(const std::string &line);
 };
 
 }  // namespace khvr
