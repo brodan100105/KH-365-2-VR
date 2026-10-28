@@ -155,23 +155,19 @@ TEST(SettingsIniRoundTrip) {
     CHECK(b.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
 }
 
-TEST(WeaponFrameFromGripAlongBlade) {
-    // A key along +Y from its grip at the origin (length 2), teeth towards -X at the tip.
-    std::vector<Vec3> pts{{0, -0.1f, 0}, {0.05f, 0, 0}, {0, 2, 0}, {-0.3f, 1.9f, 0}, {0, 1, 0.02f}};
+TEST(WeaponFrameFromItsShape) {
+    // A key along +Y from y = 0 to 2, its teeth towards -X at the tip, its model's origin off to
+    // one side (as a model placed on a hand can have it).
+    const Vec3 o{3, -1, 2};
+    std::vector<Vec3> pts{o + Vec3{0, 0, 0}, o + Vec3{0.05f, 0.1f, 0}, o + Vec3{0, 2, 0}, o + Vec3{-0.3f, 1.9f, 0},
+                          o + Vec3{0, 1, 0.02f}};
     WeaponFrame f = FindWeaponFrame(pts);
     CHECK(f.valid);
-    CHECK_NEAR(f.length, 2.0f, 1e-4f);
-    const Vec3 tip = f.ToHand({0, 2, 0});
-    CHECK_NEAR(tip.z, -1.0f, 1e-4f);
-    CHECK_NEAR(tip.x, 0.0f, 1e-4f);
-    const Vec3 teeth = f.ToHand({-0.3f, 1.9f, 0});
-    CHECK(teeth.x > 0.1f);
-    CHECK_NEAR(Length(f.ToHand({0, 0, 0})), 0.0f, 1e-5f);
-    // Centred on itself: the grip goes near the end the origin is closest to... here the -Y end.
-    std::vector<Vec3> mid{{0, -1, 0}, {0, 1.2f, 0}, {0.2f, 1.1f, 0}};
-    WeaponFrame m = FindWeaponFrame(mid);
-    CHECK(m.valid);
-    CHECK(Dot(m.grip, m.blade) < -0.5f);
+    CHECK(f.blade.y > 0.99f);                      // pommel to tip
+    CHECK_NEAR(f.grip.y, o.y + 0.24f, 0.05f);      // a hand in from the pommel
+    const Vec3 tip = f.ToHand(o + Vec3{0, 2, 0});
+    CHECK(tip.z < -0.9f);                          // the tip along -Z
+    CHECK(f.ToHand(o + Vec3{-0.3f, 1.9f, 0}).x > 0.1f);  // the teeth towards +X
 }
 
 TEST(SettingsComfortProfiles) {

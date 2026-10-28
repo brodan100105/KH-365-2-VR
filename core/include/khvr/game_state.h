@@ -44,6 +44,7 @@ struct GameFrame {
     bool inGameplay = false;     // a field scene with a controllable player
     bool inCutscene = false;     // an event script or camera animation drives the camera
     bool inMenu = false;         // pause / camp menu, shops, title: show the giant screen
+    bool inBattle = false;       // a battle area (enemies about), not the Grey Area or a town
     bool menuInput = false;      // the game reads the D-pad as a menu cursor (no player in the field)
     uint32_t frameCounter = 0;   // increments once per game frame (30 Hz or 60 Hz)
     GameCamera camera;           // the game's own camera this frame

@@ -140,6 +140,7 @@ enum class SettingId : int {
     // Game
     GameLanguage,
     GameInvertTurn,
+    GameAnalogMove,
     GameUnitsPerMeter,
     GameShowFps,
 

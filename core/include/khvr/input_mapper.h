@@ -49,6 +49,9 @@ public:
     // Analog movement in world space (length 0..1), for the analog movement hook.
     const Vec3 &analogMoveWorld() const { return analogMove_; }
     uint16_t heldButtons() const { return held_; }
+    // The thumbstick's direction as the game's D-pad heading (0..0xffff: 0 the game camera's
+    // forward, 0x4000 its left) while it moves Roxas in the field, -1 otherwise.
+    int fieldHeading() const { return fieldHeading_; }
 
     // The game shows a menu: the stick then moves its cursor one axis at a time, with a firmer
     // press and a release point, instead of steering 8 ways relative to the camera.
@@ -80,7 +83,8 @@ private:
     uint16_t dodgeDpad_ = 0;
     int dodgeFrames_ = 0;
     bool menuStick_ = false;
-    bool triggerDown_[2] = {false, false};  // each trigger pressed (with hysteresis)
+    bool triggerDown_[2] = {false, false};
+    int fieldHeading_ = -1;  // each trigger pressed (with hysteresis)
     uint16_t menuDir_ = 0;  // the menu direction held, 0 none
     int octant_ = -1;       // the field octant held, -1 none
 };

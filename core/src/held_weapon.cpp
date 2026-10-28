@@ -15,34 +15,38 @@ Vec3 WeaponFrame::ToHand(const Vec3 &p) const {
 WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points) {
     WeaponFrame f;
     if (points.size() < 3) return f;
-    // The blade: from the origin to the farthest point.
-    Vec3 far{};
-    for (const Vec3 &p : points)
-        if (Dot(p, p) > Dot(far, far)) far = p;
-    if (Length(far) < 1e-4f) return f;
-    f.blade = Normalize(far);
-    // Its extent along that way: an origin well inside it (a model centred on itself) is no grip.
-    float lo = 0.0f, hi = 0.0f;
+    // The blade: between the two points farthest apart (from the first, then from that one),
+    // wherever the model's own origin is.
+    auto farthest = [&](const Vec3 &from) {
+        Vec3 best = from;
+        for (const Vec3 &p : points)
+            if (Dot(p - from, p - from) > Dot(best - from, best - from)) best = p;
+        return best;
+    };
+    Vec3 a = farthest(points[0]), b = farthest(a);
+    const float total = Length(b - a);
+    if (total < 1e-4f) return f;
+    // The teeth: the point farthest off that line. They are at the tip, so the end nearer them is
+    // the tip and the other the pommel.
+    const Vec3 axis = (b - a) / total;
+    Vec3 off{}, teeth = a;
     for (const Vec3 &p : points) {
-        lo = std::min(lo, Dot(p, f.blade));
-        hi = std::max(hi, Dot(p, f.blade));
+        const Vec3 d = p - a;
+        const Vec3 across = d - axis * Dot(d, axis);
+        if (Dot(across, across) > Dot(off, off)) {
+            off = across;
+            teeth = p;
+        }
     }
-    const float total = hi - lo;
-    f.grip = {};
-    if (-lo > 0.2f * total) f.grip = f.blade * (lo + 0.12f * total);  // the handle: a hand in from the end
-    f.length = hi - Dot(f.grip, f.blade);
-    // The teeth: the point farthest off the blade's line.
-    Vec3 off{};
-    for (const Vec3 &p : points) {
-        const Vec3 d = p - f.grip;
-        const Vec3 across = d - f.blade * Dot(d, f.blade);
-        if (Dot(across, across) > Dot(off, off)) off = across;
-    }
+    if (Dot(teeth - a, axis) < 0.5f * total) std::swap(a, b);
+    f.blade = Normalize(b - a);
+    f.grip = a + f.blade * (0.12f * total);  // a hand in from the pommel: the handle
+    f.length = total * 0.88f;
     if (Length(off) < 1e-5f) {
         // A plain rod: any way across will do.
         off = Cross(f.blade, std::fabs(f.blade.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0});
     }
-    f.side = Normalize(off);
+    f.side = Normalize(off - f.blade * Dot(off, f.blade));
     f.valid = f.length > 1e-4f;
     return f;
 }

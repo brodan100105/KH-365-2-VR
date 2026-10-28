@@ -148,8 +148,15 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
         // Stick up is "forward" along moveBasisYaw.
         Vec3 local{mx / mag * scaled, 0.0f, -my / mag * scaled};
         analogMove_ = Quat::Yaw(moveBasisYaw).Rotate(local);
-        if (!menuStick_) held |= FieldDpad(mx, my, moveBasisYaw - gameCameraYaw);
+        if (!menuStick_) {
+            held |= FieldDpad(mx, my, moveBasisYaw - gameCameraYaw);
+            const float a = WrapAngle(std::atan2(-mx, my) + moveBasisYaw - gameCameraYaw);
+            fieldHeading_ = static_cast<int>(std::lround((a < 0 ? a + 2.0f * kPi : a) * (65536.0f / (2.0f * kPi)))) & 0xffff;
+        } else {
+            fieldHeading_ = -1;
+        }
     } else {
+        fieldHeading_ = -1;
         analogMove_ = {};
         octant_ = -1;
     }

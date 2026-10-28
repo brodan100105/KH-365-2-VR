@@ -78,6 +78,7 @@ struct PlatformPlayer {
     bool menu = false;         // a menu over the field runs (camp menu, shop, save point...)
     bool event = false;        // an event script (ov023) drives the scene: a cutscene
     bool choice = false;       // a choice waits for an answer (an NPC's question, a confirmation)
+    bool battle = false;       // a battle area (enemies' overlays loaded), not the Grey Area or a town
 };
 
 struct PlatformWorld {
@@ -199,6 +200,9 @@ public:
     std::string crashReason() const;
     // The last lines of the boot log, for the in-headset status panel.
     std::vector<std::string> RecentLog(size_t lines) const;
+    // Analog movement: while the player's D-pad is held, the game moves him this way instead of
+    // the D-pad's eight (u16: 0 the camera's forward, 0x4000 its left), -1 the D-pad's own.
+    void SetMoveHeading(int heading);
     // A line from the app into the boot log (what a gesture pressed, ...).
     void LogLine(const std::string &line);
 };

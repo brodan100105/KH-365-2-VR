@@ -318,6 +318,11 @@ u32 w2c_env_khvr_host_own_cursors(struct w2c_env *) { return gOwnCursors ? 1 : 0
 
 u32 w2c_env_khvr_host_draw_all(struct w2c_env *) { return gDrawAll ? 1 : 0; }
 
+u32 w2c_env_khvr_host_move_heading(struct w2c_env *, u32 actor) {
+    const int32_t h = gMoveHeading;
+    return h >= 0 && actor == SwapPlayerActor() ? static_cast<u32>(h) : 0xffffffffu;
+}
+
 void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }
 
 void w2c_env_khvr_host_model_end(struct w2c_env *) { GxModelBegin(0); }

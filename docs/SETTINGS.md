@@ -178,5 +178,6 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `language` | Language | `english`, `french`, `german`, `italian`, `spanish` | `english` | Game text language (EU release). Applies on the next launch. |
 | `invert_turn` | Invert turning | `true` / `false` | `false` | Swap the direction of right-stick turning. |
+| `analog_move` | Move any direction | `true` / `false` | `true` | Roxas walks and runs the exact way the thumbstick points instead of the DS D-pad's eight directions (in the field; menus keep the D-pad). |
 | `units_per_meter` | World units per meter | 0.05 to 64 | `1` | Calibration: game world units in one real meter at life size. |
 | `show_fps` | Show frame rate | `true` / `false` | `false` | Shows game and headset frame rates on the HUD. |

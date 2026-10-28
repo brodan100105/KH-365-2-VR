@@ -781,7 +781,8 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     CombatFrame combat;
     const CombatFrame *combatPtr = nullptr;
-    if (mode == ViewMode::FirstPerson && !panel_.isOpen()) {
+    // Gestures fight: only in a battle area (a swing presses A, which talks to people elsewhere).
+    if (mode == ViewMode::FirstPerson && !panel_.isOpen() && game_->frame().inBattle) {
         CombatInput ci;
         ci.dt = dt;
         ci.head = in.head;
@@ -820,6 +821,10 @@ void VrApp::Frame(const XrFrameInput &in) {
     float moveBasis = mode == ViewMode::GiantScreen ? gameCamYaw : rig_.moveBasisYaw;
     mapper_.SetMenuStick(before.menuInput);
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
+#ifdef KHVR_HAS_GAME
+    if (decomp_)
+        Platform::Get().SetMoveHeading(settings_.Bool(SettingId::GameAnalogMove) ? mapper_.fieldHeading() : -1);
+#endif
 
     const AppActions &act = mapper_.actions();
 #ifdef KHVR_HAS_GAME
@@ -989,7 +994,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     for (int h = 0; h < 2; ++h) {
         if (!in.gripValid[h]) continue;
         const Pose &g = in.grip[h];
-        if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
+        // Every Show body choice keeps the VR hands and Keyblade (Hidden leaves only Roxas out).
+        if (mode == ViewMode::FirstPerson) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
             // Without his head, the game's own Keyblade (when it is found) is in your hand, and no

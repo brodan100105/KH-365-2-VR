@@ -22,6 +22,14 @@ bool SwapPlayerPosition(float out[3]);
 bool SwapEventScene();
 // Standing in the world: the headset draws the field's cursors (khvr_host_own_cursors).
 extern std::atomic<bool> gOwnCursors;
+// The field has enemies (their overlays started since the field's own): a battle area, not the
+// Grey Area or a town.
+extern std::atomic<bool> gBattleArea;
+// Analog movement: the heading (u16, the game's D-pad heading convention: 0 up, 0x4000 left,
+// relative to its camera) the player's held D-pad stands for, -1 none (Platform::SetMoveHeading).
+extern std::atomic<int32_t> gMoveHeading;
+// The player actor of the last SWAP_BUFFERS, 0 none.
+uint32_t SwapPlayerActor();
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

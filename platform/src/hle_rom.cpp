@@ -1,5 +1,6 @@
 // The ROM image, the save file, the boot environment the DS's firmware leaves in the shared
 // area, and overlay resets.
+#include <atomic>
 #include <algorithm>
 #include <cstdio>
 #include <cctype>
@@ -286,7 +287,12 @@ void OverlayStart(uint32_t id) {
         ++n;
     }
     Log("overlay: start ov%03u (%u data ranges reset)", id, n);
+    // A battle area: an enemy's overlay (ov114-ov301) started since the field (ov022) last did.
+    if (id == 22) gBattleArea = false;
+    if (id >= 114 && id <= 301) gBattleArea = true;
 }
+
+std::atomic<bool> gBattleArea{false};
 
 }  // namespace khvr::hle
 

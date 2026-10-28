@@ -415,6 +415,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         frame_.inGameplay = playing;
         frame_.inMenu = !playing;
         frame_.inCutscene = event;
+        frame_.inBattle = pl.battle;
         if (pl.valid) {
             frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
             frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});
@@ -453,8 +454,8 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
                     const float *l = &w.local[(t * 3 + k) * 3];
                     points.push_back({l[0], l[1], l[2]});
                 }
-        // A Keyblade has some dozens of triangles; a handful (an effect, a shadow on him) is not one.
-        if (points.size() < 16 * 3) continue;
+        // A Keyblade has a dozen polygons or more; a handful (an effect or shadow on him, 5) is not one.
+        if (points.size() < 8 * 3) continue;
         WeaponFrame f = FindWeaponFrame(points);
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;
@@ -463,6 +464,17 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     }
     if (best < 0) return;  // not drawn this frame: the last one stays
     TexturedWorld &k = heldWeapon_;
+    {
+        // Into the boot log when what is taken changes (to tell a Keyblade from an effect).
+        size_t n = 0;
+        for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;
+        if (n != k.vertices.size() / 3) {
+            char line[160];
+            std::snprintf(line, sizeof line, "keyblade: taken for your hand, %zu triangles, %.2f long (its model units), %zu textures",
+                          n, frame.length, w.textures.size());
+            Platform::Get().LogLine(line);
+        }
+    }
     k.vertices.clear();
     k.triangleTexture.clear();
     k.triangleFlags.clear();

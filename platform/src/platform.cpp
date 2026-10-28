@@ -277,6 +277,11 @@ uint32_t SwapPlayerActor() {
 
 void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
 
+namespace hle {
+std::atomic<int32_t> gMoveHeading{-1};
+}
+void Platform::SetMoveHeading(int heading) { hle::gMoveHeading = heading; }
+
 bool Platform::ReadPlayer(PlatformPlayer *out) {
     {
         std::lock_guard<std::mutex> lock(gSwapPlayerMu);
@@ -291,6 +296,7 @@ bool Platform::ReadPlayer(PlatformPlayer *out) {
 bool Platform::ReadPlayerNow(PlatformPlayer *out) {
     using namespace hle;
     *out = PlatformPlayer();
+    out->battle = gBattleArea;
     if (!Guest()) return false;
     auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
     // What else runs, from the object registry's step functions (as the heartbeat lists them):

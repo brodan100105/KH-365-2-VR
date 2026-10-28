@@ -22,10 +22,9 @@ struct WeaponFrame {
     Vec3 ToHand(const Vec3 &p) const;
 };
 
-// Finds the frame of a weapon from its vertices. The model's origin is taken as its grip (where
-// the game attaches it to the hand) when it lies near one end of the blade; otherwise the grip
-// is a little in from the end nearest the origin. The blade runs to the vertex farthest from the
-// grip, the teeth to the vertex farthest off the blade.
+// Finds the frame of a weapon from its vertices alone (its model's origin may be anywhere): the
+// blade between its two points farthest apart, the tip the end its teeth (the point farthest off
+// that line) are at, the grip a little in from the other end.
 WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points);
 
 }  // namespace khvr

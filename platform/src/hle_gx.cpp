@@ -1718,6 +1718,7 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
         double localFar = 0;  // farthest vertex from its model's origin
         uint32_t polygons = 0;
+        uint32_t translucent = 0;  // of them see-through (a swing's trail, an effect)
     };
     std::unordered_map<uint32_t, Box> boxes;
     for (const WorldPoly &w : g.worldShown) {
@@ -1740,6 +1741,8 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
             b.localFar = std::max(b.localFar, std::sqrt(double(v.lx) * v.lx + double(v.ly) * v.ly + double(v.lz) * v.lz));
         }
         ++b.polygons;
+        const uint32_t alpha = (w.attr >> 16) & 31, format = (w.texParam >> 26) & 7;
+        if ((alpha > 0 && alpha < 31) || format == 1 || format == 6) ++b.translucent;
     }
     st.objectsDrawn = static_cast<uint32_t>(boxes.size());
     st.objectsMin = std::min(st.objectsMin, st.objectsDrawn);
@@ -1769,6 +1772,12 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     tag[his[0].first] = kWorldModelPlayer;
     st.playerObj = his[0].first;
     st.playerPolygons = his[0].second->polygons;
+    // Attached: a model of some polygons (his Keyblade has a dozen); a handful (5, an effect or a
+    // shadow under him) is not one of his.
+    // Nor is a see-through one (the trail a swing leaves): the Keyblade is solid.
+    his.erase(std::remove_if(his.begin() + 1, his.end(),
+                             [](const auto &h) { return h.second->polygons < 8 || h.second->translucent * 2 > h.second->polygons; }),
+              his.end());
     for (size_t i = 1; i < his.size() && i <= static_cast<size_t>(kWorldAttachedMax); ++i) {
         tag[his[i].first] = static_cast<uint8_t>(kWorldModelAttached + i - 1);
         st.attachedObj[i - 1] = his[i].first;
