@@ -43,9 +43,14 @@ public:
     // Picture > Draw while the game runs: the screens of a frame are drawn on a thread of their
     // own while the game runs the next frame, as the DS does, instead of before it.
     void SetParallelCapture(bool on) { parallel_ = on; }
-    // First person without the full body: the game's own Roxas (his model and what he holds,
-    // the polygons right around his feet) is left out of the captured world.
-    void SetHidePlayer(bool on) { hidePlayer_ = on; }
+    // First person: the game's own Roxas (his model and what he holds, the polygons right around
+    // his feet) is left out of the captured world, or only his head and hair: what lies above
+    // `headCut` of his height.
+    enum class HidePlayer { None, All, Head };
+    void SetHidePlayer(HidePlayer what, float headCut) {
+        hidePlayer_ = what;
+        headCut_ = headCut;
+    }
     // The game draws what lies outside its own camera's view too (Platform::SetDrawAll).
     void SetDrawAll(bool on) { Platform::Get().SetDrawAll(on); }
     // The headset draws the field's cursors at their targets; the game leaves its own out.
@@ -93,7 +98,8 @@ private:
     std::atomic<bool> standInWorld_{false};
     std::atomic<bool> cutscenesInWorld_{false};
     bool eventAnchored_ = false;  // a cutscene without the player has its view's place
-    bool hidePlayer_ = false;
+    HidePlayer hidePlayer_ = HidePlayer::None;
+    float headCut_ = 0.8f;
     // The drawing thread (Picture > Draw while the game runs) and its hand-off.
     std::atomic<bool> parallel_{true};
     std::thread capture_;

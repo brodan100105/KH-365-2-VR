@@ -110,11 +110,17 @@ std::vector<SettingDef> BuildDefs() {
                   "What 'forward' on the movement stick means."));
     d.push_back(B(S::FpRoomScale, "First person", "room_scale", "Room-scale walking", true,
                   "Walking in your room moves the character. Walls push you back."));
-    d.push_back(E(S::FpShowBody, "First person", "show_body", "Show body", 1,
-                  {"hidden", "hands_and_weapon", "full_body"},
-                  {"Hidden", "Hands and Keyblade", "Full body"},
-                  "Which parts of the character model are drawn in first person. Hidden and Hands and "
-                  "Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay)."));
+    // A new key: Body without head became the default, so an old file's choice is not used.
+    d.push_back(E(S::FpShowBody, "First person", "body", "Show body", 3,
+                  {"hidden", "hands_and_weapon", "full_body", "without_head"},
+                  {"Hidden", "Hands and Keyblade", "Full body", "Body without head"},
+                  "Which parts of the character model are drawn in first person. Body without head: "
+                  "the game's Roxas and his Keyblade as the game draws them, without his head and hair "
+                  "in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade "
+                  "leave the game's own Roxas out (the VR hands and Keyblade stay)."));
+    d.push_back(F(S::FpHeadCut, "First person", "head_cut", "Head cut height", 0.8f, 0.5f, 1.0f, 0.01f, "",
+                  "Body without head: the part of Roxas's height above which he is not drawn (his head "
+                  "and hair). Lower it if hair still shows; raise it if his shoulders go."));
     d.push_back(E(S::FpWeaponHand, "First person", "weapon_hand", "Keyblade hand", 1,
                   {"left", "right"}, {"Left", "Right"}, "The hand that holds the Keyblade."));
     d.push_back(B(S::FpDualWield, "First person", "dual_wield", "Dual wield", false,

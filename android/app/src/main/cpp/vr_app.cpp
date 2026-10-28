@@ -702,8 +702,14 @@ void VrApp::Frame(const XrFrameInput &in) {
         decomp_->SetOwnCursors(standInWorld);
         decomp_->SetCutscenesInWorld(settings_.Enum<CutsceneView>(SettingId::CutsceneView) == CutsceneView::SameAsGameplay);
         decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
-        decomp_->SetHidePlayer(lastMode_ == ViewMode::FirstPerson &&
-                               settings_.Enum<BodyDisplay>(SettingId::FpShowBody) != BodyDisplay::FullBody);
+        {
+            const BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
+            const bool fp = lastMode_ == ViewMode::FirstPerson;
+            decomp_->SetHidePlayer(!fp || body == BodyDisplay::FullBody ? DecompGame::HidePlayer::None
+                                   : body == BodyDisplay::WithoutHead   ? DecompGame::HidePlayer::Head
+                                                                        : DecompGame::HidePlayer::All,
+                                   settings_.Get(SettingId::FpHeadCut));
+        }
         decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds || standInWorld);
     }
 #endif
@@ -965,7 +971,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
-            if (h == weapon || dual) {
+            // Without his head, Roxas holds the game's own Keyblade: none in the VR hand.
+            if ((h == weapon || dual) && body != BodyDisplay::WithoutHead) {
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);

@@ -54,6 +54,7 @@ enum class SettingId : int {
     FpMoveRelativeTo,
     FpRoomScale,
     FpShowBody,
+    FpHeadCut,
     FpWeaponHand,
     FpDualWield,
     FpGripAngle,
@@ -147,7 +148,7 @@ enum class ViewMode : int { ThirdPerson = 0, FirstPerson = 1, GiantScreen = 2 };
 enum class CutsceneView : int { GiantScreen = 0, SameAsGameplay = 1 };
 enum class FollowMode : int { Smooth = 0, Locked = 1, Teleport = 2 };
 enum class MoveRelativeTo : int { Head = 0, LeftController = 1, View = 2 };
-enum class BodyDisplay : int { Hidden = 0, HandsAndWeapon = 1, FullBody = 2 };
+enum class BodyDisplay : int { Hidden = 0, HandsAndWeapon = 1, FullBody = 2, WithoutHead = 3 };
 enum class Hand : int { Left = 0, Right = 1 };
 enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };

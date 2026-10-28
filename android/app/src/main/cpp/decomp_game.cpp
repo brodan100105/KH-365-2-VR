@@ -303,7 +303,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // Roxas's own polygons: every vertex within a body-sized cylinder on his feet (game units
         // are about a meter; the field's Roxas is some 1.6 tall).
         const PlatformPlayer &me = latestPlayer_;
-        const bool hide = hidePlayer_ && me.valid;
+        const bool hide = hidePlayer_ == HidePlayer::All && me.valid;
+        const bool hideHead = hidePlayer_ == HidePlayer::Head && me.valid;
         auto onPlayer = [&](const PlatformWorldVertex &v) {
             const float dx = v.x - me.position[0], dz = v.z - me.position[2], dy = v.y - me.position[1];
             return dx * dx + dz * dz < 0.55f * 0.55f && dy > -0.2f && dy < 2.2f;
@@ -334,8 +335,30 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // exactly. Without them (not found), the polygons in and around his body.
         const bool tagged = w.triangleModel.size() == w.triangleFlags.size() &&
                             std::find(w.triangleModel.begin(), w.triangleModel.end(), kWorldModelPlayer) != w.triangleModel.end();
+        // His own triangles (by the capture's tag, else in and around his body) and the height of
+        // his head's cut: headCut_ of the way from his feet to his top.
+        auto his = [&](size_t tri) {
+            const PlatformWorldVertex *v = &w.vertices[tri * 3];
+            return tagged ? w.triangleModel[tri] == kWorldModelPlayer
+                          : (onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v);
+        };
+        float cut = 1e30f, height = 0.0f;
+        if (hideHead) {
+            float top = me.position[1];
+            for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri)
+                if (his(tri))
+                    for (int k = 0; k < 3; ++k) top = std::max(top, w.vertices[tri * 3 + k].y);
+            height = top - me.position[1];
+            if (height > 0.5f) cut = me.position[1] + height * headCut_;
+        }
+        auto inHead = [&](const PlatformWorldVertex *v) {
+            const float hi = std::max({v[0].y, v[1].y, v[2].y}), mid = (v[0].y + v[1].y + v[2].y) / 3;
+            // Above the cut, or reaching over it from just under (hair falling to his neck).
+            return mid > cut || (hi > cut && mid > cut - 0.08f * height);
+        };
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
+            if (hideHead && his(tri) && inHead(v)) continue;
             if (hide && tagged && w.triangleModel[tri] != 0) continue;
             if (hide && !tagged && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
             for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
