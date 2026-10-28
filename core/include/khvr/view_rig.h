@@ -101,8 +101,26 @@ private:
     MotionSmoother motion_;
 };
 
+// In-engine cutscenes, standing in the scene: your head is where the cutscene's camera is,
+// looking its way, and moves and turns with it (smoothed; a cut jumps behind a blink). Only its
+// heading turns the world (the horizon stays level); your own head moves freely within it.
+class CutsceneRig {
+public:
+    void Reset() { initialized_ = false; }
+    RigOutput Update(const Settings &s, const GameFrame &game, const TrackingFrame &tracking);
+
+private:
+    bool initialized_ = false;
+    Vec3 refHead_;               // tracking-space head position the camera's eye maps to
+    Vec3 eye_;                   // the camera's eye, smoothed (world)
+    float cameraYaw_ = 0.0f;     // its heading, smoothed
+    float yawOffset_ = 0.0f;     // tracking -Z to the camera's heading at placement, plus turning
+    TurnController turn_;
+};
+
 // Scale (game units per tracking meter) of a rig, from the settings.
 float ThirdPersonScale(const Settings &s);
 float FirstPersonScale(const Settings &s, float realEyeHeight);
+float CutsceneScale(const Settings &s);
 
 }  // namespace khvr

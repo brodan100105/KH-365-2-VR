@@ -838,7 +838,17 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     // ---- Place the view ----
     const GameFrame &g = game_->frame();
-    if (mode == ViewMode::ThirdPerson) rig_ = thirdPerson_.Update(settings_, g, t);
+    // Standing in a cutscene: you see from its camera, moving with it. Going in or out of one
+    // places the view afresh.
+    const bool cutscene = mode != ViewMode::GiantScreen && g.inCutscene;
+    if (cutscene != inCutsceneView_) {
+        cutscene_.Reset();
+        thirdPerson_.Reset();
+        firstPerson_.Reset();
+        inCutsceneView_ = cutscene;
+    }
+    if (cutscene) rig_ = cutscene_.Update(settings_, g, t);
+    else if (mode == ViewMode::ThirdPerson) rig_ = thirdPerson_.Update(settings_, g, t);
     else if (mode == ViewMode::FirstPerson) rig_ = firstPerson_.Update(settings_, g, t);
     else rig_ = RigOutput{};
     nextRequests_ = rig_.requests;
@@ -1092,7 +1102,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             // Sprites turn to face you: across your view, upright (the world's up stays up).
             WorldMotion motion;
             motion.inBetween = settings_.Bool(SettingId::PicInBetweenFrames);
-            motion.sprites = true;
+            // In a cutscene you see from its camera: sprites stay as it drew them for itself.
+            motion.sprites = !game_->frame().inCutscene;
             const Vec3 f = rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Forward());
             const Vec3 r{-f.z, 0.0f, f.x};
             motion.right = Length(r) > 0.05f ? Normalize(r)

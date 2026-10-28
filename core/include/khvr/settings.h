@@ -27,6 +27,7 @@ enum class SettingId : int {
     ViewSmoothMotion,
     ViewDrawAll,
     CutsceneView,
+    CutsceneWorldScale,
     ModeSwitchButton,
     // Screen (the giant screen used for cutscenes, menus and "Giant screen" mode)
     ScreenDistance,

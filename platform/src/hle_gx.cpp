@@ -393,7 +393,9 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
 // solid polygons: HUD art is see-through.
 void ClassifyHud(const std::vector<WorldPoly> &polys) {
     g.hudShown.assign(polys.size(), 0);
-    if (!g.sceneHasCamera) {
+    // Cutscenes have no 3D HUD, and their camera tracks a face as closely as a HUD piece keeps
+    // its place (Roxas's hair went to the HUD).
+    if (!g.sceneHasCamera || g.eventScene || SwapEventScene()) {
         g.prevKeys.clear();
         g.hudKeys.clear();
         g.hudPlaces.clear();

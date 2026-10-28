@@ -18,6 +18,8 @@ void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs);
 void NoteFrameSwapped();
 // The player's feet as NoteFrameSwapped read them (world, game units); false without a player.
 bool SwapPlayerPosition(float out[3]);
+// An event script (a cutscene) ran as NoteFrameSwapped read the scene.
+bool SwapEventScene();
 // Standing in the world: the headset draws the field's cursors (khvr_host_own_cursors).
 extern std::atomic<bool> gOwnCursors;
 

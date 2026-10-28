@@ -261,6 +261,11 @@ bool SwapPlayerPosition(float out[3]) {
     return true;
 }
 
+bool SwapEventScene() {
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    return gSwapPlayerValid && gSwapPlayer.event;
+}
+
 std::atomic<bool> gOwnCursors{false};
 }  // namespace hle
 

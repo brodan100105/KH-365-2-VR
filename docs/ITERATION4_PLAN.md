@@ -96,8 +96,11 @@ and into VR as real geometry around you.
       (Roxas waking in his room, ov023) showed the scene drawn with NNS_G3dGlb's own lens, so
       already in world space, but with no player actor: the event was only seen with a player,
       so it went to the giant screen. Menus, events and choices are now read without a player,
-      and a cutscene without one has its view where its camera looks as it begins. To check in
-      the headset: the scene where it belongs, the view on camera cuts.
+      and a cutscene without one has its view where its camera looks as it begins. In the
+      headset the scenes stood in the world but the view did not follow the cutscene's camera:
+      now a cutscene rig puts your head at the camera's eye, looking its way, moving and turning
+      (heading only) with it, smoothed, a cut behind a blink, at View > Cutscene world scale
+      (1.75); sprites stay as the game drew them, and no 3D HUD pieces are looked for.
 
 ## Step 5: Roxas in VR (first person)
 

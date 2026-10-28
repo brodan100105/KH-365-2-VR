@@ -20,6 +20,7 @@ hands, DS + giant screen) and the options changed most.
 | `smooth_motion` | Smooth camera motion | `true` / `false` | `true` | Standing in the world, the view follows Roxas smoothly between the game's frames instead of in its steps, which shake most when he changes direction. |
 | `draw_all` | Draw what the game's camera does not see | `true` / `false` | `true` | Standing in the world, the game draws enemies around you even where its own camera does not look (it skips those outside its view for the DS). Costs some speed. |
 | `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or standing in the scene like gameplay (with Stand in the world; scenes whose camera cannot be placed stay on the giant screen). |
+| `cutscene_world_scale` | Cutscene world scale | 0.5 to 4 x | `1.75` | How big in-engine cutscenes are around you when you stand in them: larger fills the space more (1 is the game's own scale). |
 | `mode_switch_button` | Quick mode switch | `true` / `false` | `true` | Hold the right thumbstick click to swap panoramic and first person. |
 
 ## Screen

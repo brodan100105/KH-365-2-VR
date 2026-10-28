@@ -49,6 +49,10 @@ std::vector<SettingDef> BuildDefs() {
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
                   "Watch in-engine cutscenes on the giant screen, or standing in the scene like gameplay "
                   "(with Stand in the world; scenes whose camera cannot be placed stay on the giant screen)."));
+    d.push_back(F(S::CutsceneWorldScale, "View", "cutscene_world_scale", "Cutscene world scale", 1.75f, 0.5f,
+                  4.0f, 0.05f, "x",
+                  "How big in-engine cutscenes are around you when you stand in them: larger fills the "
+                  "space more (1 is the game's own scale)."));
     d.push_back(B(S::ModeSwitchButton, "View", "mode_switch_button", "Quick mode switch", true,
                   "Hold the right thumbstick click to swap panoramic and first person."));
     // ---- Screen ----

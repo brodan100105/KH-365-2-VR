@@ -245,6 +245,32 @@ TEST(ThirdPersonTeleportReinitializes) {
     CHECK(Near(rig.anchor(), g.playerPos));
 }
 
+TEST(CutsceneRigSeesFromTheCutsceneCamera) {
+    Settings s;
+    s.Set(SettingId::CutsceneWorldScale, 1.0f);
+    CutsceneRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.camera.eye = {2, 3, 10};
+    g.camera.target = {2, 3, 0};  // looking along -Z
+    TrackingFrame t = MakeTracking({0.2f, 1.6f, 0.1f});
+    RigOutput o = rig.Update(s, g, t);
+    // Your head where you stand is the camera's eye, your look its way.
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {2, 3, 10}));
+    const Vec3 look = o.trackingToWorld.TransformDir(t.head.orientation.Forward());
+    CHECK(Near(Normalize(look), {0, 0, -1}));
+    // The camera pans: the view goes with it, smoothly.
+    g.camera.eye = {3, 3, 10};
+    g.camera.target = {3, 3, 0};
+    for (int i = 0; i < 90; ++i) o = rig.Update(s, g, t);
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {3, 3, 10}));
+    // A cut to the other side of the scene: there at once, looking the new way.
+    g.camera.eye = {0, 3, -20};
+    g.camera.target = {10, 3, -20};  // along +X
+    o = rig.Update(s, g, t);
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {0, 3, -20}));
+    CHECK(Near(Normalize(o.trackingToWorld.TransformDir(t.head.orientation.Forward())), {1, 0, 0}));
+}
+
 TEST(ThirdPersonFollowsCameraSettlingAfterSpawn) {
     Settings s;
     ThirdPersonRig rig;

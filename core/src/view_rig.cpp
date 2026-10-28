@@ -14,6 +14,8 @@ constexpr float kTeleportFollowMeters = 2.5f;
 // The third-person view follows the game camera's heading for up to this long after it is
 // placed, until that heading has held still for kSettledSeconds.
 constexpr float kSettleSeconds = 4.0f;
+// A cutscene's camera moving farther than this in one step is a cut.
+constexpr float kCutsceneCutMeters = 3.0f;
 constexpr float kSettledSeconds = 0.5f;
 
 Vec3 Flat(const Vec3 &v) { return {v.x, 0.0f, v.z}; }
@@ -96,6 +98,10 @@ Vec3 MotionSmoother::Update(const Vec3 &target, uint32_t gameFrame, float dt, co
 
 float ThirdPersonScale(const Settings &s) {
     return s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::TpWorldScale);
+}
+
+float CutsceneScale(const Settings &s) {
+    return s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::CutsceneWorldScale);
 }
 
 float FirstPersonScale(const Settings &s, float realEyeHeight) {
@@ -283,6 +289,48 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     float moving = Clamp(Length(t.moveAxis), 0.0f, 1.0f);
     float turnSpeed = t.dt > 0 && !snapped ? std::fabs(turn) / t.dt : 0.0f;
     out.vignette = s.Get(SettingId::ComfortVignette) * Clamp(moving + turnSpeed / 1.5f, 0.0f, 1.0f);
+    return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cutscenes
+// ---------------------------------------------------------------------------------------------
+
+RigOutput CutsceneRig::Update(const Settings &s, const GameFrame &game, const TrackingFrame &t) {
+    RigOutput out;
+    const float scale = CutsceneScale(s);
+    const float headYaw = YawOf(t.head.orientation);
+    const Vec3 eye = game.camera.eye;
+    const float cameraYaw = CameraYaw(game.camera);
+
+    // A cut: the camera jumps (far, or turns sharply in one step). Place the view again there.
+    const bool cut = initialized_ && (Length(eye - eye_) > kCutsceneCutMeters * scale ||
+                                      std::fabs(WrapAngle(cameraYaw - cameraYaw_)) > DegToRad(30.0f));
+    if (!initialized_ || t.recenter || cut) {
+        refHead_ = t.head.position;
+        yawOffset_ = -headYaw;  // where you look now is where the camera looks
+        eye_ = eye;
+        cameraYaw_ = cameraYaw;
+        initialized_ = true;
+        if (cut || t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
+    } else {
+        // Follow the camera's moves and turns, smoothed out of the game's frame steps.
+        const float k = 1.0f - std::exp(-8.0f * t.dt);
+        eye_ += (eye - eye_) * k;
+        cameraYaw_ = WrapAngle(cameraYaw_ + WrapAngle(cameraYaw - cameraYaw_) * k);
+    }
+
+    bool snapped = false;
+    yawOffset_ = WrapAngle(yawOffset_ + turn_.Update(s, t.turnAxis, t.dt, &snapped));
+    if (snapped) out.blinkStarted |= s.Bool(SettingId::ComfortBlink);
+
+    const float viewYaw = WrapAngle(cameraYaw_ + yawOffset_);
+    Similarity &m = out.trackingToWorld;
+    m.scale = scale;
+    m.rotation = Quat::Yaw(viewYaw);
+    // Your head at the reference place sees from the camera's eye.
+    m.translation = eye_ - m.rotation.Rotate(refHead_ * scale);
+    out.moveBasisYaw = viewYaw;
     return out;
 }
 

@@ -87,6 +87,8 @@ private:
     std::string notice_;  // why the demo arena runs instead of the game
     ThirdPersonRig thirdPerson_;
     FirstPersonRig firstPerson_;
+    CutsceneRig cutscene_;
+    bool inCutsceneView_ = false;  // the cutscene rig places the view
     CombatRecognizer combat_;
     InputMapper mapper_;
     SettingsPanel panel_;
