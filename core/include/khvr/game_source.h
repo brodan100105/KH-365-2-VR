@@ -53,6 +53,7 @@ struct TexturedWorld {
     std::vector<float> billboard;
     // The field's cursor is on a target here (world): kind 1 or 3 an enemy, 2 a person to talk to
     // or a thing to use; locked when locked on. The headset draws the cursor itself.
+    bool manualSort = false;  // the game orders its translucent triangles (else back to front)
     bool lockOn = false;
     Vec3 lockOnAt;
     int lockOnKind = 0;

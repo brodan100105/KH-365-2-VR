@@ -1708,6 +1708,7 @@ void GxCaptureWorld(PlatformWorld *out) {
 
     out->hasCamera = true;
     out->worldSpace = g.sceneHasCamera;
+    out->manualSort = g.shownManualSort;
     out->eventScene = g.eventScene;
     for (int i = 0; i < 16; ++i) {
         out->lens[i] = static_cast<float>(lensD[i]);

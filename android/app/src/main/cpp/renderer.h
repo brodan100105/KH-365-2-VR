@@ -50,6 +50,10 @@ struct WorldMotion {
     bool inBetween = false;
     bool sprites = false;
     Vec3 right{1, 0, 0}, up{0, 1, 0};
+    // Where the viewer is (world space): translucent triangles are drawn back to front from here
+    // when the game leaves their order to the DS.
+    bool hasEye = false;
+    Vec3 eye;
 };
 
 class Renderer {

@@ -918,8 +918,11 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
             renderer_.DrawQuad(backTex_.id(), Pose{}, 2.0f, 2.0f, Mat4::Identity());
             glClear(GL_DEPTH_BUFFER_BIT);
             const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            WorldMotion giantMotion;
+            giantMotion.hasEye = true;
+            giantMotion.eye = g.camera.eye;
             renderer_.DrawTexturedWorld(game_->texturedWorld(), eyeProj * view,
-                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp);
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, giantMotion);
         } else {
             renderer_.DrawTriangles(game_->world(), proj * view);
             renderer_.DrawTriangles(game_->player(), proj * view);
@@ -1095,6 +1098,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
             motion.right = Length(r) > 0.05f ? Normalize(r)
                                              : rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Rotate({1, 0, 0}));
             motion.up = Normalize(Cross(motion.right, f));
+            motion.hasEye = true;
+            motion.eye = rig_.trackingToWorld.Transform(in.head.position);
             renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
                                         filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
             // The field's cursor at its target, facing you, over everything (the game's own are

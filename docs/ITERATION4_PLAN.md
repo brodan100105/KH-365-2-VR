@@ -92,8 +92,12 @@ and into VR as real geometry around you.
       event camera: first slice in, the scene's lens is its most used perspective projection and
       that camera places it in the world (or, folded into the projection, it comes in world space
       already); with Same as gameplay such a scene counts as gameplay for the view rigs, and the
-      heartbeat counts the frames placed ("event scene: ... placed in the world"). To check in the
-      headset: the scene where it belongs, the view on camera cuts, scenes without the player.
+      heartbeat counts the frames placed ("event scene: ... placed in the world"). The first log
+      (Roxas waking in his room, ov023) showed the scene drawn with NNS_G3dGlb's own lens, so
+      already in world space, but with no player actor: the event was only seen with a player,
+      so it went to the giant screen. Menus, events and choices are now read without a player,
+      and a cutscene without one has its view where its camera looks as it begins. To check in
+      the headset: the scene where it belongs, the view on camera cuts.
 
 ## Step 5: Roxas in VR (first person)
 

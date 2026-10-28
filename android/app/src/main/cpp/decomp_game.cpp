@@ -352,6 +352,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         }
         t.lockOn = w.lockOn;
         t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
+        t.manualSort = w.manualSort;
         t.lockOnKind = w.lockOnKind;
         t.lockOnLocked = w.lockOnLocked;
         std::copy(w.viewport, w.viewport + 4, t.viewport);
@@ -372,7 +373,13 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         if (pl.valid) {
             frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
             frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});
+        } else if (event && w.worldSpace && !eventAnchored_) {
+            // A cutscene without the player (Roxas waking in his room): the view stands where its
+            // camera looks as it begins, a unit (about a metre) below that, for the whole scene.
+            frame_.playerPos = {w.target[0], w.target[1] - 1.0f, w.target[2]};
+            eventAnchored_ = true;
         }
+        if (!event) eventAnchored_ = false;
         if (w.hasCamera) {
             frame_.camera.eye = {w.eye[0], w.eye[1], w.eye[2]};
             frame_.camera.target = {w.target[0], w.target[1], w.target[2]};

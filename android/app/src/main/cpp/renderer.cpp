@@ -412,6 +412,18 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
         };
         std::stable_sort(pass1.begin(), pass1.end(), byKey);
         std::stable_sort(pass2.begin(), pass2.end(), byKey);
+        if (!world.manualSort && motion.hasEye) {
+            // The DS orders translucent polygons itself when the game does not: back to front
+            // from the viewer, so a face drawn translucent hides the hair behind it.
+            std::vector<float> far(triangles);
+            for (size_t t : pass3) {
+                const Vec3 c = (world.vertices[t * 3].position + world.vertices[t * 3 + 1].position +
+                                world.vertices[t * 3 + 2].position) * (1.0f / 3.0f);
+                const Vec3 d = c - motion.eye;
+                far[t] = Dot(d, d);
+            }
+            std::stable_sort(pass3.begin(), pass3.end(), [&](size_t a, size_t b) { return far[a] > far[b]; });
+        }
         for (size_t t : pass1) add(t, false, true, 0.02f);
         for (size_t t : pass2) add(t, false, true, 0.99f);
         for (size_t t : pass3) add(t, true, (world.triangleFlags[t] & kTriDepthWrite) != 0, 0.02f);

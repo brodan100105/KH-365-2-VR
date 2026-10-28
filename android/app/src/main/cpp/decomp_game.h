@@ -88,6 +88,7 @@ private:
     PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
     std::atomic<bool> standInWorld_{false};
     std::atomic<bool> cutscenesInWorld_{false};
+    bool eventAnchored_ = false;  // a cutscene without the player has its view's place
     bool hidePlayer_ = false;
     // The drawing thread (Picture > Draw while the game runs) and its hand-off.
     std::atomic<bool> parallel_{true};

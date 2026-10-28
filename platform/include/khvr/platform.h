@@ -91,6 +91,9 @@ struct PlatformWorld {
     // Otherwise (an event scene's lens without it) camera space, for the giant screen only.
     bool worldSpace = false;
     bool eventScene = false;  // drawn with an event scene's own lens
+    // The game sorts its translucent polygons itself (SWAP_BUFFERS manual sort); otherwise the DS
+    // orders them, and a viewer should draw them back to front.
+    bool manualSort = false;
     float eye[3] = {0, 0, 0}, target[3] = {0, 0, -1}, up[3] = {0, 1, 0};
     float fovY = 0, nearZ = 0, farZ = 0;  // radians, game units
     // The game's own lens and camera (world to view) matrices, exactly as the DS used them. The
