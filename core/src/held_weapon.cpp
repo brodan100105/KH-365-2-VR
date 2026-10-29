@@ -40,8 +40,10 @@ WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points) {
     }
     if (Dot(teeth - a, axis) < 0.5f * total) std::swap(a, b);
     f.blade = Normalize(b - a);
-    f.grip = a + f.blade * (0.12f * total);  // a hand in from the pommel: the handle
-    f.length = total * 0.88f;
+    // The handle: inside the guard, a fifth of the way from the pommel's end (past the chain that
+    // hangs from it in the Kingdom Key).
+    f.grip = a + f.blade * (0.2f * total);
+    f.length = total * 0.8f;
     if (Length(off) < 1e-5f) {
         // A plain rod: any way across will do.
         off = Cross(f.blade, std::fabs(f.blade.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0});

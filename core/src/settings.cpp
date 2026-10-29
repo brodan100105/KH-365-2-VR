@@ -131,6 +131,9 @@ std::vector<SettingDef> BuildDefs() {
                   5.0f, "deg", "Tilts the Keyblade in your hand."));
     d.push_back(F(S::FpKeybladeLength, "First person", "keyblade_length", "Keyblade length",
                   1.0f, 0.5f, 1.5f, 0.05f, "x", "Visual and hit length of the Keyblade."));
+    d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade grip", 0.0f, -0.3f, 0.3f, 0.01f, "m",
+                  "Slides the Keyblade along its blade in your hand: up to hold it lower on the handle, "
+                  "down to hold it higher."));
     // ---- Combat ----
     d.push_back(B(S::CombatMotion, "Combat", "motion_combat", "Motion combat", true,
                   "Swing the controller to attack (first person)."));

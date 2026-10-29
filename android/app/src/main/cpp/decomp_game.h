@@ -89,6 +89,7 @@ private:
     DsScreens screens_;
     TexturedWorld texturedWorld_;
     TexturedWorld heldWeapon_;
+    double heldSeen_ = 0.0;  // steady-clock seconds the held Keyblade was last drawn by the game
     // From a capture with Roxas's models: his Keyblade, in the hand's frame, into heldWeapon_.
     void TakeHeldWeapon(const PlatformWorld &w);
     std::atomic<bool> worldCapture_{false};

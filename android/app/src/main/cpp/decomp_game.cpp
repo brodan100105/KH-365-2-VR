@@ -465,6 +465,18 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     if (best < 0) return;  // not drawn this frame: the last one stays
     TexturedWorld &k = heldWeapon_;
     {
+        // A much smaller model on him for a moment (a part of an effect) does not replace the
+        // Keyblade in your hand: the log showed it switching between 112 and 25 triangles.
+        size_t n = 0;
+        for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;
+        const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const size_t held = k.vertices.size() / 3;
+        if (n * 2 < held && now - heldSeen_ < 3.0) return;
+        if (n * 2 >= held) heldSeen_ = now;
+    }
+    // The game's model faces the other way about its blade from the frame found: turned half round.
+    frame.side = frame.side * -1.0f;
+    {
         // Into the boot log when what is taken changes (to tell a Keyblade from an effect).
         size_t n = 0;
         for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;

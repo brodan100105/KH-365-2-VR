@@ -164,7 +164,7 @@ TEST(WeaponFrameFromItsShape) {
     WeaponFrame f = FindWeaponFrame(pts);
     CHECK(f.valid);
     CHECK(f.blade.y > 0.99f);                      // pommel to tip
-    CHECK_NEAR(f.grip.y, o.y + 0.24f, 0.05f);      // a hand in from the pommel
+    CHECK_NEAR(f.grip.y, o.y + 0.4f, 0.06f);       // the handle, a fifth in from the pommel
     const Vec3 tip = f.ToHand(o + Vec3{0, 2, 0});
     CHECK(tip.z < -0.9f);                          // the tip along -Z
     CHECK(f.ToHand(o + Vec3{-0.3f, 1.9f, 0}).x > 0.1f);  // the teeth towards +X

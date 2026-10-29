@@ -1025,7 +1025,7 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                     const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
                     // The game's own Keyblade, its blade along the axis swings are measured on
                     // and as long as they take it to be.
-                    const Mat4 model = Mat4::FromSimilarity({len, q, g.position});
+                    const Mat4 model = Mat4::FromSimilarity({len, q, g.position + axis * settings_.Get(SettingId::FpKeybladeGrip)});
                     renderer_.DrawTexturedWorld(held, vpTracking * model,
                                                 nearest, WorldMotion(), 1);
                     continue;
