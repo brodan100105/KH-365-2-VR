@@ -1,17 +1,31 @@
 # KH 358/2 Days VR
 
-A standalone **Meta Quest 3** VR port of *Kingdom Hearts 358/2 Days*, built on the
-[khdays-decomp](https://github.com/Yokimitsuro/khdays-decomp) decompilation, in the spirit of
-[GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) for Super Mario Galaxy: the game's own code
-runs natively on the headset (no emulator) and is drawn in stereo from wherever your head is.
+**KH 358/2 Days VR** is an unofficial fan port of *Kingdom Hearts 358/2 Days* (Nintendo DS) to the
+**Meta Quest 3**. It is built on the [khdays-decomp](https://github.com/Yokimitsuro/khdays-decomp)
+decompilation, in the spirit of [GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) for Super
+Mario Galaxy: the game's own code runs natively on the headset (no emulator). Play it on a giant
+floating screen, or step into its world around you in third or first person, with
+motion-controlled Keyblade combat and comfort options such as snap turning and a vignette.
+
+**You must supply your own copy of the game.** This project contains no game data: no ROM, art,
+music or other copyrighted material. At first launch the app looks for your own legally obtained
+dump of the European cartridge (game code YKGP) on the headset and reads everything from it.
+Nothing from the game is ever included in the APK. Please don't ask for or share ROMs.
+
+**Early development:** expect bugs, crashes, missing features and settings that change between
+builds. Much of the VR side is experimental and still being tuned on real hardware.
+
+**100% vibecoded:** every line of code was written with [Claude Code](https://claude.com/claude-code),
+Anthropic's AI coding agent, guided by playtesting feedback on a Quest 3.
+
+*Kingdom Hearts is the property of Square Enix and Disney. This project is not affiliated with or
+endorsed by Square Enix, Disney, Nintendo or Meta.*
 
 > **Status: iteration 4, the world in VR.** The whole decomp builds into the APK and runs natively
-> on the headset: the game plays from the title screen through the opening, the movies (with
-> sound), the music and sound effects, and its 3D, drawn by the port's own DS 3D engine at up to
-> four times the DS's resolution. The game's 3D can already be shown as real geometry on the
-> giant screen at headset resolution (**Screen > Game picture**: *Sharp*, the default, or
-> *3D depth*, experimental); walking around in it comes next
-> ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
+> on the headset, with its movies, music and sound, and its 3D drawn by the port's own DS 3D
+> engine. You can stand in the game's world in third or first person, cutscenes play around you,
+> and first person has motion combat; the game's Keyblade in your hand and Roxas's arms following
+> yours are in progress ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
 
 ## View modes
 
