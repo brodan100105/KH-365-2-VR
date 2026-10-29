@@ -536,6 +536,9 @@ ZERO_INIT = {
     "Ov002_ScriptMoveSlot", "Ov006_MissionBuildOptionRows", "Ov008_MissionMenuWaitReady",
     "Ov008_MoveGridCursor", "Ov025_MoveGridCursor", "Ov213_EnterLeap", "Ov253_IdleTick",
     "Ov253_SeekTick", "Ov273_EnterLeap", "Ov285_Chase_DecideAttack", "Ov286_Chase_DecideAttack",
+    # The mission results' reward list and its exit confirmation: with no direction held, clang
+    # took the unset direction as Up, so the list went down a moment and straight back up.
+    "Ov005_HandleDirectionalInput", "Ov005_UpdateConfirmation",
 }
 
 
