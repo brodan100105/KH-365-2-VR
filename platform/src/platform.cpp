@@ -564,6 +564,8 @@ void Platform::Heartbeat() {
             }
             Log("  Roxas: %u models drawn (%u to %u since the last heartbeat); %s", w.objectsDrawn, w.objectsMin,
                 w.objectsMax, line.c_str());
+            if (const std::string joints = TakePlayerJointTable(); !joints.empty())
+                Log("  Roxas's joints (heading as the player line says):%s", joints.c_str());
             w.objectsMin = ~0u;
             w.objectsMax = 0;
         }

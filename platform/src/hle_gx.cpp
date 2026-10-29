@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -1703,6 +1704,16 @@ void GxNoteLockOn(uint32_t position, int kind, bool locked) {
 // Roxas's own models among the render objects drawn (NNS_G3dDraw): those whose polygons all lie
 // right where he stands. The one with the most polygons is his; the others (his Keyblade) are
 // attached to him, by their number of polygons. Tags each worldShown polygon (WorldPoly::model).
+std::mutex gJointTableMu;
+std::string gJointTable;  // the latest table of his model's joints, taken by the heartbeat
+
+std::string TakePlayerJointTable() {
+    std::lock_guard<std::mutex> lock(gJointTableMu);
+    std::string t;
+    t.swap(gJointTable);
+    return t;
+}
+
 void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, const std::vector<bool> &inScene) {
     for (WorldPoly &w : g.worldShown) w.model = 0;
     GxWorldStats &st = gWorldStats;
@@ -1808,6 +1819,51 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         }
     }
     st.playerJoints = static_cast<uint32_t>(joints.size());
+    // For his arms following yours (next): each joint's polygons, where they are in his model's own
+    // space (the vertices as given: a bind pose, or each joint's own space) and around his feet
+    // now, and their size. Into the boot log at most every half minute.
+    {
+        static auto last = std::chrono::steady_clock::time_point();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last > std::chrono::seconds(30)) {
+            last = now;
+            std::unordered_map<uint32_t, std::array<double, 9>> local;  // sum xyz, min xyz, max xyz
+            std::unordered_map<uint32_t, uint32_t> count;
+            for (const WorldPoly &w : g.worldShown) {
+                if (w.obj != st.playerObj) continue;
+                auto it = local.find(w.joint);
+                if (it == local.end()) it = local.emplace(w.joint, std::array<double, 9>{0, 0, 0, 1e9, 1e9, 1e9, -1e9, -1e9, -1e9}).first;
+                auto &a = it->second;
+                for (int i = 0; i < w.n; ++i) {
+                    const double p[3] = {w.v[i].lx, w.v[i].ly, w.v[i].lz};
+                    for (int k = 0; k < 3; ++k) {
+                        a[k] += p[k];
+                        a[3 + k] = std::min(a[3 + k], p[k]);
+                        a[6 + k] = std::max(a[6 + k], p[k]);
+                    }
+                    ++count[w.joint];
+                }
+            }
+            std::string table;
+            int index = 0;
+            for (const auto &[joint, pts] : joints) {
+                double c[3] = {0, 0, 0};
+                for (const auto &p : pts)
+                    for (int k = 0; k < 3; ++k) c[k] += p[k] / pts.size();
+                const auto &a = local[joint];
+                const double n = std::max<uint32_t>(count[joint], 1);
+                char line[256];
+                std::snprintf(line, sizeof line,
+                              "\n    joint %2d: %3u polygons, own space at %+.2f %+.2f %+.2f size %.2f %.2f %.2f, "
+                              "now %+.2f %+.2f %+.2f from his feet",
+                              index++, jointPolygons[joint], a[0] / n, a[1] / n, a[2] / n, a[6] - a[3], a[7] - a[4],
+                              a[8] - a[5], c[0] - player[0], c[1] - player[1], c[2] - player[2]);
+                table += line;
+            }
+            std::lock_guard<std::mutex> lock(gJointTableMu);
+            gJointTable = table;
+        }
+    }
     st.keyJointPolygons = 0;
     st.keyJointLength = 0;
     uint32_t keyJoint = 0;
