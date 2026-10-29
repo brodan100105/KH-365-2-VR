@@ -564,8 +564,11 @@ void Platform::Heartbeat() {
             }
             Log("  Roxas: %u models drawn (%u to %u since the last heartbeat); %s", w.objectsDrawn, w.objectsMin,
                 w.objectsMax, line.c_str());
-            if (const std::string joints = TakePlayerJointTable(); !joints.empty())
-                Log("  Roxas's joints (heading as the player line says):%s", joints.c_str());
+            // A line a joint: a log line holds 512 characters.
+            if (const std::vector<std::string> joints = TakePlayerJointTable(); !joints.empty()) {
+                Log("  Roxas's joints (heading as the player line says):");
+                for (const std::string &j : joints) Log("%s", j.c_str());
+            }
             w.objectsMin = ~0u;
             w.objectsMax = 0;
         }

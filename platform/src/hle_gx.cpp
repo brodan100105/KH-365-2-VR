@@ -74,6 +74,7 @@ struct WorldPoly {
     uint16_t proj = 0;  // index into the frame's projection matrices
     uint32_t obj = 0;   // the render object NNS_G3dDraw drew it of (GxModelBegin), 0 none
     uint32_t joint = 0;  // its position matrix (hashed): the same for a model's joint in a frame
+    float pivot[3] = {};  // that matrix's origin (its joint's pivot), through the position matrix
     uint8_t model = 0;  // of which of Roxas's models (GxCaptureWorld), 0 none
 };
 constexpr int kW = 256, kH = 192;
@@ -546,6 +547,7 @@ void EmitPolygon(const Vertex *verts, int n) {
         w.proj = static_cast<uint16_t>(g.projList.size() - 1);
         w.obj = g.obj;
         w.joint = static_cast<uint32_t>(Fnv(g.pos.data(), sizeof(int32_t) * 16));
+        for (int k = 0; k < 3; ++k) w.pivot[k] = static_cast<float>(g.pos[12 + k]);
         g.worldList.push_back(w);
     }
     if (g.list.size() >= kMaxPolygons) return;
@@ -1705,11 +1707,11 @@ void GxNoteLockOn(uint32_t position, int kind, bool locked) {
 // right where he stands. The one with the most polygons is his; the others (his Keyblade) are
 // attached to him, by their number of polygons. Tags each worldShown polygon (WorldPoly::model).
 std::mutex gJointTableMu;
-std::string gJointTable;  // the latest table of his model's joints, taken by the heartbeat
+std::vector<std::string> gJointTable;  // the latest table of his model's joints, taken by the heartbeat
 
-std::string TakePlayerJointTable() {
+std::vector<std::string> TakePlayerJointTable() {
     std::lock_guard<std::mutex> lock(gJointTableMu);
-    std::string t;
+    std::vector<std::string> t;
     t.swap(gJointTable);
     return t;
 }
@@ -1844,21 +1846,31 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
                     ++count[w.joint];
                 }
             }
-            std::string table;
+            std::unordered_map<uint32_t, std::array<double, 3>> pivots;  // each joint's pivot, around his feet
+            for (const WorldPoly &w : g.worldShown) {
+                if (w.obj != st.playerObj || pivots.count(w.joint) || w.proj >= toWorld.size()) continue;
+                const Mat4d &m = toWorld[w.proj];
+                const double x = w.pivot[0] / 4096.0, y = w.pivot[1] / 4096.0, z = w.pivot[2] / 4096.0;
+                pivots[w.joint] = {x * m[0] + y * m[4] + z * m[8] + m[12] - player[0],
+                                   x * m[1] + y * m[5] + z * m[9] + m[13] - player[1],
+                                   x * m[2] + y * m[6] + z * m[10] + m[14] - player[2]};
+            }
+            std::vector<std::string> table;
             int index = 0;
             for (const auto &[joint, pts] : joints) {
                 double c[3] = {0, 0, 0};
                 for (const auto &p : pts)
                     for (int k = 0; k < 3; ++k) c[k] += p[k] / pts.size();
                 const auto &a = local[joint];
+                const auto &pv = pivots[joint];
                 const double n = std::max<uint32_t>(count[joint], 1);
                 char line[256];
                 std::snprintf(line, sizeof line,
-                              "\n    joint %2d: %3u polygons, own space at %+.2f %+.2f %+.2f size %.2f %.2f %.2f, "
-                              "now %+.2f %+.2f %+.2f from his feet",
+                              "    joint %2d: %3u polygons, own space at %+.2f %+.2f %+.2f size %.2f %.2f %.2f; "
+                              "now at %+.2f %+.2f %+.2f, pivot %+.2f %+.2f %+.2f from his feet",
                               index++, jointPolygons[joint], a[0] / n, a[1] / n, a[2] / n, a[6] - a[3], a[7] - a[4],
-                              a[8] - a[5], c[0] - player[0], c[1] - player[1], c[2] - player[2]);
-                table += line;
+                              a[8] - a[5], c[0] - player[0], c[1] - player[1], c[2] - player[2], pv[0], pv[1], pv[2]);
+                table.push_back(line);
             }
             std::lock_guard<std::mutex> lock(gJointTableMu);
             gJointTable = table;

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "khvr/platform.h"
 
@@ -59,7 +60,7 @@ extern std::atomic<bool> gDrawAll;
 // kind (1, 3 enemies, 2 the field's entries) and whether it is locked on.
 void GxNoteLockOn(uint32_t position, int kind, bool locked);
 // The table of Roxas's model's joints the capture made last (every half minute), "" if none since.
-std::string TakePlayerJointTable();
+std::vector<std::string> TakePlayerJointTable();
 // The polygons from here on are of this render object (guest address; 0 none: NNS_G3dDraw's end).
 void GxModelBegin(uint32_t obj);
 // Polygons in the list GxRender draws (for the heartbeat and tests).
