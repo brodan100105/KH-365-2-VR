@@ -300,6 +300,18 @@ std::string ModelJointNames(uint32_t obj) {
     return out;
 }
 
+int ModelJointIndex(uint32_t obj, const char *name) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(obj, 8)) return -1;
+    const uint32_t mdl = Read32(obj + 4);
+    if (!ok(mdl, 0x48)) return -1;
+    const uint32_t dict = mdl + 0x40;
+    const uint32_t n = Read8(dict + 1);
+    for (uint32_t i = 0; i < n && i < 64; ++i)
+        if (DictName(dict, i) == name) return static_cast<int>(i);
+    return -1;
+}
+
 // The player actor of the last SWAP_BUFFERS, 0 none.
 uint32_t SwapPlayerActor() {
     std::lock_guard<std::mutex> lock(gSwapPlayerMu);
@@ -313,6 +325,10 @@ namespace hle {
 std::atomic<int32_t> gMoveHeading{-1};
 }
 void Platform::SetMoveHeading(int heading) { hle::gMoveHeading = heading; }
+
+void Platform::SetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid) {
+    hle::GxSetArmTargets(on, left, leftValid, right, rightValid);
+}
 
 bool Platform::ReadPlayer(PlatformPlayer *out) {
     {

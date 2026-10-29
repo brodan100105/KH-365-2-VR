@@ -163,6 +163,20 @@ Gx g;
 // SWAP_BUFFERS and read by the screens' drawing, which may run on another thread while the game
 // runs its next frame (as the DS draws one frame while its CPU works on the next).
 std::mutex gShownMu;
+
+// Roxas's arms following yours (Platform::SetArmTargets, GxJoint): the targets from the app, and
+// his render object and the way from world space to his position-matrix space, from the last
+// capture.
+struct ArmTargets {
+    std::mutex mu;
+    bool on = false;
+    bool valid[2] = {false, false};  // 0 left, 1 right
+    double world[2][3] = {};
+    uint32_t obj = 0;
+    Mat4d worldToPos{};
+    bool hasXform = false;
+};
+ArmTargets gArm;
 uint32_t gCommands = 0, gLastFrame = 0;
 
 uint8_t ParamCount(uint8_t cmd) {
@@ -1788,6 +1802,20 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     tag[his[0].first] = kWorldModelPlayer;
     st.playerObj = his[0].first;
     st.playerPolygons = his[0].second->polygons;
+    {
+        // For his arms: world to the space his joints' matrices are in (this frame's camera).
+        Mat4d inv{};
+        bool found = false;
+        for (const WorldPoly &w : g.worldShown)
+            if (w.obj == st.playerObj && w.proj < toWorld.size() && inScene[w.proj]) {
+                found = Invert(toWorld[w.proj], &inv);
+                break;
+            }
+        std::lock_guard<std::mutex> lock(gArm.mu);
+        gArm.obj = st.playerObj;
+        gArm.hasXform = found;
+        if (found) gArm.worldToPos = inv;
+    }
     // Attached: solid models drawn on him. His Keyblade is one of 5 polygons kept inside his own
     // actor (at +3888), turning with his hand; the see-through ones there and around him are the
     // trails and flashes of his swings.
@@ -2342,6 +2370,208 @@ void GxCaptureWorld(PlatformWorld *out) {
     gWorldStats.textures = static_cast<uint32_t>(out->textures.size());
     gWorldStats.leftOut = out->polygonsLeftOut;
     ++gWorldStats.captures;
+}
+
+void GxSetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid) {
+    std::lock_guard<std::mutex> lock(gArm.mu);
+    gArm.on = on;
+    gArm.valid[0] = leftValid;
+    gArm.valid[1] = rightValid;
+    for (int k = 0; k < 3; ++k) {
+        gArm.world[0][k] = left[k];
+        gArm.world[1][k] = right[k];
+    }
+}
+
+namespace {
+// Each arm's joints as the game poses them, frame after frame (the guest thread only): the
+// forearm's pivot in the upper arm's own space and the hand's in the forearm's, and this
+// frame's upper arm and forearm after they were turned.
+struct ArmChain {
+    uint32_t namesOf = 0;
+    int upper[2] = {-1, -1}, fore[2] = {-1, -1}, hand[2] = {-1, -1};
+    bool hasOffFore[2] = {}, hasOffHand[2] = {};
+    double offFore[2][3] = {}, offHand[2][3] = {};
+    double rot[2][2][9] = {}, trans[2][2][3] = {};  // [arm][0 upper, 1 forearm]
+    bool seen[2][2] = {};
+};
+ArmChain gChain;
+
+void RotOf(const Mtx &m, double r[9], double t[3]) {
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) r[i * 3 + j] = m[i * 4 + j] / 4096.0;
+        t[i] = m[12 + i] / 4096.0;
+    }
+}
+
+// p * inverse(r), row vectors (r may hold a scale).
+bool ToLocal(const double r[9], const double p[3], double out[3]) {
+    const double det = r[0] * (r[4] * r[8] - r[5] * r[7]) - r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+    if (std::fabs(det) < 1e-12) return false;
+    double inv[9] = {(r[4] * r[8] - r[5] * r[7]) / det, (r[2] * r[7] - r[1] * r[8]) / det, (r[1] * r[5] - r[2] * r[4]) / det,
+                     (r[5] * r[6] - r[3] * r[8]) / det, (r[0] * r[8] - r[2] * r[6]) / det, (r[2] * r[3] - r[0] * r[5]) / det,
+                     (r[3] * r[7] - r[4] * r[6]) / det, (r[1] * r[6] - r[0] * r[7]) / det, (r[0] * r[4] - r[1] * r[3]) / det};
+    for (int j = 0; j < 3; ++j) out[j] = p[0] * inv[j] + p[1] * inv[3 + j] + p[2] * inv[6 + j];
+    return true;
+}
+
+void ToSpace(const double r[9], const double t[3], const double l[3], double out[3]) {
+    for (int j = 0; j < 3; ++j) out[j] = l[0] * r[j] + l[1] * r[3 + j] + l[2] * r[6 + j] + t[j];
+}
+
+double Len(const double v[3]) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+
+// The rotation (row vectors: v * R) that turns direction u onto direction v.
+bool TurnOnto(const double u0[3], const double v0[3], double R[9]) {
+    const double lu = Len(u0), lv = Len(v0);
+    if (lu < 1e-9 || lv < 1e-9) return false;
+    const double u[3] = {u0[0] / lu, u0[1] / lu, u0[2] / lu}, v[3] = {v0[0] / lv, v0[1] / lv, v0[2] / lv};
+    double a[3] = {u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]};
+    const double s = Len(a), c = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    if (s < 1e-9) {
+        if (c > 0) {
+            for (int i = 0; i < 9; ++i) R[i] = i % 4 == 0 ? 1.0 : 0.0;
+            return true;
+        }
+        return false;  // straight back: no single way round
+    }
+    for (double &x : a) x /= s;
+    // Rodrigues (column vectors), then transposed for row vectors.
+    const double t = 1 - c;
+    const double C[9] = {c + a[0] * a[0] * t, a[0] * a[1] * t - a[2] * s, a[0] * a[2] * t + a[1] * s,
+                         a[1] * a[0] * t + a[2] * s, c + a[1] * a[1] * t, a[1] * a[2] * t - a[0] * s,
+                         a[2] * a[0] * t - a[1] * s, a[2] * a[1] * t + a[0] * s, c + a[2] * a[2] * t};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) R[i * 3 + j] = C[j * 3 + i];
+    return true;
+}
+
+// The current position and vector matrices' rows turned by R (the joint's pivot stays).
+void TurnCurrent(const double R[9]) {
+    for (Mtx *m : {&g.pos, &g.vec}) {
+        for (int i = 0; i < 3; ++i) {
+            const double row[3] = {(*m)[i * 4] / 4096.0, (*m)[i * 4 + 1] / 4096.0, (*m)[i * 4 + 2] / 4096.0};
+            for (int j = 0; j < 3; ++j)
+                (*m)[i * 4 + j] = static_cast<int32_t>(std::lround(
+                    (row[0] * R[j] + row[1] * R[3 + j] + row[2] * R[6 + j]) * 4096.0));
+        }
+    }
+    g.clipDirty = true;
+}
+}  // namespace
+
+void GxJoint(uint32_t obj, uint32_t node) {
+    double target[2][3];
+    bool valid[2];
+    Mat4d worldToPos;
+    {
+        std::lock_guard<std::mutex> lock(gArm.mu);
+        if (!obj || obj != gArm.obj) return;
+        valid[0] = gArm.on && gArm.hasXform && gArm.valid[0];
+        valid[1] = gArm.on && gArm.hasXform && gArm.valid[1];
+        worldToPos = gArm.worldToPos;
+        for (int a = 0; a < 2; ++a)
+            for (int k = 0; k < 3; ++k) target[a][k] = gArm.world[a][k];
+    }
+    ArmChain &c = gChain;
+    if (c.namesOf != obj) {
+        // His skeleton's arm joints, by name (a 3ds Max biped: Bip01_R_UpperArm ...).
+        c = ArmChain();
+        c.namesOf = obj;
+        static const char *const kNames[2][3] = {{"Bip01_L_UpperArm", "Bip01_L_Forearm", "Bip01_L_Hand"},
+                                                 {"Bip01_R_UpperArm", "Bip01_R_Forearm", "Bip01_R_Hand"}};
+        for (int a = 0; a < 2; ++a) {
+            c.upper[a] = ModelJointIndex(obj, kNames[a][0]);
+            c.fore[a] = ModelJointIndex(obj, kNames[a][1]);
+            c.hand[a] = ModelJointIndex(obj, kNames[a][2]);
+        }
+    }
+    const int n = static_cast<int>(node);
+    for (int a = 0; a < 2; ++a) {
+        if (n != c.upper[a] && n != c.fore[a] && n != c.hand[a]) continue;
+        double r[9], t[3];
+        RotOf(g.pos, r, t);
+        // Your hand, in the space his joints' matrices are in.
+        double p[3];
+        for (int j = 0; j < 3; ++j)
+            p[j] = target[a][0] * worldToPos[j] + target[a][1] * worldToPos[4 + j] + target[a][2] * worldToPos[8 + j] +
+                   worldToPos[12 + j];
+        const bool solve = valid[a] && c.hasOffFore[a] && c.hasOffHand[a];
+        if (n == c.upper[a]) {
+            if (solve) {
+                // Two bones from the shoulder S: the elbow E' on the side the game's own pose bends
+                // it, the upper arm turned so its elbow goes there.
+                double e[3];
+                ToSpace(r, t, c.offFore[a], e);
+                const double se[3] = {e[0] - t[0], e[1] - t[1], e[2] - t[2]};
+                const double la = Len(se);
+                // The forearm's length (its own scale taken as the upper arm's).
+                const double zero[3] = {0, 0, 0};
+                double lb3[3];
+                ToSpace(r, zero, c.offHand[a], lb3);
+                const double lb = Len(lb3);
+                double sp[3] = {p[0] - t[0], p[1] - t[1], p[2] - t[2]};
+                double d = Len(sp);
+                if (la > 1e-6 && lb > 1e-6 && d > 1e-6) {
+                    const double nrm[3] = {sp[0] / d, sp[1] / d, sp[2] / d};
+                    d = std::clamp(d, std::fabs(la - lb) + 1e-4, (la + lb) * 0.999);
+                    const double x = (la * la - lb * lb + d * d) / (2 * d);
+                    const double h = std::sqrt(std::max(0.0, la * la - x * x));
+                    const double along = se[0] * nrm[0] + se[1] * nrm[1] + se[2] * nrm[2];
+                    double pole[3] = {se[0] - nrm[0] * along, se[1] - nrm[1] * along, se[2] - nrm[2] * along};
+                    double lp = Len(pole);
+                    if (lp < 1e-6) {
+                        // Straight along the target: bend it down.
+                        const double down[3] = {0, -1, 0};
+                        const double dd = down[1] * nrm[1];
+                        for (int k = 0; k < 3; ++k) pole[k] = down[k] - nrm[k] * dd;
+                        lp = Len(pole);
+                    }
+                    if (lp > 1e-6) {
+                        const double want[3] = {nrm[0] * x + pole[0] / lp * h, nrm[1] * x + pole[1] / lp * h,
+                                                nrm[2] * x + pole[2] / lp * h};
+                        double R[9];
+                        if (TurnOnto(se, want, R)) {
+                            TurnCurrent(R);
+                            RotOf(g.pos, r, t);
+                        }
+                    }
+                }
+            }
+            std::copy(r, r + 9, c.rot[a][0]);
+            std::copy(t, t + 3, c.trans[a][0]);
+            c.seen[a][0] = true;
+        } else if (n == c.fore[a]) {
+            // Where the game put the forearm under the upper arm: its pivot in the upper arm's
+            // own space (the same frame after frame, however the arm is turned).
+            if (c.seen[a][0]) {
+                const double d[3] = {t[0] - c.trans[a][0][0], t[1] - c.trans[a][0][1], t[2] - c.trans[a][0][2]};
+                c.hasOffFore[a] = ToLocal(c.rot[a][0], d, c.offFore[a]);
+            }
+            if (solve) {
+                // The forearm turned so the wrist points at your hand.
+                double w[3];
+                ToSpace(r, t, c.offHand[a], w);
+                const double ew[3] = {w[0] - t[0], w[1] - t[1], w[2] - t[2]};
+                const double ep[3] = {p[0] - t[0], p[1] - t[1], p[2] - t[2]};
+                double R[9];
+                if (TurnOnto(ew, ep, R)) {
+                    TurnCurrent(R);
+                    RotOf(g.pos, r, t);
+                }
+            }
+            std::copy(r, r + 9, c.rot[a][1]);
+            std::copy(t, t + 3, c.trans[a][1]);
+            c.seen[a][1] = true;
+            c.seen[a][0] = false;
+        } else if (n == c.hand[a]) {
+            if (c.seen[a][1]) {
+                const double d[3] = {t[0] - c.trans[a][1][0], t[1] - c.trans[a][1][1], t[2] - c.trans[a][1][2]};
+                c.hasOffHand[a] = ToLocal(c.rot[a][1], d, c.offHand[a]);
+            }
+            c.seen[a][1] = false;
+        }
+    }
 }
 
 }  // namespace khvr::hle

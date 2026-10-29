@@ -829,6 +829,23 @@ void VrApp::Frame(const XrFrameInput &in) {
     mapper_.SetMenuStick(before.menuInput);
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
 #ifdef KHVR_HAS_GAME
+    if (decomp_) {
+        // Roxas's arms reach for your hands: first person, his body shown, in the field.
+        const BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
+        const bool arms = mode == ViewMode::FirstPerson && game_->frame().inGameplay &&
+                          settings_.Bool(SettingId::FpArmsFollow) &&
+                          (body == BodyDisplay::WithoutHead || body == BodyDisplay::FullBody);
+        float hands[2][3] = {};
+        for (int h = 0; h < 2; ++h) {
+            // The wrist: a little back from the controller's grip, toward your arm.
+            const Vec3 wrist = in.grip[h].position + in.grip[h].orientation.Rotate({0.0f, 0.0f, 0.07f});
+            const Vec3 w = rig_.trackingToWorld.Transform(wrist);
+            hands[h][0] = w.x;
+            hands[h][1] = w.y;
+            hands[h][2] = w.z;
+        }
+        Platform::Get().SetArmTargets(arms, hands[0], in.gripValid[0], hands[1], in.gripValid[1]);
+    }
     if (decomp_)
         Platform::Get().SetMoveHeading(settings_.Bool(SettingId::GameAnalogMove) ? mapper_.fieldHeading() : -1);
 #endif

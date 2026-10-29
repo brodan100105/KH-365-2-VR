@@ -61,6 +61,12 @@ extern std::atomic<bool> gDrawAll;
 void GxNoteLockOn(uint32_t position, int kind, bool locked);
 // The table of Roxas's model's joints the capture made last (every half minute), "" if none since.
 std::vector<std::string> TakePlayerJointTable();
+// Roxas's arms following yours: your hands in the game's world (0 left, 1 right), and whether
+// to follow them at all (Platform::SetArmTargets).
+void GxSetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid);
+// A model's joint `node` is the current position matrix, about to be stored (khvr_host_joint):
+// Roxas's arm joints are turned to reach your hands.
+void GxJoint(uint32_t obj, uint32_t node);
 // The polygons from here on are of this render object (guest address; 0 none: NNS_G3dDraw's end).
 void GxModelBegin(uint32_t obj);
 // Polygons in the list GxRender draws (for the heartbeat and tests).

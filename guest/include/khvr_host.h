@@ -43,6 +43,9 @@ int khvr_host_draw_all(void);
 /* Analog movement: the heading the player actor's held D-pad stands for (0..0xffff, the D-pad's
  * own convention), or -1 to use the D-pad's eight (Ov022_HeadingFromHeldDpad). */
 long khvr_host_move_heading(const void *actor);
+/* A model's joint `node` is the current position matrix (NNSi_G3dFuncSbc_NODEDESC), about to be
+ * stored: the port may turn it (Roxas's arms following yours). */
+void khvr_host_joint(const void *renderObj, unsigned long node);
 /* NNS_G3dDraw draws this render object (NNSG3dRenderObj) from begin to end. */
 void khvr_host_model_begin(const void *obj);
 void khvr_host_model_end(void);

@@ -65,6 +65,7 @@ hands, DS + giant screen) and the options changed most.
 | `grip_angle` | Grip angle | -60 to 60 deg | `0` | Tilts the Keyblade in your hand. |
 | `keyblade_length` | Keyblade length | 0.5 to 1.5 x | `1` | Visual and hit length of the Keyblade. |
 | `keyblade_grip` | Keyblade grip | -0.3 to 0.3 m | `0` | Slides the Keyblade along its blade in your hand: up to hold it lower on the handle, down to hold it higher. |
+| `arms_follow` | Arms follow your hands | `true` / `false` | `true` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
 
 ## Combat
 

@@ -30,6 +30,8 @@ extern std::atomic<bool> gBattleArea;
 extern std::atomic<int32_t> gMoveHeading;
 // The player actor of the last SWAP_BUFFERS, 0 none.
 uint32_t SwapPlayerActor();
+// The index of the joint named `name` in a render object's model, -1 none.
+int ModelJointIndex(uint32_t obj, const char *name);
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -323,6 +323,8 @@ u32 w2c_env_khvr_host_move_heading(struct w2c_env *, u32 actor) {
     return h >= 0 && actor == SwapPlayerActor() ? static_cast<u32>(h) : 0xffffffffu;
 }
 
+void w2c_env_khvr_host_joint(struct w2c_env *, u32 obj, u32 node) { GxJoint(obj, node); }
+
 void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }
 
 void w2c_env_khvr_host_model_end(struct w2c_env *) { GxModelBegin(0); }

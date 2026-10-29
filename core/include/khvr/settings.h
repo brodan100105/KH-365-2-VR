@@ -60,6 +60,7 @@ enum class SettingId : int {
     FpGripAngle,
     FpKeybladeLength,
     FpKeybladeGrip,
+    FpArmsFollow,
     // Combat (first person motion controls)
     CombatMotion,
     CombatPhysicalHits,

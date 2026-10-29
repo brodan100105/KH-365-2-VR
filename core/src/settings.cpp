@@ -134,6 +134,10 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade grip", 0.0f, -0.3f, 0.3f, 0.01f, "m",
                   "Slides the Keyblade along its blade in your hand: up to hold it lower on the handle, "
                   "down to hold it higher."));
+    d.push_back(B(S::FpArmsFollow, "First person", "arms_follow", "Arms follow your hands", true,
+                  "With Show body: Body without head or Full body, Roxas's own arms reach for your "
+                  "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "
+                  "animation)."));
     // ---- Combat ----
     d.push_back(B(S::CombatMotion, "Combat", "motion_combat", "Motion combat", true,
                   "Swing the controller to attack (first person)."));
