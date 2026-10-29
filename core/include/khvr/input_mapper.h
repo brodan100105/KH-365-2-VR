@@ -84,6 +84,7 @@ private:
     int dodgeFrames_ = 0;
     bool menuStick_ = false;
     bool triggerDown_[2] = {false, false};
+    bool menuArmed_ = false;  // the menu button has been up since the start
     int fieldHeading_ = -1;  // each trigger pressed (with hysteresis)
     uint16_t menuDir_ = 0;  // the menu direction held, 0 none
     int octant_ = -1;       // the field octant held, -1 none

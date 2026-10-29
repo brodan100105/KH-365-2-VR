@@ -142,6 +142,7 @@ private:
     float hudAwaySeconds_ = 0.0f;  // how long you have looked away from the floating HUD
     bool hudGliding_ = false;      // the HUD is on its way back in front of you
     bool laserOnPanel_ = false, laserOnBottom_ = false;
+    bool panelPlaced_ = false;  // the settings panel has been put in front of a tracked head
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),

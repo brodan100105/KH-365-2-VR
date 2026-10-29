@@ -834,10 +834,15 @@ void VrApp::Frame(const XrFrameInput &in) {
         if (panel_.isOpen()) {
             panel_.Close();
         } else {
-            Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
-            settingsPanel_.pose = FacingFrom(in.head.position + fwd * 1.1f + Vec3{0, -0.1f, 0}, in.head.position);
+            panelPlaced_ = false;
             panel_.Open();
         }
+    }
+    // The panel opens in front of you, once your head is tracked (not somewhere unseen).
+    if (panel_.isOpen() && !panelPlaced_ && in.headValid) {
+        Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
+        settingsPanel_.pose = FacingFrom(in.head.position + fwd * 1.1f + Vec3{0, -0.1f, 0}, in.head.position);
+        panelPlaced_ = true;
     }
     if (!panel_.isOpen()) SaveSettingsIfChanged();
     if (act.toggleViewMode) {

@@ -66,13 +66,19 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     uint16_t held = 0;
 
     // ---- App actions: long presses never reach the game ----
-    if (c.menu) {
+    // The menu button counts only once it has been seen up: held through the app's start (the
+    // game's intro), it opened the settings panel unseen and the game took no buttons.
+    if (!c.menu && !menuArmed_) {
+        menuArmed_ = true;
+        menuWasDown_ = false;  // letting go of that first hold presses nothing
+    }
+    if (c.menu && menuArmed_) {
         menuHeld_ += dt;
         if (menuHeld_ >= kHoldSeconds && !settingsFired_) {
             actions_.openSettingsPanel = true;
             settingsFired_ = true;
         }
-    } else {
+    } else if (!c.menu) {
         // A short press of the menu button is START.
         if (menuWasDown_ && !settingsFired_) {
             AddPulse(kDsStart);

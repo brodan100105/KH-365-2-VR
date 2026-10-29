@@ -644,6 +644,29 @@ TEST(MapperTriggersAreLAndRInMenus) {
     CHECK(!(m.heldButtons() & kDsL));
 }
 
+TEST(MapperMenuHeldFromStartIsIgnored) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    c.menu = true;  // held as the app starts
+    bool panel = false;
+    for (int i = 0; i < 200; ++i) {
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+        panel |= m.actions().openSettingsPanel;
+    }
+    c.menu = false;
+    m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(!panel);
+    CHECK(!m.actions().pressedStart);
+    // Pressed again after letting go, it works.
+    c.menu = true;
+    for (int i = 0; i < 200; ++i) {
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+        panel |= m.actions().openSettingsPanel;
+    }
+    CHECK(panel);
+}
+
 TEST(MapperFirstPersonButtonsSameByDefault) {
     Settings s;
     ControllerState c;
@@ -678,6 +701,7 @@ TEST(MapperMenuTapIsStartHoldIsPanel) {
     Settings s;
     InputMapper m;
     ControllerState c;
+    m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);  // the button up once first
     c.menu = true;
     m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);
     c.menu = false;
@@ -685,6 +709,7 @@ TEST(MapperMenuTapIsStartHoldIsPanel) {
     CHECK(m.SampleForGameFrame() & kDsStart);
 
     InputMapper hold;
+    hold.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);
     c.menu = true;
     bool opened = false;
     for (int i = 0; i < 10; ++i) {
