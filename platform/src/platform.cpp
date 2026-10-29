@@ -1,6 +1,8 @@
 #include "khvr/platform.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -325,6 +327,13 @@ namespace hle {
 std::atomic<int32_t> gMoveHeading{-1};
 }
 void Platform::SetMoveHeading(int heading) { hle::gMoveHeading = heading; }
+
+namespace hle {
+std::atomic<int32_t> gReachBonus{0};
+}
+void Platform::SetReachBonus(float units) {
+    hle::gReachBonus = static_cast<int32_t>(std::lround(std::max(0.0f, units) * 4096.0f));
+}
 
 void Platform::SetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid) {
     hle::GxSetArmTargets(on, left, leftValid, right, rightValid);

@@ -46,6 +46,8 @@ long khvr_host_move_heading(const void *actor);
 /* A model's joint `node` is the current position matrix (NNSi_G3dFuncSbc_NODEDESC), about to be
  * stored: the port may turn it (Roxas's arms following yours). */
 void khvr_host_joint(const void *renderObj, unsigned long node);
+/* How much further (fx32) the attacker's swings reach: Roxas's, in first person; 0 otherwise. */
+long khvr_host_reach_bonus(const void *actor);
 /* NNS_G3dDraw draws this render object (NNSG3dRenderObj) from begin to end. */
 void khvr_host_model_begin(const void *obj);
 void khvr_host_model_end(void);

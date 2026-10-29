@@ -75,6 +75,7 @@ enum class SettingId : int {
     CombatDodge,
     CombatHaptics,
     CombatSummon,
+    CombatReach,
     // Controls (which DS button each gesture presses)
     CtrlFirstPersonButtons,
     CtrlAttackButton,

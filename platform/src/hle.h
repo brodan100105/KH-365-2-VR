@@ -28,6 +28,8 @@ extern std::atomic<bool> gBattleArea;
 // Analog movement: the heading (u16, the game's D-pad heading convention: 0 up, 0x4000 left,
 // relative to its camera) the player's held D-pad stands for, -1 none (Platform::SetMoveHeading).
 extern std::atomic<int32_t> gMoveHeading;
+// How much further (fx32) Roxas's swings reach (Platform::SetReachBonus): first person.
+extern std::atomic<int32_t> gReachBonus;
 // The player actor of the last SWAP_BUFFERS, 0 none.
 uint32_t SwapPlayerActor();
 // The index of the joint named `name` in a render object's model, -1 none.

@@ -854,6 +854,8 @@ void VrApp::Frame(const XrFrameInput &in) {
             hands[h][2] = w.z;
         }
         Platform::Get().SetArmTargets(arms, hands[0], in.gripValid[0], hands[1], in.gripValid[1]);
+        // First person in VR: his swings reach a little further.
+        Platform::Get().SetReachBonus(mode == ViewMode::FirstPerson ? settings_.Get(SettingId::CombatReach) : 0.0f);
     }
     if (decomp_)
         Platform::Get().SetMoveHeading(settings_.Bool(SettingId::GameAnalogMove) ? mapper_.fieldHeading() : -1);
