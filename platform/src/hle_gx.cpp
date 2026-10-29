@@ -1766,9 +1766,12 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     std::vector<std::pair<uint32_t, const Box *>> his;
     for (const auto &[obj, b] : boxes) {
         if (b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
-        const double reach = 1.3;
+        // A small model (his Keyblade mid-swing reaches an arm and a blade from him, past his feet's
+        // height) may lie further out than his body.
+        const bool small = b.polygons < 60 && std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) < 2.0;
+        const double reach = small ? 2.4 : 1.3, below = small ? 1.0 : 0.4;
         const bool on = b.lo[0] > player[0] - reach && b.hi[0] < player[0] + reach && b.lo[2] > player[2] - reach &&
-                        b.hi[2] < player[2] + reach && b.lo[1] > player[1] - 0.4 && b.hi[1] < player[1] + 3.0;
+                        b.hi[2] < player[2] + reach && b.lo[1] > player[1] - below && b.hi[1] < player[1] + 3.0;
         if (on) his.push_back({obj, &b});
     }
     auto overFeet = [&](const Box &b) {
@@ -1789,12 +1792,48 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     // Not those kept inside his own actor (a shadow under him, 5 polygons at actor +3888), nor a
     // see-through one (the trail a swing leaves).
     const uint32_t actor = SwapPlayerActor();
+    {
+        // Into the boot log the moment the models around him change (his Keyblade comes out only
+        // while he attacks, between heartbeats): each with its polygons, see-through ones, size,
+        // farthest vertex from its origin, and whether it counts as on him.
+        std::string seen, key;
+        for (const auto &[obj, b] : boxes) {
+            if (obj == st.playerObj || b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
+            const double cx = (b.lo[0] + b.hi[0]) / 2 - player[0], cz = (b.lo[2] + b.hi[2]) / 2 - player[2];
+            if (cx * cx + cz * cz > 2.5 * 2.5) continue;
+            const bool inActor = actor && obj >= actor && obj < actor + 0x4000;
+            bool on = false;
+            for (const auto &h : his) on |= h.first == obj;
+            char item[200];
+            std::snprintf(item, sizeof item, " | 0x%08x%s: %u polygons (%u see-through), %.2f x %.2f x %.2f, %.2f from origin%s",
+                          obj, inActor ? " in his actor" : "", b.polygons, b.translucent, b.hi[0] - b.lo[0],
+                          b.hi[1] - b.lo[1], b.hi[2] - b.lo[2], b.localFar, on ? ", on him" : ", near");
+            seen += item;
+            key += std::to_string(obj) + ":" + std::to_string(b.polygons) + (on ? "+" : "-") + " ";
+        }
+        static std::string lastKey;
+        static auto lastLog = std::chrono::steady_clock::time_point();
+        const auto now = std::chrono::steady_clock::now();
+        if (key != lastKey && now - lastLog > std::chrono::milliseconds(250)) {
+            lastKey = key;
+            lastLog = now;
+            if (seen.size() > 440) seen.resize(440);
+            Log("models: around Roxas (%u polygons)%s", st.playerPolygons, seen.empty() ? " | none" : seen.c_str());
+        }
+    }
     his.erase(std::remove_if(his.begin() + 1, his.end(),
                              [actor](const auto &h) {
                                  const bool inActor = actor && h.first >= actor && h.first < actor + 0x4000;
-                                 return inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons;
+                                 return inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
+                                        h.second->localFar < 0.5;
                              }),
               his.end());
+    // Of those, only the longest is his (his Keyblade): pickups dropped around him (hearts, munny,
+    // orbs) are not.
+    if (his.size() > 2) {
+        std::sort(his.begin() + 1, his.end(), [](const auto &a, const auto &b) { return a.second->localFar > b.second->localFar; });
+        his.resize(2);
+    }
     for (size_t i = 1; i < his.size() && i <= static_cast<size_t>(kWorldAttachedMax); ++i) {
         tag[his[i].first] = static_cast<uint8_t>(kWorldModelAttached + i - 1);
         st.attachedObj[i - 1] = his[i].first;
