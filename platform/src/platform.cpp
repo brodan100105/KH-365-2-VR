@@ -268,6 +268,38 @@ bool SwapEventScene() {
 
 std::atomic<bool> gOwnCursors{false};
 
+// Name `index` of an NNS G3D resource dictionary (NNSG3dResDict: its entries' header at
+// +ofsEntry, a u16 at +6, whose second u16 is the offset of the 16-byte names), "" when out of range.
+std::string DictName(uint32_t dict, uint32_t index) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(dict, 8) || index >= Read8(dict + 1)) return "";
+    const uint32_t entries = dict + Read16(dict + 6);
+    if (!ok(entries, 4)) return "";
+    const uint32_t name = entries + Read16(entries + 2) + index * 16;
+    if (!ok(name, 16)) return "";
+    std::string out;
+    for (int i = 0; i < 16; ++i) {
+        const char c = static_cast<char>(Read8(name + i));
+        if (!c) break;
+        out += c >= 32 && c < 127 ? c : '?';
+    }
+    return out;
+}
+
+// The joint names of a render object's model (NNSG3dRenderObj: its NNSG3dResMdl at +4, whose
+// joint dictionary follows its 0x40-byte header), "" when it has none.
+std::string ModelJointNames(uint32_t obj) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(obj, 8)) return "";
+    const uint32_t mdl = Read32(obj + 4);
+    if (!ok(mdl, 0x48)) return "";
+    const uint32_t dict = mdl + 0x40;
+    std::string out;
+    const uint32_t n = Read8(dict + 1);
+    for (uint32_t i = 0; i < n && i < 64; ++i) out += " " + std::to_string(i) + ":" + DictName(dict, i);
+    return out;
+}
+
 // The player actor of the last SWAP_BUFFERS, 0 none.
 uint32_t SwapPlayerActor() {
     std::lock_guard<std::mutex> lock(gSwapPlayerMu);
@@ -567,6 +599,8 @@ void Platform::Heartbeat() {
             // A line a joint: a log line holds 512 characters.
             if (const std::vector<std::string> joints = TakePlayerJointTable(); !joints.empty()) {
                 Log("  Roxas's joints (heading as the player line says):");
+                const std::string names = ModelJointNames(w.playerObj);
+                Log("    his model's joints by name:%s", names.empty() ? " (none found)" : names.substr(0, 480).c_str());
                 for (const std::string &j : joints) Log("%s", j.c_str());
             }
             w.objectsMin = ~0u;

@@ -1788,9 +1788,9 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     tag[his[0].first] = kWorldModelPlayer;
     st.playerObj = his[0].first;
     st.playerPolygons = his[0].second->polygons;
-    // Attached: solid models drawn on him (his Keyblade: 7 to 12 polygons, only while he swings).
-    // Not those kept inside his own actor (a shadow under him, 5 polygons at actor +3888), nor a
-    // see-through one (the trail a swing leaves).
+    // Attached: solid models drawn on him. His Keyblade is one of 5 polygons kept inside his own
+    // actor (at +3888), turning with his hand; the see-through ones there and around him are the
+    // trails and flashes of his swings.
     const uint32_t actor = SwapPlayerActor();
     {
         // Into the boot log the moment the models around him change (his Keyblade comes out only
@@ -1822,9 +1822,8 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         }
     }
     his.erase(std::remove_if(his.begin() + 1, his.end(),
-                             [actor](const auto &h) {
-                                 const bool inActor = actor && h.first >= actor && h.first < actor + 0x4000;
-                                 return inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
+                             [](const auto &h) {
+                                 return h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
                                         h.second->localFar < 0.5;
                              }),
               his.end());
