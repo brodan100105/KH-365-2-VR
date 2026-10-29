@@ -77,8 +77,11 @@ jobs:
         with:
           name: khdays-vr-apk
           path: android/app/build/outputs/apk/release/*.apk
+          # Artifacts count against the account's storage: a week is enough to install a build.
+          retention-days: 7
       - name: Keep the unstripped library for tools/symbolize.py
         uses: actions/upload-artifact@v4
         with:
           name: khdays-vr-symbols
           path: android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so
+          retention-days: 2
