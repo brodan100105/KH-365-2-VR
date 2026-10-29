@@ -472,6 +472,7 @@ CombatInput Swing(float tipSpeed, float dt, int frame, bool moving, bool wristOn
 
 TEST(CombatWristFlickIsNotASwing) {
     Settings s;
+    s.SetBool(SettingId::CombatSummon, false);  // the Keyblade always out
     CombatRecognizer r;
     float dt = 1.0f / 90.0f;
     int swings = 0;
@@ -485,8 +486,39 @@ TEST(CombatWristFlickIsNotASwing) {
     CHECK(swings == 1);
 }
 
+TEST(CombatKeybladeSummonedByHeldGrip) {
+    Settings s;
+    CombatRecognizer r;
+    const float dt = 1.0f / 90.0f;
+    // Not out: a full swing does not attack.
+    int swings = 0;
+    for (int i = 0; i < 40; ++i) swings += r.Update(s, Swing(6.0f, dt, i, true)).swingStarted;
+    CHECK(swings == 0);
+    // Hold the weapon (right) hand's grip: it comes out once, however long it is held.
+    CombatInput in = Swing(0, dt, 0, false);
+    in.grip[1] = 1.0f;
+    int summoned = 0, dismissed = 0;
+    for (int i = 0; i < 90; ++i) {
+        CombatFrame f = r.Update(s, in);
+        summoned += f.summoned;
+        dismissed += f.dismissed;
+    }
+    CHECK(summoned == 1 && dismissed == 0);
+    in.grip[1] = 0.0f;
+    CHECK(r.Update(s, in).keybladeOut);
+    for (int i = 0; i < 40; ++i) swings += r.Update(s, Swing(6.0f, dt, i, true)).swingStarted;
+    CHECK(swings == 1);
+    // Held again: it goes away.
+    in = Swing(0, dt, 0, false);
+    in.grip[1] = 1.0f;
+    for (int i = 0; i < 90; ++i) dismissed += r.Update(s, in).dismissed;
+    CHECK(dismissed == 1);
+    CHECK(!r.Update(s, in).keybladeOut);
+}
+
 TEST(CombatSwingDetected) {
     Settings s;
+    s.SetBool(SettingId::CombatSummon, false);  // the Keyblade always out
     CombatRecognizer r;
     int swings = 0;
     SwingKind kind = SwingKind::Thrust;
@@ -505,6 +537,7 @@ TEST(CombatSwingDetected) {
 
 TEST(CombatSlowMotionIsNotASwing) {
     Settings s;
+    s.SetBool(SettingId::CombatSummon, false);  // the Keyblade always out
     CombatRecognizer r;
     float dt = 1.0f / 90.0f;
     int swings = 0;
@@ -514,6 +547,7 @@ TEST(CombatSlowMotionIsNotASwing) {
 
 TEST(CombatGuardPose) {
     Settings s;
+    s.SetBool(SettingId::CombatSummon, false);  // the Keyblade always out
     CombatRecognizer r;
     CombatInput in;
     in.dt = 1.0f / 90.0f;

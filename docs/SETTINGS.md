@@ -83,6 +83,7 @@ hands, DS + giant screen) and the options changed most.
 | `jump_gesture` | Physical jump | `true` / `false` | `false` | Jumping in your room makes the character jump. |
 | `dodge` | Dodge roll | `off`, `stick_flick`, `button` | `stick_flick` | How dodge rolls are triggered. |
 | `haptics` | Haptics | 0 to 1 | `0.7` | Controller vibration on hits, blocks and swings. |
+| `summon` | Summon the Keyblade | `true` / `false` | `true` | First person: hold the Keyblade hand's grip to summon the Keyblade, and again to put it away; swings attack only while it is out. Off: it is always out. |
 
 ## Controls
 

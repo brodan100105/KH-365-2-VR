@@ -169,6 +169,9 @@ std::vector<SettingDef> BuildDefs() {
                   "How dodge rolls are triggered."));
     d.push_back(F(S::CombatHaptics, "Combat", "haptics", "Haptics", 0.7f, 0.0f, 1.0f, 0.1f, "",
                   "Controller vibration on hits, blocks and swings."));
+    d.push_back(B(S::CombatSummon, "Combat", "summon", "Summon the Keyblade", true,
+                  "First person: hold the Keyblade hand's grip to summon the Keyblade, and again to put "
+                  "it away; swings attack only while it is out. Off: it is always out."));
     // ---- Controls ----
     // The defaults follow the game's Type A controls; change them here if you play Type B.
     d.push_back(E(S::CtrlFirstPersonButtons, "Controls", "first_person_buttons", "First person buttons", 0,
