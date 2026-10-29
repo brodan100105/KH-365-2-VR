@@ -120,7 +120,8 @@ std::vector<SettingDef> BuildDefs() {
                   "the game's Roxas and his Keyblade as the game draws them, without his head and hair "
                   "in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade "
                   "leave the game's own Roxas out (the VR hands and Keyblade stay)."));
-    d.push_back(F(S::FpHeadCut, "First person", "head_cut", "Head cut height", 0.8f, 0.5f, 1.0f, 0.01f, "",
+    // A new key: the default came down (a piece of his chin stayed at the base of his neck).
+    d.push_back(F(S::FpHeadCut, "First person", "head_cut2", "Head cut height", 0.78f, 0.5f, 1.0f, 0.01f, "",
                   "Body without head: the part of Roxas's height above which he is not drawn (his head "
                   "and hair). Lower it if hair still shows; raise it if his shoulders go."));
     d.push_back(E(S::FpWeaponHand, "First person", "weapon_hand", "Keyblade hand", 1,

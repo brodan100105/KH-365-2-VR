@@ -365,8 +365,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         }
         auto inHead = [&](const PlatformWorldVertex *v) {
             const float hi = std::max({v[0].y, v[1].y, v[2].y}), mid = (v[0].y + v[1].y + v[2].y) / 3;
-            // Above the cut, or reaching over it from just under (hair falling to his neck).
-            return mid > cut || (hi > cut && mid > cut - 0.08f * height);
+            // Above the cut, or reaching over it from under (hair falling to his neck, his chin's
+            // underside at the base of his neck).
+            return mid > cut || (hi > cut && mid > cut - 0.16f * height);
         };
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];

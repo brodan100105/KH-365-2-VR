@@ -7,9 +7,11 @@ and into VR as real geometry around you.
 
 ## The order from here
 
-1. Step 5, Roxas in first person: the game's Keyblade in your hand (in test); the characters
-   half drawn in third person when Roxas turns away (the game's own culling, to find); his arms
-   following your controllers; full-body VRIK.
+1. Step 5, Roxas in first person: the game's Keyblade in your hand (done); his arms following
+   your controllers (first version built, waiting for CI minutes); a stationary upper body with
+   the legs animating under it; chain attacks kept until the game can take them; Keyblade
+   effects (summon, trails, damage numbers); the characters half drawn in third person when
+   Roxas turns away (the game's own culling, to find).
 2. Step 5b, magic: from the Keyblade's tip, its effects facing you, aim to cast.
 3. Loose ends of steps 2 and 3: the world's scale from Roxas's height; analog movement and
    room-scale steps through the game's collision; the rest of the game's culling.
@@ -137,6 +139,19 @@ and into VR as real geometry around you.
       legs keep the game's animation, used only while he moves (standing still, they stand), a
       blend of animation below the hips and tracking above. Until then, Body without head hides
       him while he moves (his run cycle carried him in front of the view).
+
+### Step 5, next (after the arm-following build is tested)
+
+- [ ] A stationary upper body: his shoulders, torso and hips stay under your headset while he
+      moves (a little sway with his steps), never running out from under your head; his legs
+      play the game's run and walk, kept to what looks natural under that body.
+- [ ] Chain attacks in first person: a swing made while his attack cannot take a new one yet is
+      kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
+      press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
+      soft-locked, so swinging on plays the chain through.
+- [ ] Keyblade effects in first person: the summoning effect when it appears in your hand,
+      trails on your swings, and damage numbers floating up briefly from an enemy you hit
+      (first person in VR only).
 
 ## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
 

@@ -59,7 +59,7 @@ hands, DS + giant screen) and the options changed most.
 | `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
 | `body` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `without_head` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
-| `head_cut` | Head cut height | 0.5 to 1 | `0.8` | Body without head: the part of Roxas's height above which he is not drawn (his head and hair). Lower it if hair still shows; raise it if his shoulders go. |
+| `head_cut2` | Head cut height | 0.5 to 1 | `0.78` | Body without head: the part of Roxas's height above which he is not drawn (his head and hair). Lower it if hair still shows; raise it if his shoulders go. |
 | `weapon_hand` | Keyblade hand | `left`, `right` | `right` | The hand that holds the Keyblade. |
 | `dual_wield` | Dual wield | `true` / `false` | `false` | Put a second Keyblade in the other hand when the character has one. |
 | `grip_angle` | Grip angle | -60 to 60 deg | `0` | Tilts the Keyblade in your hand. |
