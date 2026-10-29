@@ -20,6 +20,7 @@ and into VR as real geometry around you.
    sound from where it happens; speech bubbles above the speaker.
 5. Step 6, the clock tower as the loading area.
 6. The open ideas, as chosen.
+7. A PCVR build (once the Quest version is stable): see the last section.
 
 ## Step 1: the world as geometry (capture, textures, a stereo giant screen)
 
@@ -206,3 +207,21 @@ the body; chests opened by striking or touching them; a pointer and a wrist quic
 - [ ] The first time you reach the top of the Twilight Town clock tower, its captured geometry and
       textures are saved to the KHDaysVR folder; later boots stand you there instead of in the
       Heart's Station (which stays the fallback). Nothing from the game goes into the APK.
+
+## Last: a PCVR build (once the Quest version is stable)
+
+The game (the decomp through wasm2c: portable C), the DS hardware stand-ins (`platform/`) and the
+VR core (`core/`: settings, rigs, combat, input, panel) already build and run on a desktop for the
+tests. Only the Quest app layer (`android/app/src/main/cpp`, about 3,500 lines) is Android's:
+
+- [ ] OpenXR on Windows (SteamVR, Meta Link / Air Link, WMR): the same OpenXR code with a desktop
+      window and loop instead of the Android activity, and desktop OpenGL instead of OpenGL ES
+      (XR_KHR_opengl_enable), or GLES kept through ANGLE.
+- [ ] The renderer's shaders and few ES-only calls for desktop OpenGL.
+- [ ] Audio through a small cross-platform library instead of AAudio.
+- [ ] The ROM and the saves: a folder beside the program or a file picker instead of the Quest's
+      folders. Still nothing from the game in the build.
+- [ ] Quest-only features (passthrough, refresh rates, foveation) left out or given PC
+      counterparts; controller binding profiles for Index and Vive controllers too.
+- [ ] Built for Windows from the Linux CI (cross-compiling) or on your own PC: Windows CI minutes
+      cost twice the Linux ones.
