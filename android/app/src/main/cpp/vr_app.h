@@ -45,6 +45,8 @@ private:
         Pose pose;      // tracking space
         float width = 0, height = 0;
     };
+    // Hand screen > Placement, or Hidden while you stand in a cutscene.
+    BottomScreenPlacement HandScreenPlacementNow() const;
     ViewMode EffectiveMode() const;
     void ApplyPlatformSettings();
     void UpdateTextures();

@@ -413,6 +413,13 @@ void VrApp::UpdateStatus(double now) {
     statusTex_.Upload(c.width(), c.height(), c.data(), true);
 }
 
+BottomScreenPlacement VrApp::HandScreenPlacementNow() const {
+    // Standing in a cutscene, the wrist / hand screen goes: nothing to touch, and it would draw
+    // the eye from the scene.
+    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inCutscene) return BottomScreenPlacement::Hidden;
+    return settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+}
+
 ViewMode VrApp::EffectiveMode() const {
     const GameFrame &g = game_->frame();
     ViewMode mode = settings_.Enum<ViewMode>(SettingId::ViewMode);
@@ -546,7 +553,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     // Bottom screen: held above a hand like a handheld, worn on the wrist like a watch, or
     // floating low left. Held and worn screens can be moved and turned along their own axes, and
     // grow in only while you look toward them.
-    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    const BottomScreenPlacement placement = HandScreenPlacementNow();
     const int sideSetting = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
     if (sideSetting != heldHandSetting_) {
         heldHand_ = -1;  // the setting changed: it decides again
@@ -721,7 +728,7 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     // ---- Laser pointer: the settings panel (right hand), then the bottom (touch) screen, which
     // the hand that is not holding it points at ----
-    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    const BottomScreenPlacement placement = HandScreenPlacementNow();
     const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
     const int touchHand = held ? 1 - handScreenSide_ : 1;
     float px = 0, py = 0, dist = 0;
@@ -1214,7 +1221,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         renderer_.SetScreenSmoothing(0.0f);
     }
     {
-        const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+        const BottomScreenPlacement placement = HandScreenPlacementNow();
         const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
         if (placement != BottomScreenPlacement::Hidden && (!held || in.gripValid[handScreenSide_])) {
             // Not looked at: small and see-through, so it is easy to find; looked at: grows to
