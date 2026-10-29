@@ -454,8 +454,8 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
                     const float *l = &w.local[(t * 3 + k) * 3];
                     points.push_back({l[0], l[1], l[2]});
                 }
-        // A Keyblade has a dozen polygons or more; a handful (an effect or shadow on him, 5) is not one.
-        if (points.size() < 8 * 3) continue;
+        // The capture keeps only solid models on him (his Keyblade has 7 to 12 polygons).
+        if (points.size() < 4 * 3) continue;
         WeaponFrame f = FindWeaponFrame(points);
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;

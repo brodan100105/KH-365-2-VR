@@ -1005,8 +1005,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);
-                // Turned a quarter about the blade so the teeth face your arm (down from the hand).
-                Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip) * Quat::AxisAngle({0, 0, 1}, -kPi * 0.5f);
+                // Turned a quarter about the blade so the teeth face in, towards your forearm.
+                Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip) * Quat::AxisAngle({0, 0, 1}, kPi * 0.5f);
                 const TexturedWorld &held = game_->heldWeapon();
                 if (!held.vertices.empty()) {
                     const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);

@@ -1772,11 +1772,15 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     tag[his[0].first] = kWorldModelPlayer;
     st.playerObj = his[0].first;
     st.playerPolygons = his[0].second->polygons;
-    // Attached: a model of some polygons (his Keyblade has a dozen); a handful (5, an effect or a
-    // shadow under him) is not one of his.
-    // Nor is a see-through one (the trail a swing leaves): the Keyblade is solid.
+    // Attached: solid models drawn on him (his Keyblade: 7 to 12 polygons, only while he swings).
+    // Not those kept inside his own actor (a shadow under him, 5 polygons at actor +3888), nor a
+    // see-through one (the trail a swing leaves).
+    const uint32_t actor = SwapPlayerActor();
     his.erase(std::remove_if(his.begin() + 1, his.end(),
-                             [](const auto &h) { return h.second->polygons < 8 || h.second->translucent * 2 > h.second->polygons; }),
+                             [actor](const auto &h) {
+                                 const bool inActor = actor && h.first >= actor && h.first < actor + 0x4000;
+                                 return inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons;
+                             }),
               his.end());
     for (size_t i = 1; i < his.size() && i <= static_cast<size_t>(kWorldAttachedMax); ++i) {
         tag[his[i].first] = static_cast<uint8_t>(kWorldModelAttached + i - 1);
