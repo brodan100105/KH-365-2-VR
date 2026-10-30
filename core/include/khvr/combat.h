@@ -39,10 +39,6 @@ struct CombatFrame {
     bool jump = false;
     bool dodge = false;
     Vec3 dodgeDirection;     // stick direction of the flick (x right, z back)
-    // The Keyblade is out (Combat > Summon the Keyblade: held grip summons and dismisses it), and
-    // it came out or went away this frame.
-    bool keybladeOut = true;
-    bool summoned = false, dismissed = false;
     // Haptic pulses to play, per hand: amplitude 0..1 and duration in seconds.
     float hapticAmplitude[2] = {0, 0};
     float hapticSeconds[2] = {0, 0};
@@ -88,11 +84,6 @@ private:
         float cooldown = 0.0f;   // seconds until the next swing may start
         bool triggerHeld = false;
     };
-    // The Keyblade summoned with the weapon hand's grip held: out or not, how long the grip has
-    // been held, and whether it has been let go since the last toggle.
-    bool keybladeOut_ = false;
-    float gripHeld_ = 0.0f;
-    bool gripReleased_ = true;
     HandState hands_[2];
     float guardTime_ = 0.0f;
     bool guarding_ = false;

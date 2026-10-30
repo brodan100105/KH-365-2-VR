@@ -1849,6 +1849,11 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
             Log("models: around Roxas (%u polygons)%s", st.playerPolygons, seen.empty() ? " | none" : seen.c_str());
         }
     }
+    // His swings' trails and flashes: the small see-through models on him (first person leaves them
+    // out: the Keyblade you hold is yours).
+    for (size_t i = 1; i < his.size(); ++i)
+        if (his[i].second->polygons < 60 && his[i].second->translucent * 2 > his[i].second->polygons)
+            tag[his[i].first] = kWorldModelEffect;
     // Only the solid model kept inside his own actor is his Keyblade: models merely near him were
     // taken for it too (an enemy right in front of him, 618 triangles; HUD pieces), drawn in your
     // hand and hidden from the world.

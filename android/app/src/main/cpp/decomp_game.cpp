@@ -372,7 +372,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         for (size_t tri = 0; tri < w.triangleFlags.size(); ++tri) {
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
             if (hideHead && his(tri) && inHead(v)) continue;
-            // His Keyblade is in your hand.
+            // His Keyblade is in your hand, and his swings' trails are not drawn.
             if (hideHead && tagged && w.triangleModel[tri] >= kWorldModelAttached) continue;
             if (hide && tagged && w.triangleModel[tri] != 0) continue;
             if (hide && !tagged && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;

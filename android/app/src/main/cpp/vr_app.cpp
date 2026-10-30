@@ -788,11 +788,6 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     CombatFrame combat;
     const CombatFrame *combatPtr = nullptr;
-    // Outside a battle area the Keyblade is put away (summoned again with the grip in one).
-    if (!game_->frame().inBattle) {
-        if (settings_.Bool(SettingId::CombatSummon) && keybladeOut_) combat_.Reset();
-        keybladeOut_ = !settings_.Bool(SettingId::CombatSummon);
-    }
     // Gestures fight: only in a battle area (a swing presses A, which talks to people elsewhere).
     if (mode == ViewMode::FirstPerson && !panel_.isOpen() && game_->frame().inBattle) {
         CombatInput ci;
@@ -810,7 +805,6 @@ void VrApp::Frame(const XrFrameInput &in) {
             ci.enemyTargeted = tw.lockOn && (tw.lockOnKind == 1 || tw.lockOnKind == 3);
         }
         combat = combat_.Update(settings_, ci);
-        keybladeOut_ = combat.keybladeOut;
 #ifdef KHVR_HAS_GAME
         // What the gestures press, into the boot log (a menu opening by itself can be traced).
         if (decomp_) {
@@ -823,8 +817,6 @@ void VrApp::Frame(const XrFrameInput &in) {
             if (combat.guardStarted) note("guard", SettingId::CtrlGuardButton);
             if (combat.dodge) note("dodge", SettingId::CtrlDodgeButton);
             if (combat.jump) note("jump", SettingId::CtrlJumpButton);
-            if (combat.summoned) Platform::Get().LogLine("input: the Keyblade summoned");
-            if (combat.dismissed) Platform::Get().LogLine("input: the Keyblade put away");
         }
 #endif
         combatPtr = &combat;
@@ -1038,9 +1030,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         if (mode == ViewMode::FirstPerson) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
-            // Only while it is summoned (Combat > Summon the Keyblade).
-            // Summoned, it is always in your hand: the game's own once seen, the placeholder before.
-            if ((h == weapon || dual) && keybladeOut_) {
+            // Always in your hand: the game's own once seen, the placeholder before.
+            if (h == weapon || dual) {
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);

@@ -129,6 +129,8 @@ struct PlatformWorld {
 // Roxas's own model, and the models attached to his (kWorldModelAttached + i the i-th, up to
 // kWorldAttachedMax): his Keyblade.
 constexpr uint8_t kWorldModelPlayer = 1, kWorldModelAttached = 2;
+// The see-through models drawn on him: his swings' trails and flashes.
+constexpr uint8_t kWorldModelEffect = 7;
 constexpr int kWorldAttachedMax = 4;
 
 // A captured world to a file and back (world_file.cpp).

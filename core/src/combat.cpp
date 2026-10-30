@@ -18,8 +18,6 @@ constexpr float kGuardMaxReach = 0.75f;
 constexpr float kGuardHoldSeconds = 0.12f;
 // Dodge: a flick is released within this long; held longer, the stick is walking.
 constexpr float kFlickMaxHold = 0.25f;
-// Holding the weapon hand's grip this long summons or dismisses the Keyblade.
-constexpr float kSummonHoldSeconds = 0.35f;
 // Physical jump: upward head speed (m/s).
 constexpr float kJumpSpeed = 1.3f;
 
@@ -62,27 +60,6 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
     const bool dual = s.Bool(SettingId::FpDualWield);
     const bool motion = s.Bool(SettingId::CombatMotion);
 
-    // ---- The Keyblade: summoned and dismissed by holding the weapon hand's grip ----
-    if (s.Bool(SettingId::CombatSummon)) {
-        const bool held = in.grip[weaponHand] > 0.6f;
-        if (!held) {
-            gripHeld_ = 0.0f;
-            gripReleased_ = true;
-        } else if (gripReleased_) {
-            gripHeld_ += in.dt;
-            if (gripHeld_ >= kSummonHoldSeconds) {
-                keybladeOut_ = !keybladeOut_;
-                gripReleased_ = false;
-                (keybladeOut_ ? out.summoned : out.dismissed) = true;
-                out.hapticAmplitude[weaponHand] = haptics * (keybladeOut_ ? 0.6f : 0.3f);
-                out.hapticSeconds[weaponHand] = keybladeOut_ ? 0.12f : 0.06f;
-            }
-        }
-        out.keybladeOut = keybladeOut_;
-    } else {
-        out.keybladeOut = true;
-    }
-
     // ---- Swings ----
     for (int h = 0; h < 2; ++h) {
         HandState &st = hands_[h];
@@ -111,7 +88,7 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         st.prevGrip = grip;
         st.hasPrev = true;
 
-        bool armed = motion && (h == weaponHand || dual) && out.keybladeOut;
+        bool armed = motion && (h == weaponHand || dual);
         float speed = Length(st.velocity);
         if (!armed) continue;
 
@@ -141,7 +118,7 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
 
     // ---- Guard ----
     bool guardPose = false;
-    if (s.Bool(SettingId::CombatGuardGesture) && in.handValid[weaponHand] && out.keybladeOut) {
+    if (s.Bool(SettingId::CombatGuardGesture) && in.handValid[weaponHand]) {
         const Pose &g = in.hands[weaponHand];
         Vec3 axis = BladeAxis(g, gripAngle);
         float tilt = RadToDeg(std::asin(Clamp(std::fabs(axis.y), 0.0f, 1.0f)));

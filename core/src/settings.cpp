@@ -169,9 +169,6 @@ std::vector<SettingDef> BuildDefs() {
                   "How dodge rolls are triggered."));
     d.push_back(F(S::CombatHaptics, "Combat", "haptics", "Haptics", 0.7f, 0.0f, 1.0f, 0.1f, "",
                   "Controller vibration on hits, blocks and swings."));
-    d.push_back(B(S::CombatSummon, "Combat", "summon", "Summon the Keyblade", true,
-                  "First person: hold the Keyblade hand's grip to summon the Keyblade, and again to put "
-                  "it away; swings attack only while it is out. Off: it is always out."));
     d.push_back(F(S::CombatReach, "Combat", "reach", "Keyblade reach", 0.3f, 0.0f, 1.0f, 0.05f, "m",
                   "First person: how much further Roxas's Keyblade reaches enemies than in the game, so "
                   "you need not stand right on top of them. 0: the game's own reach."));
