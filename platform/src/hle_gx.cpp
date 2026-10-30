@@ -1849,9 +1849,13 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
             Log("models: around Roxas (%u polygons)%s", st.playerPolygons, seen.empty() ? " | none" : seen.c_str());
         }
     }
+    // Only the solid model kept inside his own actor is his Keyblade: models merely near him were
+    // taken for it too (an enemy right in front of him, 618 triangles; HUD pieces), drawn in your
+    // hand and hidden from the world.
     his.erase(std::remove_if(his.begin() + 1, his.end(),
-                             [](const auto &h) {
-                                 return h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
+                             [actor](const auto &h) {
+                                 const bool inActor = actor && h.first >= actor && h.first < actor + 0x4000;
+                                 return !inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
                                         h.second->localFar < 0.5;
                              }),
               his.end());
@@ -1974,7 +1978,9 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         bestLength = length;
         keyJoint = joint;
     }
-    if (keyJoint && !st.attachedObj[0]) {
+    // (Not used: one of his own joints taken for the Keyblade when none was in his actor caught
+    // other long thin parts of him. His Keyblade is the model in his actor.)
+    if (false && keyJoint && !st.attachedObj[0]) {
         st.keyJointPolygons = jointPolygons[keyJoint];
         st.keyJointLength = static_cast<float>(bestLength);
         for (WorldPoly &w : g.worldShown)

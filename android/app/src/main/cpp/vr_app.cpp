@@ -1038,11 +1038,9 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         if (mode == ViewMode::FirstPerson) {
             // A gloved hand, and the Keyblade along the blade axis the combat code uses.
             AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
-            // Without his head, the game's own Keyblade (when it is found) is in your hand, and no
-            // placeholder.
-            const bool gameKeyblade = !game_->heldWeapon().vertices.empty();
             // Only while it is summoned (Combat > Summon the Keyblade).
-            if ((h == weapon || dual) && keybladeOut_ && (body != BodyDisplay::WithoutHead || gameKeyblade)) {
+            // Summoned, it is always in your hand: the game's own once seen, the placeholder before.
+            if ((h == weapon || dual) && keybladeOut_) {
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);

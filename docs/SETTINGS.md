@@ -58,14 +58,14 @@ hands, DS + giant screen) and the options changed most.
 | `match_height` | Match character height | `true` / `false` | `true` | Scale the world so your real eye height matches the character's. |
 | `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
-| `body` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `without_head` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
+| `body2` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `hands_and_weapon` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
 | `head_cut2` | Head cut height | 0.5 to 1 | `0.78` | Body without head: the part of Roxas's height above which he is not drawn (his head and hair). Lower it if hair still shows; raise it if his shoulders go. |
 | `weapon_hand` | Keyblade hand | `left`, `right` | `right` | The hand that holds the Keyblade. |
 | `dual_wield` | Dual wield | `true` / `false` | `false` | Put a second Keyblade in the other hand when the character has one. |
 | `grip_angle` | Grip angle | -60 to 60 deg | `0` | Tilts the Keyblade in your hand. |
 | `keyblade_length` | Keyblade length | 0.5 to 1.5 x | `1` | Visual and hit length of the Keyblade. |
-| `keyblade_grip` | Keyblade grip | -0.3 to 0.3 m | `0` | Slides the Keyblade along its blade in your hand: up to hold it lower on the handle, down to hold it higher. |
-| `arms_follow` | Arms follow your hands | `true` / `false` | `true` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
+| `keyblade_grip` | Keyblade height | -0.3 to 0.3 m | `0` | Moves the Keyblade up or down in your hand, along its blade (down if it sits above your hand). The change shows at once while the panel is open. |
+| `arms_follow2` | Arms follow your hands (experimental) | `true` / `false` | `false` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
 
 ## Combat
 

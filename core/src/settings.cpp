@@ -113,7 +113,7 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::FpRoomScale, "First person", "room_scale", "Room-scale walking", true,
                   "Walking in your room moves the character. Walls push you back."));
     // A new key: Body without head became the default, so an old file's choice is not used.
-    d.push_back(E(S::FpShowBody, "First person", "body", "Show body", 3,
+    d.push_back(E(S::FpShowBody, "First person", "body2", "Show body", 1,
                   {"hidden", "hands_and_weapon", "full_body", "without_head"},
                   {"Hidden", "Hands and Keyblade", "Full body", "Body without head"},
                   "Which parts of the character model are drawn in first person. Body without head: "
@@ -132,10 +132,10 @@ std::vector<SettingDef> BuildDefs() {
                   5.0f, "deg", "Tilts the Keyblade in your hand."));
     d.push_back(F(S::FpKeybladeLength, "First person", "keyblade_length", "Keyblade length",
                   1.0f, 0.5f, 1.5f, 0.05f, "x", "Visual and hit length of the Keyblade."));
-    d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade grip", 0.0f, -0.3f, 0.3f, 0.01f, "m",
-                  "Slides the Keyblade along its blade in your hand: up to hold it lower on the handle, "
-                  "down to hold it higher."));
-    d.push_back(B(S::FpArmsFollow, "First person", "arms_follow", "Arms follow your hands", true,
+    d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade height", 0.0f, -0.3f, 0.3f, 0.01f, "m",
+                  "Moves the Keyblade up or down in your hand, along its blade (down if it sits above "
+                  "your hand). The change shows at once while the panel is open."));
+    d.push_back(B(S::FpArmsFollow, "First person", "arms_follow2", "Arms follow your hands (experimental)", false,
                   "With Show body: Body without head or Full body, Roxas's own arms reach for your "
                   "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "
                   "animation)."));
