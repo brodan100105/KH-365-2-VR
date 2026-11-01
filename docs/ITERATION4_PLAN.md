@@ -151,9 +151,6 @@ and into VR as real geometry around you.
       kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
       press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
       soft-locked, so swinging on plays the chain through.
-- [ ] Roxas's hands close into a fist as you press the grip and while the Keyblade is in that
-      hand, and open as you let go: a short animation, the fingers of his one-piece hand bent at
-      the knuckles (next build).
 - [ ] Keyblade effects in first person: the game's own summoning effect (as the game plays it
       when Roxas draws his Keyblade, read from the running game) when it appears in your hand,
       with the grow-in kept; trails on your swings, and damage numbers floating up briefly from

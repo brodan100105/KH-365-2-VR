@@ -129,6 +129,11 @@ struct Gx {
     // HUD textures seen, with their depth in camera space: a counter's +1 flies across the view
     // to the counter in one of them, never in one place long enough to be seen as a HUD piece.
     std::unordered_map<uint64_t, double> hudTextures;
+    // 3D on both screens in turn (case 0x50): which screen engine A showed at the last swap, how
+    // many swaps in a row it has changed, and each way's polygons (averaged).
+    bool lastAOnTop = true;
+    int swapRun = 0;
+    float phasePolys[2] = {0, 0};
     // Roxas's hands: their joints' pivots (Bip01_L_Hand, Bip01_R_Hand) as the frame being drawn
     // has them, and as the shown one has them (GxJoint; TagPlayerModels).
     float handPivotList[2][3] = {}, handPivotShown[2][3] = {};
@@ -982,6 +987,29 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         std::lock_guard<std::mutex> lock(gShownMu);
         g.shown.swap(g.list);
         g.list.clear();
+        {
+            // A scene with 3D on both screens draws them in turn, a frame each, swapping which
+            // screen engine A shows (POWCNT1 bit 15) every frame (Agrabah, Aladdin and Abu's
+            // scene): the world is the busier of the two, the other (a picture for the other
+            // screen) is not taken for it, else the view flickers between them.
+            const bool aOnTop = IoReg16(0x304) & 0x8000;
+            g.swapRun = aOnTop != g.lastAOnTop ? g.swapRun + 1 : 0;
+            g.lastAOnTop = aOnTop;
+            const float n = static_cast<float>(g.worldList.size());
+            g.phasePolys[aOnTop] += (n - g.phasePolys[aOnTop]) * 0.3f;
+            const bool alternating = g.swapRun >= 3;
+            if (alternating && g.phasePolys[aOnTop] < 0.7f * g.phasePolys[!aOnTop]) {
+                g.worldList.clear();
+                g.projList.clear();
+                g.glbList.clear();
+                g.lockOnPending = false;
+                g.projRecorded = 0;
+                for (int a = 0; a < 2; ++a) g.handList[a] = false;
+                g.vertexCount = 0;
+                ++gWorldStats.otherScreenFrames;
+                break;
+            }
+        }
         g.worldShown.swap(g.worldList);
         g.worldList.clear();
         g.projShown.swap(g.projList);
@@ -2048,6 +2076,11 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
 constexpr int kCharSpriteFrames = 30;
 std::unordered_map<uint64_t, int> gCharSpriteRuns;
 std::unordered_map<uint64_t, uint8_t> gCharSpritesNow;
+struct CharSpriteTurn {
+    double first[3] = {0, 0, 0};  // its normal when first seen facing the camera
+    bool has = false, turned = false;
+};
+std::unordered_map<uint64_t, CharSpriteTurn> gCharSpriteTurns;
 
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
@@ -2062,6 +2095,9 @@ void GxCaptureWorld(PlatformWorld *out) {
                 else if (run >= kCharSpriteFrames) next[k] = run;
             }
             gCharSpriteRuns.swap(next);
+            // A run that broke starts its turn afresh.
+            for (auto t = gCharSpriteTurns.begin(); t != gCharSpriteTurns.end();)
+                t = gCharSpriteRuns.count(t->first) ? std::next(t) : gCharSpriteTurns.erase(t);
         }
     } runsUpdate;
     out->lockOn = g.lockOnShown;
@@ -2230,13 +2266,28 @@ void GxCaptureWorld(PlatformWorld *out) {
             pv[i].y = static_cast<float>(x * m[1] + y * m[5] + z * m[9] + m[13]);
             pv[i].z = static_cast<float>(x * m[2] + y * m[6] + z * m[10] + m[14]);
             if (tex >= 0) {
-                pv[i].u = v.s / out->textures[tex].width;
+                pv[i].u = v.s / out->textures[tex].width;  // (inset below when it does not tile)
                 pv[i].v = v.t / out->textures[tex].height;
             } else {
                 pv[i].u = pv[i].v = 0;
             }
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
             pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
+        }
+        if (tex >= 0) {
+            // A polygon that shows its texture once (not tiled) samples it no closer than half a
+            // texel to its edges: smoothed, the edge took the colour of the far side (a texture
+            // wraps) and drew it as a thin line along the polygon (above the tips of Roxas's hair).
+            bool once = true;
+            for (int i = 0; i < w.n && once; ++i)
+                once = pv[i].u >= -1e-4f && pv[i].u <= 1.0001f && pv[i].v >= -1e-4f && pv[i].v <= 1.0001f;
+            if (once) {
+                const float hu = 0.5f / out->textures[tex].width, hv = 0.5f / out->textures[tex].height;
+                for (int i = 0; i < w.n; ++i) {
+                    pv[i].u = std::clamp(pv[i].u, hu, 1.0f - hu);
+                    pv[i].v = std::clamp(pv[i].v, hv, 1.0f - hv);
+                }
+            }
         }
         // Sprites have see-through textures (alpha, or a palette whose colour 0 is transparent):
         // a face's or a table's solid polygons that happen to lie square to the camera for a frame
@@ -2361,8 +2412,28 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (onCharacter && spriteLike) {
             auto &now = gCharSpritesNow[charKey];
             now = (now == 0 ? 1 : now) & (mode != 0 ? 1 : 2);  // 1 all facing, 2 or 0 not all
+            // It must have turned with the camera while facing it (a billboard does; hair facing a
+            // camera kept behind Roxas does not): its world normal moved 15 degrees from the first.
+            if (mode != 0) {
+                const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
+                const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
+                double nn[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+                const double l = std::sqrt(nn[0] * nn[0] + nn[1] * nn[1] + nn[2] * nn[2]);
+                if (l > 1e-9) {
+                    CharSpriteTurn &t = gCharSpriteTurns[charKey];
+                    for (double &c : nn) c /= l;
+                    if (!t.has) {
+                        std::copy(nn, nn + 3, t.first);
+                        t.has = true;
+                    } else if (std::fabs(nn[0] * t.first[0] + nn[1] * t.first[1] + nn[2] * t.first[2]) < 0.966) {
+                        t.turned = true;
+                    }
+                }
+            }
             auto it = gCharSpriteRuns.find(charKey);
-            const bool established = it != gCharSpriteRuns.end() && it->second >= kCharSpriteFrames;
+            auto turn = gCharSpriteTurns.find(charKey);
+            const bool established = it != gCharSpriteRuns.end() && it->second >= kCharSpriteFrames &&
+                                     turn != gCharSpriteTurns.end() && turn->second.turned;
             if (!established) {
                 mode = 0;
             } else if (mode == 0) {

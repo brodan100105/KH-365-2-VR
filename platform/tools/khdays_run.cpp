@@ -324,8 +324,8 @@ int WorldTest() {
         bool ok = w.vertices.size() == 6 && w.textures.size() == 1 && w.polygonsLeftOut == 1 && w.hasCamera;
         if (ok) {
             const khvr::PlatformWorldVertex &a = w.vertices[0], &c = w.vertices[2];
-            ok = near(a.x, 4) && near(a.y, -1) && near(a.z, 0) && near(c.x, 6) && near(c.y, 1) && near(c.u, 1) &&
-                 near(c.v, 1) && near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
+            ok = near(a.x, 4) && near(a.y, -1) && near(a.z, 0) && near(c.x, 6) && near(c.y, 1) && near(c.u, 1 - 0.5f / w.textures[0].width) &&
+                 near(c.v, 1 - 0.5f / w.textures[0].height) &&  // inset half a texel (not tiled) near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
                  near(w.fovY, 3.14159265 / 3) && near(w.nearZ, 1) && std::fabs(w.farZ - 100) < 0.5 &&
                  (w.textures[0].rgba[0] & 0xffffff) == 0xffffff && (w.textures[0].rgba[7] & 0xffffff) == 0x00ff00 &&
                  w.triangleFlags[0] == (khvr::kWorldFront | khvr::kWorldBack) && near(w.lens[5], cot) &&

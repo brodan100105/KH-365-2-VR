@@ -624,9 +624,10 @@ void Platform::Heartbeat() {
     if (GxWorldStats &w = gWorldStats; w.captures) {
         Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture, "
             "%u markers placed in the world, lock-on sight in %u frames, %u HUD pieces in front of the camera, "
-            "box tests %u in view and %u out of it%s",
+            "box tests %u in view and %u out of it%s, %u frames of 3D for the other screen left out",
             w.captures, w.triangles, w.textures, w.leftOut, w.markers, w.lockOns, w.hudPieces, w.boxesInView,
-            w.boxesOutOfView, hle::gDrawAll ? " (drawn anyway)" : "");
+            w.boxesOutOfView, hle::gDrawAll ? " (drawn anyway)" : "", w.otherScreenFrames);
+        w.otherScreenFrames = 0;
         w.captures = 0;
         w.markers = 0;
         w.lockOns = 0;

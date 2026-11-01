@@ -41,6 +41,7 @@ struct GxWorldStats {
     uint32_t hudPieces = 0;  // polygons kept on the HUD as fixed in front of the game's camera
     uint32_t boxesInView = 0, boxesOutOfView = 0;  // BOX_TEST answers the camera's view gave
     uint32_t eventPlaced = 0, eventCameraSpace = 0;  // event scene frames placed in the world, or not
+    uint32_t otherScreenFrames = 0;  // frames of 3D for the other screen, left out of the world
     // The last capture's render objects (NNS_G3dDraw), Roxas's own among them and those on him
     // (his Keyblade): their guest addresses, polygons, and farthest vertex from their origin.
     uint32_t objectsDrawn = 0, playerObj = 0, playerPolygons = 0;
