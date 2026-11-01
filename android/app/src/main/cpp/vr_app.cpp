@@ -879,6 +879,11 @@ void VrApp::Frame(const XrFrameInput &in) {
     float moveBasis = mode == ViewMode::GiantScreen ? gameCamYaw : rig_.moveBasisYaw;
     mapper_.SetMenuStick(before.menuInput);
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
+    // Chain attacks: the game took an action, so a swing waiting for it has been taken.
+    if (game_->frame().actionsTaken != lastActionsTaken_) {
+        lastActionsTaken_ = game_->frame().actionsTaken;
+        mapper_.NoteActionTaken();
+    }
 #ifdef KHVR_HAS_GAME
     if (decomp_) {
         // Roxas's arms reach for your hands: first person, his body shown, in the field.

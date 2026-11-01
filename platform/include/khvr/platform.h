@@ -81,6 +81,9 @@ struct PlatformPlayer {
     // Room-scale steps the game has taken in all (AddPlayerStep, game units along x and z): those
     // its position already shows.
     float stepTaken[2] = {0, 0};
+    // Frames in which the game took an action from the player's buttons (an attack, a block...;
+    // Ov022_TranslateCommandToAction's pending action, actor +0x1c, at the frame's end), in all.
+    uint32_t actionsTaken = 0;
     bool battle = false;       // a battle area (enemies' overlays loaded), not the Grey Area or a town
 };
 

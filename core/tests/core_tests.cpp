@@ -562,6 +562,32 @@ TEST(SmootherKeepsUpWhileWalking) {
     CHECK(worstStep < 0.06f);  // shared out, not 0.1 at once
 }
 
+TEST(SwingsWaitForTheGameToTakeThem) {
+    // A swing mid-attack: its press comes again every fourth game frame until the game takes it;
+    // a second swing meanwhile waits its turn; no swing, no press.
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    CombatFrame swing;
+    swing.swingStarted = true;
+    const uint16_t a = kDsA;
+    m.Update(s, ViewMode::FirstPerson, c, &swing, 0, 0, 1.0f / 90);
+    int pattern = 0;
+    for (int f = 0; f < 8; ++f) pattern = pattern * 2 + ((m.SampleForGameFrame() & a) != 0);
+    CHECK(pattern == 0xcc);  // pressed two frames, released two, again
+    m.Update(s, ViewMode::FirstPerson, c, &swing, 0, 0, 1.0f / 90);  // swung again meanwhile
+    m.NoteActionTaken();  // the first taken: the second starts, after a released frame
+    CHECK(m.attackPending());
+    CHECK((m.SampleForGameFrame() & a) == 0);
+    CHECK((m.SampleForGameFrame() & a) == 0);
+    CHECK((m.SampleForGameFrame() & a) != 0);
+    m.NoteActionTaken();
+    CHECK(!m.attackPending());
+    CombatFrame none;
+    m.Update(s, ViewMode::FirstPerson, c, &none, 0, 0, 1.0f / 90);
+    for (int f = 0; f < 6; ++f) CHECK((m.SampleForGameFrame() & a) == 0);
+}
+
 TEST(SmootherPlaysStepsOutBetweenGameFrames) {
     MotionSmoother m;
     m.Reset({0, 0, 0});

@@ -50,6 +50,8 @@ struct GameFrame {
     uint32_t frameCounter = 0;   // increments once per game frame (30 Hz or 60 Hz)
     // Room-scale steps, when the game says how far it has got with them: the steps it has taken
     // in all (world space, as asked), and those asked that playerPos does not show yet.
+    // Actions the game has taken from the player's buttons, in all (counts up as it takes one).
+    uint32_t actionsTaken = 0;
     bool roomStepsReported = false;
     Vec3 roomStepTaken, roomStepUnapplied;
     GameCamera camera;           // the game's own camera this frame

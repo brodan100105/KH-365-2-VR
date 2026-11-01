@@ -147,7 +147,7 @@ and into VR as real geometry around you.
 - [ ] A stationary upper body: his shoulders, torso and hips stay under your headset while he
       moves (a little sway with his steps), never running out from under your head; his legs
       play the game's run and walk, kept to what looks natural under that body.
-- [ ] Chain attacks in first person: a swing made while his attack cannot take a new one yet is
+- [x] Chain attacks in first person: a swing made while his attack cannot take a new one yet is
       kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
       press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
       soft-locked, so swinging on plays the chain through.

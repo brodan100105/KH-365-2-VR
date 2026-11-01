@@ -45,6 +45,12 @@ public:
     // and advances the pulse timers.
     uint16_t SampleForGameFrame();
 
+    // The game took an action from the buttons (GameFrame::actionsTaken went up): a swing waiting
+    // to be taken has been, and the next one queued (swung meanwhile) starts.
+    void NoteActionTaken();
+    // A swing's attack press waiting for the game to take it (tests).
+    bool attackPending() const { return attackFrames_ > 0; }
+
     const AppActions &actions() const { return actions_; }
     // Analog movement in world space (length 0..1), for the analog movement hook.
     const Vec3 &analogMoveWorld() const { return analogMove_; }
@@ -80,6 +86,13 @@ private:
     bool modeToggleFired_ = false;
     bool settingsFired_ = false;
     bool menuWasDown_ = false;
+    // Chain attacks: a swing presses its button again every fourth game frame until the game takes
+    // it (mid-attack it drops a press it cannot use yet) or kAttackWaitFrames pass; one more swing
+    // made meanwhile waits its turn.
+    static constexpr int kAttackWaitFrames = 36;  // 0.6 s of DS frames
+    uint16_t attackBits_ = 0;
+    int attackFrames_ = 0, attackPhase_ = 0;
+    bool attackQueued_ = false;
     uint16_t dodgeDpad_ = 0;
     int dodgeFrames_ = 0;
     bool menuStick_ = false;

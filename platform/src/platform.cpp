@@ -257,6 +257,9 @@ namespace hle {
 void NoteFrameSwapped() {
     PlatformPlayer now;
     Platform::Get().ReadPlayerNow(&now);
+    static uint32_t actionsTaken = 0;
+    if (now.valid && now.actor && Read16(now.actor + 0x1c) != 0) ++actionsTaken;
+    now.actionsTaken = actionsTaken;
     std::lock_guard<std::mutex> lock(gSwapPlayerMu);
     gSwapPlayer = now;
     gSwapPlayerValid = true;

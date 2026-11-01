@@ -133,7 +133,15 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
 
     // ---- Gestures ----
     if (combat) {
-        if (combat->swingStarted) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlAttackButton)));
+        if (combat->swingStarted) {
+            attackBits_ = BindingBits(s.Enum<DsBinding>(SettingId::CtrlAttackButton));
+            if (attackFrames_ > 0) {
+                attackQueued_ = true;
+            } else {
+                attackFrames_ = kAttackWaitFrames;
+                attackPhase_ = 0;
+            }
+        }
         if (combat->guarding) held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlGuardButton));
         if (combat->castMagic) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlMagicButton)));
         if (combat->jump) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlJumpButton)));
@@ -213,6 +221,16 @@ uint16_t InputMapper::FieldDpad(float x, float y, float relativeYaw) {
     return kOctants[octant_];
 }
 
+void InputMapper::NoteActionTaken() {
+    if (attackFrames_ == 0) return;
+    attackFrames_ = 0;
+    if (attackQueued_) {
+        attackQueued_ = false;
+        attackFrames_ = kAttackWaitFrames;
+        attackPhase_ = 2;  // released frames first: the press just taken may still be down
+    }
+}
+
 uint16_t InputMapper::SampleForGameFrame() {
     uint16_t bits = held_;
     for (Pulse &p : pulses_) {
@@ -224,6 +242,17 @@ uint16_t InputMapper::SampleForGameFrame() {
             bits &= static_cast<uint16_t>(~p.bits);
             p.releasing = false;
             p.bits = 0;
+        }
+    }
+    if (attackFrames_ > 0) {
+        // Pressed two frames (the game's logic runs every other one), released two (each press
+        // a new one to it).
+        if (attackPhase_ < 2) bits |= attackBits_;
+        else bits &= static_cast<uint16_t>(~attackBits_);
+        attackPhase_ = (attackPhase_ + 1) % 4;
+        if (--attackFrames_ == 0 && attackQueued_) {
+            attackQueued_ = false;
+            attackFrames_ = kAttackWaitFrames;
         }
     }
     if (dodgeFrames_ > 0) {
