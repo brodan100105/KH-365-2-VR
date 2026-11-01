@@ -841,7 +841,7 @@ void VrApp::Frame(const XrFrameInput &in) {
         // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
         // Area) it stays away.
         // Holding the left thumbstick down (half a second) puts the second screen (the wrist,
-        // hand or floating touch screen) away, or brings it back; a press is still Select.
+        // hand or floating touch screen) away, or brings it back; a press alone does nothing.
         if (buttons.stickClick[0] && !panel_.isOpen()) {
             const bool was = leftStickHeldFor_ >= 0.5f;
             leftStickHeldFor_ += in.dt;

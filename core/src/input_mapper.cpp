@@ -111,7 +111,8 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     if (c.b) held |= kDsB;
     if (c.x) held |= kDsX;
     if (c.y) held |= kDsY;
-    if (c.stickClick[0]) held |= kDsSelect;
+    // (The left thumbstick's press is no DS button: held, it puts the second screen away. As
+    // Select it stopped Roxas moving.)
     // In a menu or a tutorial's pages the triggers are L and R in every view (first person keeps
     // one for magic otherwise, and the pages turn with L/R).
     const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_ &&
