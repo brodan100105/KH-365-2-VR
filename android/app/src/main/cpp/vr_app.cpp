@@ -482,9 +482,26 @@ void VrApp::UpdateTextures() {
         } else {
             upload(topTex_, s.top);
         }
-        upload(hudTex_, s.topHud);
+        // Standing in the world, the 2D drawn over it goes without a cutscene's letterbox: rows
+        // all of opaque black from edge to edge (on the DS thin bars, in the headset across your
+        // view: Day 52's Tailbunker zoom flickered black).
+        auto noBars = [&](const std::vector<uint32_t> &px) -> const std::vector<uint32_t> & {
+            if (lastMode_ == ViewMode::GiantScreen || px.size() != static_cast<size_t>(DsScreens::kWidth) * DsScreens::kHeight)
+                return px;
+            barScratch_ = px;
+            for (int y = 0; y < DsScreens::kHeight; ++y) {
+                uint32_t *row = &barScratch_[static_cast<size_t>(y) * DsScreens::kWidth];
+                bool black = true;
+                for (int x = 0; x < DsScreens::kWidth && black; ++x)
+                    black = (row[x] >> 24) > 0xc0 && (row[x] & 0xff) < 0x18 && ((row[x] >> 8) & 0xff) < 0x18 &&
+                            ((row[x] >> 16) & 0xff) < 0x18;
+                if (black) std::fill(row, row + DsScreens::kWidth, 0u);
+            }
+            return barScratch_;
+        };
+        upload(hudTex_, noBars(s.topHud));
         if (!s.topFront.empty()) {
-            upload(frontTex_, s.topFront);
+            upload(frontTex_, noBars(s.topFront));
             upload(backTex_, s.topBack);
         }
         upload(bottomTex_, s.bottom);
@@ -802,7 +819,9 @@ void VrApp::Frame(const XrFrameInput &in) {
     CombatFrame combat;
     const CombatFrame *combatPtr = nullptr;
     // Gestures fight: only in a battle area (a swing presses A, which talks to people elsewhere).
-    if (mode == ViewMode::FirstPerson && !panel_.isOpen() && game_->frame().inBattle) {
+    // Not while a cutscene or an NPC's text is up (the guard pose pressed Block in Day 52's).
+    if (mode == ViewMode::FirstPerson && !panel_.isOpen() && game_->frame().inBattle && !game_->frame().inScript &&
+        !game_->frame().inCutscene) {
         CombatInput ci;
         ci.dt = dt;
         ci.head = in.head;

@@ -152,6 +152,7 @@ private:
     double lastGripAt_[2] = {0.0, 0.0};
     bool keybladeShown_ = false;
     uint32_t lastActionsTaken_ = 0;  // GameFrame::actionsTaken as last seen
+    std::vector<uint32_t> barScratch_;  // a 2D layer without letterbox rows (UpdateTextures)
     bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
     float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
