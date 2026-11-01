@@ -63,6 +63,11 @@ enum class SettingId : int {
     FpKeybladeTurn,
     FpHandSize,
     FpHandTurn,
+    FpHandTilt,
+    FpHandSwing,
+    FpHandRight,
+    FpHandUp,
+    FpHandForward,
     FpArmsFollow,
     // Combat (first person motion controls)
     CombatMotion,

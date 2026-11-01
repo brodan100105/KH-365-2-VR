@@ -85,21 +85,28 @@ float TurnController::Update(const Settings &s, float axis, float dt, bool *snap
 
 void MotionSmoother::Reset(const Vec3 &p) {
     from_ = to_ = pos_ = p;
+    step_ = {};
     elapsed_ = 0.0f;
 }
 
-Vec3 MotionSmoother::Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown) {
+Vec3 MotionSmoother::Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown, bool predict) {
     elapsed_ += dt;
     if (gameFrame != frame_ || Length(target - to_) > 1e-6f) {
         frame_ = gameFrame;
         // Average the game's frame time, ignoring hitches (loads, pauses) longer than 0.1 s.
         if (elapsed_ > 0.0f && elapsed_ < 0.1f) interval_ += (elapsed_ - interval_) * 0.2f;
         from_ = pos_ + shown;
+        step_ = target - to_ - shown;
+        // A jump (a teleport, a load) is no speed.
+        if (Length(step_) > 1.0f) step_ = {};
         to_ = target;
         elapsed_ = 0.0f;
     }
-    const float k = Clamp(elapsed_ / std::fmax(interval_, 1e-3f), 0.0f, 1.0f);
-    pos_ = from_ + (to_ - from_) * k;
+    // This headset frame counts too: the one a game frame arrives in moves the view a share
+    // already (else it stood still then, a half game frame behind all along).
+    const float k = Clamp((elapsed_ + dt) / std::fmax(interval_, 1e-3f), 0.0f, 1.0f);
+    const Vec3 aim = predict ? to_ + step_ : to_;
+    pos_ = from_ + (aim - from_) * k;
     return pos_;
 }
 
@@ -276,7 +283,8 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         lastGameFrame_ = game.frameCounter;
     }
     const Vec3 followed = s.Bool(SettingId::ViewSmoothMotion)
-                              ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed)
+                              ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed,
+                                               Length(t.moveAxis) > 0.2f)
                               : game.playerPos;
     // Walking him with the stick or in your room, the view keeps right with him; otherwise (his
     // attacks lunge him forward a step at a time) it glides after him, so a combo does not jerk

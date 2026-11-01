@@ -469,7 +469,7 @@ TEST(FirstPersonRoomScaleStep) {
     // his attacks' lunges) from where the view showed you.
     g.frameCounter++;
     o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
-    CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
+    CHECK(Length(o.trackingToWorld.Transform({0.1f, 1.6f, 0}) - Vec3{0.1f, 1.6f, 0}) < 0.05f);  // just starting back
     for (int i = 0; i < 270; ++i) o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0, 1.6f, 0}));
     // Without smooth motion, at once.
@@ -539,6 +539,27 @@ TEST(FirstPersonRoomStepsAsTheGameReportsThem) {
         g.roomStepUnapplied = asked - taken;
     }
     CHECK(worst < 0.02f);
+}
+
+TEST(SmootherKeepsUpWhileWalking) {
+    // Walking at a steady pace, the game at 30 frames a second, the headset at 90: predicting,
+    // the view is where he is, not a game frame behind; and it still moves smoothly.
+    MotionSmoother m;
+    m.Reset({0, 0, 0});
+    uint32_t frame = 0;
+    float worstLag = 0, worstStep = 0, last = 0;
+    for (int i = 1; i <= 90; ++i) {
+        if (i % 3 == 0) ++frame;
+        const float truth = 0.1f * static_cast<float>(i) / 3.0f;  // where he would be by now
+        const Vec3 p = m.Update({0.1f * static_cast<float>(frame), 0, 0}, frame, 1.0f / 90, {}, true);
+        if (i > 30) {
+            worstLag = std::fmax(worstLag, std::fabs(truth - p.x));
+            worstStep = std::fmax(worstStep, p.x - last);
+        }
+        last = p.x;
+    }
+    CHECK(worstLag < 0.04f);   // under half a game frame's move (0.1)
+    CHECK(worstStep < 0.06f);  // shared out, not 0.1 at once
 }
 
 TEST(SmootherPlaysStepsOutBetweenGameFrames) {

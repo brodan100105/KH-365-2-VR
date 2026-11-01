@@ -49,12 +49,14 @@ class MotionSmoother {
 public:
     void Reset(const Vec3 &p);
     // The game's position this headset frame; returns the smoothed one. `shown` is how much of
-    // the newest step to show at once (room-scale steps the view already showed).
-    Vec3 Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown = {});
+    // the newest step to show at once (room-scale steps the view already showed). `predict`
+    // (walking him with the stick): aims at where he will be by the next game frame, at his
+    // speed, instead of where the newest one put him (a game frame behind).
+    Vec3 Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown = {}, bool predict = false);
     const Vec3 &position() const { return pos_; }
 
 private:
-    Vec3 from_, to_, pos_;
+    Vec3 from_, to_, pos_, step_;  // step_: the newest game frame's move
     uint32_t frame_ = 0;
     float elapsed_ = 0.0f;           // since the newest game frame
     float interval_ = 1.0f / 30.0f;  // between game frames, averaged

@@ -573,20 +573,29 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                                        : settings_.Get(SettingId::HandScreenSize);
         bottomPanel_.height = bottomPanel_.width * 0.75f;
         const int h = handScreenSide_;
+        // The hand's last pose while its tracking drops for a moment (held very still over a menu,
+        // the headset can take the controller for put down): the screen stays where it was
+        // instead of going.
         if (in.gripValid[h]) {
+            lastGrip_[h] = in.grip[h];
+            lastGripAt_[h] = in.time;
+        }
+        const bool gripOk = in.gripValid[h] || (lastGripAt_[h] > 0.0 && in.time - lastGripAt_[h] < 20.0);
+        const Pose grip = in.gripValid[h] ? in.grip[h] : lastGrip_[h];
+        if (gripOk) {
             // Anchored to the hand (just above the controller) or to the wrist (where a watch
             // sits, behind the controller along the forearm), always facing your eyes upright:
             // the controller's own axes vary too much with how it is held to orient a screen.
             Vec3 anchor = placement == BottomScreenPlacement::InHand
-                              ? in.grip[h].position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
-                              : in.grip[h].Transform({0.0f, -0.02f, 0.13f});
+                              ? grip.position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
+                              : grip.Transform({0.0f, -0.02f, 0.13f});
             // Held with both hands: the other controller brought up to the handheld takes it to
             // the middle of the two hands; it goes back to one hand once they are pulled apart.
             const int other = 1 - h;
             if (handheld_ && placement == BottomScreenPlacement::InHand &&
                 settings_.Bool(SettingId::HandScreenDsTwoHands) && in.gripValid[other]) {
                 float toHandheld = Length(in.grip[other].position - bottomPanel_.pose.position);
-                float apart = Length(in.grip[other].position - in.grip[h].position);
+                float apart = Length(in.grip[other].position - grip.position);
                 // While that hand points at the touch screen it comes much closer before taking
                 // hold, so the pointer stays usable right in front of the handheld.
                 const float reach = laserOnBottom_ ? 0.05f : 0.14f;
@@ -597,7 +606,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                     // away is free (and becomes the pointer hand).
                     twoHanded_ = false;
                     const Vec3 at = bottomPanel_.pose.position;
-                    const int stays = Length(in.grip[other].position - at) < Length(in.grip[h].position - at) ? other : h;
+                    const int stays = Length(in.grip[other].position - at) < Length(grip.position - at) ? other : h;
                     if (stays != h) {
                         heldHand_ = stays;
                         handScreenSide_ = stays;
@@ -609,7 +618,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             }
             twoHandBlend_ = Clamp(twoHandBlend_ + (twoHanded_ ? 1.0f : -1.0f) * in.dt / 0.2f, 0.0f, 1.0f);
             if (twoHandBlend_ > 0.0f) {
-                Vec3 middle = (in.grip[h].position + in.grip[other].position) * 0.5f +
+                Vec3 middle = (grip.position + in.grip[other].position) * 0.5f +
                               Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f};
                 float e = twoHandBlend_ * twoHandBlend_ * (3.0f - 2.0f * twoHandBlend_);
                 anchor = anchor + (middle - anchor) * e;
@@ -626,17 +635,17 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                 // Fixed to the hand: keep the angle relative to the controller that it had when
                 // it last faced you (switching this off, or a recenter).
                 if (!handScreenLockValid_ || recenterNext_) {
-                    handScreenLock_ = in.grip[h].orientation.Conjugate() * face;
+                    handScreenLock_ = grip.orientation.Conjugate() * face;
                     handScreenLockValid_ = true;
                 }
-                face = in.grip[h].orientation * handScreenLock_;
+                face = grip.orientation * handScreenLock_;
             }
             bottomPanel_.pose = Pose{face * turn, anchor} * Pose{Quat(), move};
         }
         // Shown while you look toward it (wider to keep it than to bring it up), or always.
         bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_ ||
                       (handheld_ && handheld == HandheldDs::Only) || twoHanded_;
-        if (!wanted && in.gripValid[h]) {
+        if (!wanted && gripOk) {
             Vec3 to = bottomPanel_.pose.position - head.position;
             float dist = Length(to);
             float angle = std::acos(Clamp(Dot(to * (1.0f / std::max(dist, 1e-4f)), head.orientation.Forward()), -1.0f, 1.0f));
@@ -644,7 +653,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             // eyes, so the cone is wide.
             wanted = dist < 1.2f && angle < DegToRad(handScreenShown_ > 0.5f ? 60.0f : 45.0f);
         }
-        if (!in.gripValid[h]) wanted = false;
+        if (!gripOk) wanted = false;
         float step = in.dt / 0.18f;  // grow or shrink in about 0.18 s
         handScreenShown_ = Clamp(handScreenShown_ + (wanted ? step : -step), 0.0f, 1.0f);
     } else {
@@ -1053,8 +1062,10 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     for (int h = 0; h < 2; ++h) {
         if (!in.gripValid[h]) continue;
         const Pose &g = in.grip[h];
-        // Every Show body choice keeps the VR hands and Keyblade (Hidden leaves only Roxas out).
-        if (mode == ViewMode::FirstPerson) {
+        // Every Show body choice keeps the VR hands and Keyblade (Hidden leaves only Roxas out);
+        // while a cutscene, an NPC's text or a menu is up they go, as the wrist screen does.
+        const GameFrame &gf = game_->frame();
+        if (mode == ViewMode::FirstPerson && !gf.inScript && !gf.inCutscene && !gf.inMenu) {
             // Roxas's own hand (as the game last drew it), and the Keyblade along the blade axis
             // the combat code uses.
             DrawHand(h, g, vpTracking);
@@ -1099,12 +1110,18 @@ void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
     // (Turned half round across the hand: the first look had them upside down and backwards;
     // and each half round about its own wrist-to-knuckle line: the next had the palms up when
     // yours were down.)
-    const Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, kPi) * Quat::AxisAngle({0, 1, 0}, turn) *
+    // Hand tilt and Hand swing (the left hand mirrored, so one value suits both) on top.
+    const float side = h ? 1.0f : -1.0f;
+    const Quat adjust = Quat::AxisAngle({1, 0, 0}, -DegToRad(settings_.Get(SettingId::FpHandTilt))) *
+                        Quat::AxisAngle({0, 1, 0}, side * DegToRad(settings_.Get(SettingId::FpHandSwing)));
+    const Quat q = g.orientation * adjust * Quat::AxisAngle({1, 0, 0}, kPi) * Quat::AxisAngle({0, 1, 0}, turn) *
                    Quat::AxisAngle({0, 1, 0}, h ? 0.0f : kPi);
     const float size = 0.17f * settings_.Get(SettingId::FpHandSize);  // a hand's length, metres
     const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
     const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
-    const Mat4 model = Mat4::FromSimilarity({size, q, g.position + g.orientation.Rotate({0, 0.01f, 0.02f})});
+    const Vec3 move{side * settings_.Get(SettingId::FpHandRight), 0.01f + settings_.Get(SettingId::FpHandUp),
+                    0.02f - settings_.Get(SettingId::FpHandForward)};
+    const Mat4 model = Mat4::FromSimilarity({size, q, g.position + g.orientation.Rotate(move)});
     renderer_.DrawTexturedWorld(hand, vpTracking * model, nearest, WorldMotion(), 2 + h);
 }
 
@@ -1288,7 +1305,9 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     {
         const BottomScreenPlacement placement = HandScreenPlacementNow();
         const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
-        if (placement != BottomScreenPlacement::Hidden && (!held || in.gripValid[handScreenSide_])) {
+        const int hs = handScreenSide_;
+        const bool gripOk = in.gripValid[hs] || (lastGripAt_[hs] > 0.0 && in.time - lastGripAt_[hs] < 20.0);
+        if (placement != BottomScreenPlacement::Hidden && (!held || gripOk)) {
             // Not looked at: small and see-through, so it is easy to find; looked at: grows to
             // full size and opacity with a smooth ease.
             float t = handScreenShown_, e = t * t * (3.0f - 2.0f * t);

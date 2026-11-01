@@ -148,6 +148,8 @@ private:
     bool laserOnPanel_ = false, laserOnBottom_ = false;
     bool panelPlaced_ = false;
     // First person: the Keyblade held out (the grip held, or an attack lately) and since when.
+    Pose lastGrip_[2];  // each hand's last tracked grip pose, and when (HandScreen placement)
+    double lastGripAt_[2] = {0.0, 0.0};
     bool keybladeShown_ = false;
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
     float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held

@@ -143,6 +143,16 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::FpHandTurn, "First person", "hand_turn", "Hand turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",
                   "Turns Roxas's hands about your wrists (if his palms face the wrong way). The change "
                   "shows at once while the panel is open."));
+    d.push_back(F(S::FpHandTilt, "First person", "hand_tilt", "Hand tilt", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Tips Roxas's hands forward (above 0) or back, about your knuckles' line."));
+    d.push_back(F(S::FpHandSwing, "First person", "hand_swing", "Hand swing", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Turns Roxas's hands inward (above 0) or outward, about the up-down line."));
+    d.push_back(F(S::FpHandRight, "First person", "hand_right", "Hand outward", 0.0f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands outward (above 0, away from each other) or inward."));
+    d.push_back(F(S::FpHandUp, "First person", "hand_up", "Hand height", 0.0f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands up or down on your controllers."));
+    d.push_back(F(S::FpHandForward, "First person", "hand_forward", "Hand forward", 0.0f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands forward or back on your controllers."));
     d.push_back(B(S::FpArmsFollow, "First person", "arms_follow2", "Arms follow your hands (experimental)", false,
                   "With Show body: Body without head or Full body, Roxas's own arms reach for your "
                   "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "

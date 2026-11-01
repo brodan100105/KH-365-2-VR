@@ -68,6 +68,11 @@ hands, DS + giant screen) and the options changed most.
 | `keyblade_turn` | Keyblade turn | -180 to 180 deg | `0` | Turns the Keyblade about its blade in your hand (if its teeth face the wrong way). The change shows at once while the panel is open. |
 | `hand_size` | Hand size | 0.5 to 1.5 x | `1` | How big Roxas's hands are on your controllers. |
 | `hand_turn` | Hand turn | -180 to 180 deg | `0` | Turns Roxas's hands about your wrists (if his palms face the wrong way). The change shows at once while the panel is open. |
+| `hand_tilt` | Hand tilt | -90 to 90 deg | `0` | Tips Roxas's hands forward (above 0) or back, about your knuckles' line. |
+| `hand_swing` | Hand swing | -90 to 90 deg | `0` | Turns Roxas's hands inward (above 0) or outward, about the up-down line. |
+| `hand_right` | Hand outward | -0.1 to 0.1 m | `0` | Moves Roxas's hands outward (above 0, away from each other) or inward. |
+| `hand_up` | Hand height | -0.1 to 0.1 m | `0` | Moves Roxas's hands up or down on your controllers. |
+| `hand_forward` | Hand forward | -0.1 to 0.1 m | `0` | Moves Roxas's hands forward or back on your controllers. |
 | `arms_follow2` | Arms follow your hands (experimental) | `true` / `false` | `false` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
 
 ## Combat
