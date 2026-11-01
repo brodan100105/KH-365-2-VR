@@ -32,9 +32,13 @@ jobs:
       - name: Install the guest toolchain (clang, wasm-ld, wasm2c)
         run: |
           sudo apt-get update
-          sudo apt-get install -y lld wabt
+          sudo apt-get install -y lld
+          # wasm2c pinned: guest/postprocess.py edits the prelude of this version's output (the
+          # runner's own wabt moved to 1.0.36, whose prelude differs).
+          curl -fsSL https://github.com/WebAssembly/wabt/releases/download/1.0.34/wabt-1.0.34-ubuntu.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wabt-1.0.34/bin" >> "$GITHUB_PATH"
           clang --version | head -1
-          wasm2c --version
+          "$RUNNER_TEMP/wabt-1.0.34/bin/wasm2c" --version
       - name: Build the game as the guest module
         run: python3 guest/build_guest.py --jobs 4
       - name: Guest data laid out as on the DS
