@@ -126,6 +126,13 @@ struct Gx {
     std::unordered_set<uint64_t> prevKeys, hudKeys;
     struct HudPlace { uint32_t texParam, palBase; double c[3]; };
     std::vector<HudPlace> hudPlaces;  // last frame's HUD pieces: texture and middle (camera space)
+    // HUD textures seen, with their depth in camera space: a counter's +1 flies across the view
+    // to the counter in one of them, never in one place long enough to be seen as a HUD piece.
+    std::unordered_map<uint64_t, double> hudTextures;
+    // Roxas's hands: their joints' pivots (Bip01_L_Hand, Bip01_R_Hand) as the frame being drawn
+    // has them, and as the shown one has them (GxJoint; TagPlayerModels).
+    float handPivotList[2][3] = {}, handPivotShown[2][3] = {};
+    bool handList[2] = {}, handShown[2] = {};
     Mat4d prevCamera{};
     // The field cursor's target (world), its kind and lock, as the game had them while drawing a
     // frame, and for the shown frame.
@@ -420,6 +427,7 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
         g.prevKeys.clear();
         g.hudKeys.clear();
         g.hudPlaces.clear();
+        g.hudTextures.clear();
         return;
     }
     // The camera turned: a camera that only travels (following Roxas) keeps what moves with it
@@ -496,6 +504,11 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
                 }
             }
         }
+        if (!isHud && !s.same) {
+            const uint64_t tex = (uint64_t(w.palBase) << 32) | w.texParam;
+            if (auto it = g.hudTextures.find(tex); it != g.hudTextures.end())
+                isHud = std::fabs(it->second - s.c[2]) < 0.1 * std::fabs(it->second) + 0.02;
+        }
         if (isHud) {
             g.hudShown[s.index] = 1;
             hud.insert(s.key);
@@ -508,6 +521,7 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
         hud.clear();
         places.clear();
     }
+    for (const Gx::HudPlace &p : places) g.hudTextures[(uint64_t(p.palBase) << 32) | p.texParam] = p.c[2];
     g.prevKeys.swap(keys);
     g.hudKeys.swap(hud);
     g.hudPlaces.swap(places);
@@ -970,6 +984,11 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.projList.clear();
         g.glbShown.swap(g.glbList);
         g.glbList.clear();
+        for (int a = 0; a < 2; ++a) {
+            std::copy(g.handPivotList[a], g.handPivotList[a] + 3, g.handPivotShown[a]);
+            g.handShown[a] = g.handList[a];
+            g.handList[a] = false;
+        }
         g.lockOnShown = g.lockOnPending;
         std::copy(g.lockOnPendingAt, g.lockOnPendingAt + 3, g.lockOnShownAt);
         g.lockOnShownKind = g.lockOnPendingKind;
@@ -1730,6 +1749,8 @@ std::vector<std::string> TakePlayerJointTable() {
     return t;
 }
 
+std::unordered_set<uint32_t> gCharacterObjs;  // this capture's character models (TagPlayerModels)
+
 void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, const std::vector<bool> &inScene) {
     for (WorldPoly &w : g.worldShown) w.model = 0;
     GxWorldStats &st = gWorldStats;
@@ -1748,6 +1769,7 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         uint32_t translucent = 0;  // of them see-through (a swing's trail, an effect)
     };
     std::unordered_map<uint32_t, Box> boxes;
+    gCharacterObjs.clear();
     for (const WorldPoly &w : g.worldShown) {
         if (!w.obj) continue;
         Box &b = boxes[w.obj];
@@ -1772,6 +1794,12 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         if ((alpha > 0 && alpha < 31) || format == 1 || format == 6) ++b.translucent;
     }
     st.objectsDrawn = static_cast<uint32_t>(boxes.size());
+    // Characters (models of some polygons, a few units across): their see-through decals (eyes,
+    // mouths) lie flat to the game's camera now and then, but are no sprites.
+    for (const auto &[obj, b] : boxes)
+        if (b.polygons >= 30 && !(b.polygons & 0x80000000u) &&
+            std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) < 4.0)
+            gCharacterObjs.insert(obj);
     st.objectsMin = std::min(st.objectsMin, st.objectsDrawn);
     st.objectsMax = std::max(st.objectsMax, st.objectsDrawn);
     if (!player) return;
@@ -1879,6 +1907,26 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     for (WorldPoly &w : g.worldShown)
         if (w.obj)
             if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
+    // His hands: the polygons drawn from his hand joints (for your hands in first person).
+    {
+        uint32_t count[2] = {0, 0};
+        for (WorldPoly &w : g.worldShown) {
+            if (w.obj != st.playerObj) continue;
+            for (int a = 0; a < 2; ++a)
+                if (g.handShown[a] && w.pivot[0] == g.handPivotShown[a][0] && w.pivot[1] == g.handPivotShown[a][1] &&
+                    w.pivot[2] == g.handPivotShown[a][2]) {
+                    w.model = static_cast<uint8_t>(kWorldModelHand + a);
+                    ++count[a];
+                    break;
+                }
+        }
+        static uint32_t logged[2] = {~0u, ~0u};
+        if (count[0] != logged[0] || count[1] != logged[1]) {
+            logged[0] = count[0];
+            logged[1] = count[1];
+            Log("hands: his left hand %u polygons, right %u", count[0], count[1]);
+        }
+    }
     // His Keyblade inside his own model: one joint's polygons (one position matrix), long and
     // thin, about his height in length. With none attached, it is taken as the Keyblade.
     std::unordered_map<uint32_t, std::vector<std::array<double, 3>>> joints;
@@ -2173,7 +2221,8 @@ void GxCaptureWorld(PlatformWorld *out) {
         // a face's or a table's solid polygons that happen to lie square to the camera for a frame
         // are none. Nor is anything on Roxas.
         bool spriteLike = g.sceneHasCamera && !wire && tex >= 0 &&
-                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
+                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1)) &&
+                          !(w.obj && gCharacterObjs.count(w.obj));  // a face's decals flickered
         if (spriteLike && hasPlayer) {
             double cx = 0, cy = 0, cz = 0;
             for (int i = 0; i < w.n; ++i) {
@@ -2576,6 +2625,9 @@ void GxJoint(uint32_t obj, uint32_t node) {
             c.seen[a][1] = true;
             c.seen[a][0] = false;
         } else if (n == c.hand[a]) {
+            // Where his hand's polygons are drawn from (WorldPoly::pivot), to take them for yours.
+            for (int k = 0; k < 3; ++k) g.handPivotList[a][k] = static_cast<float>(g.pos[12 + k]);
+            g.handList[a] = true;
             if (c.seen[a][1]) {
                 const double d[3] = {t[0] - c.trans[a][1][0], t[1] - c.trans[a][1][1], t[2] - c.trans[a][1][2]};
                 c.hasOffHand[a] = ToLocal(c.rot[a][1], d, c.offHand[a]);

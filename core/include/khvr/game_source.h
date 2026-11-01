@@ -105,6 +105,14 @@ public:
         static const TexturedWorld empty;
         return empty;
     }
+    // Roxas's hands as last seen ([0] left, [1] right), for yours: in the hand's frame
+    // (HandFrame::ToHand: the middle at the origin, wrist to knuckles along +Y, one hand length a
+    // unit). Empty until the game has drawn them.
+    virtual const TexturedWorld &hand(int side) const {
+        (void)side;
+        static const TexturedWorld empty;
+        return empty;
+    }
     // The character's own triangles, kept apart so first person can hide them.
     virtual const WorldDrawList &player() const {
         static const WorldDrawList empty;

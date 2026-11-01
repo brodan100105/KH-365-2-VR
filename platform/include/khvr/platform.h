@@ -131,6 +131,8 @@ struct PlatformWorld {
 constexpr uint8_t kWorldModelPlayer = 1, kWorldModelAttached = 2;
 // The see-through models drawn on him: his swings' trails and flashes.
 constexpr uint8_t kWorldModelEffect = 7;
+// His hands (the polygons of his hand joints): kWorldModelHand + 0 the left, + 1 the right.
+constexpr uint8_t kWorldModelHand = 8;
 constexpr int kWorldAttachedMax = 4;
 
 // A captured world to a file and back (world_file.cpp).

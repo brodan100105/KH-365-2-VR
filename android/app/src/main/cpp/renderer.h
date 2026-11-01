@@ -85,8 +85,8 @@ public:
     // `nearest`: texels stay sharp squares when enlarged (else they blend smoothly).
     // `motion`: see WorldMotion.
     // `slot`: each world drawn every frame has its own (0 the game's world, 1 the Keyblade in
-    // your hand), so they do not take turns rebuilding.
-    static constexpr int kWorldSlots = 2;
+    // your hand, 2 and 3 your hands), so they do not take turns rebuilding.
+    static constexpr int kWorldSlots = 4;
     void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
                            const WorldMotion &motion = WorldMotion(), int slot = 0);
 

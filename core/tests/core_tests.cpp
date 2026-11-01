@@ -170,6 +170,23 @@ TEST(WeaponFrameFromItsShape) {
     CHECK(f.ToHand(o + Vec3{-0.3f, 1.9f, 0}).x > 0.1f);  // the teeth towards +X
 }
 
+TEST(HandFrameFromItsShape) {
+    // A hand from the wrist at the origin out along +X (0.05 to 0.2), 0.08 wide along Z and 0.03
+    // thick along Y: its palm's way is Y.
+    std::vector<Vec3> pts;
+    for (float x : {0.05f, 0.2f})
+        for (float y : {-0.015f, 0.015f})
+            for (float z : {-0.04f, 0.04f}) pts.push_back({x, y, z});
+    HandFrame f = FindHandFrame(pts);
+    CHECK(f.valid);
+    CHECK(f.fingers.x > 0.99f);
+    CHECK(std::fabs(f.palm.y) > 0.99f);
+    CHECK_NEAR(f.length, 0.15f, 1e-4f);
+    const Vec3 knuckle = f.ToHand({0.2f, 0, 0});
+    CHECK_NEAR(knuckle.y, 0.5f, 1e-3f);  // half a hand from the middle, along +Y
+    CHECK_NEAR(knuckle.x, 0.0f, 1e-3f);
+}
+
 TEST(SettingsComfortProfiles) {
     Settings s;
     CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Medium);
@@ -408,6 +425,33 @@ TEST(FirstPersonMatchesCharacterHeight) {
     CHECK_NEAR(o.trackingToWorld.scale, 1.5f / 1.8f, 1e-4f);
 }
 
+TEST(FirstPersonGlidesAfterLunges) {
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    s.SetBool(SettingId::FpRoomScale, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    rig.Update(s, g, MakeTracking());
+    // An attack lunges him half a unit forward in one game frame: the view does not jump with it.
+    g.playerPos = {0, 0, -0.5f};
+    g.frameCounter++;
+    RigOutput o;
+    for (int i = 0; i < 3; ++i) o = rig.Update(s, g, MakeTracking());
+    const Vec3 eye = o.trackingToWorld.Transform({0, 1.6f, 0});
+    CHECK(eye.z > -0.25f);
+    // ... but it gets there.
+    for (int i = 0; i < 270; ++i) o = rig.Update(s, g, MakeTracking());
+    CHECK(o.trackingToWorld.Transform({0, 1.6f, 0}).z < -0.49f);
+    // Walking him with the stick, it keeps right with him.
+    TrackingFrame t = MakeTracking();
+    t.moveAxis = {0, 0, -1};
+    g.playerPos = {0, 0, -1.0f};
+    g.frameCounter++;
+    for (int i = 0; i < 12; ++i) o = rig.Update(s, g, t);
+    CHECK(o.trackingToWorld.Transform({0, 1.6f, 0}).z < -0.99f);
+}
+
 TEST(FirstPersonRoomScaleStep) {
     Settings s;
     s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
@@ -421,12 +465,12 @@ TEST(FirstPersonRoomScaleStep) {
     CHECK(Near(o.requests.roomScaleStep, {0.1f, 0, 0}));
     // Until the game applies it, the view shows the step as already applied.
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
-    // The game frame advances but a wall blocked the move: you are pushed back, over the time of
-    // a game frame (smooth motion), from where the view showed you.
+    // The game frame advances but a wall blocked the move: you are pushed back, gliding (as from
+    // his attacks' lunges) from where the view showed you.
     g.frameCounter++;
     o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
-    for (int i = 0; i < 6; ++i) o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
+    for (int i = 0; i < 270; ++i) o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0, 1.6f, 0}));
     // Without smooth motion, at once.
     s.SetBool(SettingId::ViewSmoothMotion, false);

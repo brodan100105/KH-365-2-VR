@@ -49,6 +49,9 @@ GameCamera HeadCamera(const Similarity &toWorld, const Pose &head, float lookDis
     return c;
 }
 
+// First person: how quickly the view glides after his attack lunges (time constant, s).
+constexpr float kLungeGlideSeconds = 0.25f;
+
 // A standing person's eye height (m): third person puts your eyes this plus Viewpoint height
 // above the character's floor at a recenter.
 constexpr float kStandingEyeHeight = 1.6f;
@@ -228,6 +231,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     }
     if (reinit) {
         motion_.Reset(game.playerPos);
+        standing_ = game.playerPos;
         // Face the way the character faces, and measure your eye height once so that
         // crouching does not rescale the world.
         bodyYaw_ = game.playerYaw - headYaw;
@@ -264,9 +268,19 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         pendingStep_ = {};
         lastGameFrame_ = game.frameCounter;
     }
-    const Vec3 player = s.Bool(SettingId::ViewSmoothMotion)
-                            ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed)
-                            : game.playerPos;
+    const Vec3 followed = s.Bool(SettingId::ViewSmoothMotion)
+                              ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed)
+                              : game.playerPos;
+    // Walking him with the stick, the view keeps right with him; otherwise (his attacks lunge him
+    // forward a step at a time) it glides after him, so a combo does not jerk you about.
+    // Room-scale steps are yours: they move the view at once too.
+    if (Length(t.moveAxis) > 0.2f || !s.Bool(SettingId::ViewSmoothMotion)) {
+        standing_ = followed;
+    } else {
+        standing_ += consumed;
+        standing_ += (followed - standing_) * (1.0f - std::exp(-t.dt / kLungeGlideSeconds));
+    }
+    const Vec3 player = standing_;
 
     Vec3 bodyFloor;  // tracking-space floor point that sits on the character's feet
     if (s.Bool(SettingId::FpRoomScale) && game.inGameplay) {

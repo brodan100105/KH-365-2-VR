@@ -100,6 +100,9 @@ private:
     Vec3 lastHeadFloor_;         // head projected on the floor, tracking space, last frame
     Vec3 pendingStep_;           // room-scale movement requested but not yet applied by the game
     Vec3 lastPlayerPos_;
+    // Where the view stands over him: it follows him at once while you walk him with the stick,
+    // and glides after him otherwise (his attacks lunge him a step at a time).
+    Vec3 standing_;
     uint32_t lastGameFrame_ = 0;
     TurnController turn_;
     MotionSmoother motion_;

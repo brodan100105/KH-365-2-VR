@@ -27,4 +27,21 @@ struct WeaponFrame {
 // that line) are at, the grip a little in from the other end.
 WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points);
 
+// Where a hand model lies in its hand joint's own space (the joint's pivot, the wrist, at the
+// origin): its middle, the way it runs from the wrist to the knuckles, the way its palm faces
+// (its thinnest way across), and its length along the first.
+struct HandFrame {
+    Vec3 centre;
+    Vec3 fingers;  // unit, wrist to knuckles
+    Vec3 palm;     // unit, across the hand (which of its two faces the palm is is not known)
+    float length = 0.0f;
+    bool valid = false;
+
+    // A point of the model in the hand's frame, one hand length a unit: the palm's way along +X,
+    // wrist to knuckles along +Y, the middle at the origin.
+    Vec3 ToHand(const Vec3 &p) const;
+};
+
+HandFrame FindHandFrame(const std::vector<Vec3> &points);
+
 }  // namespace khvr

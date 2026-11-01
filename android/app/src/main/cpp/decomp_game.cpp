@@ -396,6 +396,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             b.rgba = a.rgba;
         }
         TakeHeldWeapon(w);
+        TakeHands(w);
         t.lockOn = w.lockOn;
         t.lockOnAt = {w.lockOnAt[0], w.lockOnAt[1], w.lockOnAt[2]};
         t.manualSort = w.manualSort;
@@ -439,6 +440,51 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             std::copy(w.view, w.view + 16, frame_.camera.view);
         }
     }
+}
+
+// The triangles of one of Roxas's models (kWorldModel...) into `to`, each vertex where `place`
+// puts its point in the model's own space, with the textures they use.
+template <typename Place>
+void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedWorld *to) {
+    TexturedWorld &k = *to;
+    const size_t triangles = w.triangleFlags.size();
+    k.vertices.clear();
+    k.triangleTexture.clear();
+    k.triangleFlags.clear();
+    k.textures.clear();
+    std::vector<int32_t> remap(w.textures.size(), -1);
+    for (size_t t = 0; t < triangles; ++t) {
+        if (w.triangleModel[t] != model) continue;
+        for (int i = 0; i < 3; ++i) {
+            const PlatformWorldVertex &v = w.vertices[t * 3 + i];
+            const float *l = &w.local[(t * 3 + i) * 3];
+            k.vertices.push_back({place(Vec3{l[0], l[1], l[2]}), v.u, v.v, v.color});
+        }
+        int32_t tex = w.triangleTexture[t];
+        if (tex >= 0 && static_cast<size_t>(tex) < w.textures.size()) {
+            if (remap[tex] < 0) {
+                const PlatformWorldTexture &a = w.textures[tex];
+                WorldTexture b;
+                b.key = a.key;
+                b.width = a.width;
+                b.height = a.height;
+                b.repeatS = a.repeatS;
+                b.repeatT = a.repeatT;
+                b.flipS = a.flipS;
+                b.flipT = a.flipT;
+                b.rgba = a.rgba;
+                remap[tex] = static_cast<int32_t>(k.textures.size());
+                k.textures.push_back(std::move(b));
+            }
+            tex = remap[tex];
+        } else {
+            tex = -1;
+        }
+        k.triangleTexture.push_back(tex);
+        // Its sprite-ness is the world's business: in the hand it is plain triangles.
+        k.triangleFlags.push_back(w.triangleFlags[t] & static_cast<uint8_t>(~kTriBillboard));
+    }
+    ++k.revision;
 }
 
 void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
@@ -488,43 +534,32 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
             Platform::Get().LogLine(line);
         }
     }
-    k.vertices.clear();
-    k.triangleTexture.clear();
-    k.triangleFlags.clear();
-    k.textures.clear();
-    std::vector<int32_t> remap(w.textures.size(), -1);
-    for (size_t t = 0; t < triangles; ++t) {
-        if (w.triangleModel[t] != kWorldModelAttached + best) continue;
-        for (int i = 0; i < 3; ++i) {
-            const PlatformWorldVertex &v = w.vertices[t * 3 + i];
-            const float *l = &w.local[(t * 3 + i) * 3];
-            k.vertices.push_back({frame.ToHand({l[0], l[1], l[2]}), v.u, v.v, v.color});
+    CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
+}
+
+void DecompGame::TakeHands(const PlatformWorld &w) {
+    const size_t triangles = w.triangleFlags.size();
+    if (w.triangleModel.size() != triangles || w.local.size() != w.vertices.size() * 3) return;
+    for (int a = 0; a < 2; ++a) {
+        const uint8_t model = static_cast<uint8_t>(kWorldModelHand + a);
+        std::vector<Vec3> points;
+        for (size_t t = 0; t < triangles; ++t)
+            if (w.triangleModel[t] == model)
+                for (int k = 0; k < 3; ++k) {
+                    const float *l = &w.local[(t * 3 + k) * 3];
+                    points.push_back({l[0], l[1], l[2]});
+                }
+        if (points.size() < 2 * 3) continue;  // not drawn this frame: the last one stays
+        const HandFrame frame = FindHandFrame(points);
+        if (!frame.valid) continue;
+        if (points.size() != hands_[a].vertices.size()) {
+            char line[160];
+            std::snprintf(line, sizeof line, "hands: his %s hand taken for yours, %zu triangles, %.2f long (its model units)",
+                          a ? "right" : "left", points.size() / 3, frame.length);
+            Platform::Get().LogLine(line);
         }
-        int32_t tex = w.triangleTexture[t];
-        if (tex >= 0 && static_cast<size_t>(tex) < w.textures.size()) {
-            if (remap[tex] < 0) {
-                const PlatformWorldTexture &a = w.textures[tex];
-                WorldTexture b;
-                b.key = a.key;
-                b.width = a.width;
-                b.height = a.height;
-                b.repeatS = a.repeatS;
-                b.repeatT = a.repeatT;
-                b.flipS = a.flipS;
-                b.flipT = a.flipT;
-                b.rgba = a.rgba;
-                remap[tex] = static_cast<int32_t>(k.textures.size());
-                k.textures.push_back(std::move(b));
-            }
-            tex = remap[tex];
-        } else {
-            tex = -1;
-        }
-        k.triangleTexture.push_back(tex);
-        // Its sprite-ness is the world's business: in the hand it is plain triangles.
-        k.triangleFlags.push_back(w.triangleFlags[t] & static_cast<uint8_t>(~kTriBillboard));
+        CopyTriangles(w, model, [&](const Vec3 &l) { return frame.ToHand(l); }, &hands_[a]);
     }
-    ++k.revision;
 }
 
 std::vector<std::string> DecompGame::Status(size_t lines) const {

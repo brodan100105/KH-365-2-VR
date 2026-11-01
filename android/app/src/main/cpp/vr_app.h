@@ -56,6 +56,8 @@ private:
                       float *px, float *py, float *dist);
     void RenderGiantScreenViews(const XrFrameInput &in);
     void RenderEye(const XrFrameInput &in, int eye);
+    // Roxas's hand on controller h at grip pose g (first person).
+    void DrawHand(int h, const Pose &g, const Mat4 &vpTracking);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
     // Handheld > Handheld DS: a small DS where the touch screen is, both screens on it, drawn at
     // `scale` of its size and `alpha` opacity (the grow and fade of the hand screen).
@@ -145,6 +147,9 @@ private:
     bool hudGliding_ = false;      // the HUD is on its way back in front of you
     bool laserOnPanel_ = false, laserOnBottom_ = false;
     bool panelPlaced_ = false;
+    // First person: the Keyblade held out (the grip held, or an attack lately) and since when.
+    bool keybladeShown_ = false;
+    double keybladeShownUntil_ = 0.0, keybladeAppearedAt_ = 0.0;
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),
