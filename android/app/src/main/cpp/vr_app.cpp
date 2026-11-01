@@ -419,6 +419,8 @@ BottomScreenPlacement VrApp::HandScreenPlacementNow() const {
     // script's own state, not by how its camera looks (looking down at the screen for a while
     // took the view for an event scene's, and the screen went).
     if (lastMode_ != ViewMode::GiantScreen && game_->frame().inScript) return BottomScreenPlacement::Hidden;
+    // Put away with a long press of the left thumbstick (and brought back the same way).
+    if (!secondScreenOn_) return BottomScreenPlacement::Hidden;
     return settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
 }
 
@@ -838,6 +840,18 @@ void VrApp::Frame(const XrFrameInput &in) {
         // Keyblade out, and it stays until the next short hold puts it away; an attack (a swing or
         // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
         // Area) it stays away.
+        // Holding the left thumbstick down (half a second) puts the second screen (the wrist,
+        // hand or floating touch screen) away, or brings it back; a press is still Select.
+        if (buttons.stickClick[0] && !panel_.isOpen()) {
+            const bool was = leftStickHeldFor_ >= 0.5f;
+            leftStickHeldFor_ += in.dt;
+            if (!was && leftStickHeldFor_ >= 0.5f) {
+                secondScreenOn_ = !secondScreenOn_;
+                xr_->Haptic(0, 0.4f * settings_.Get(SettingId::CombatHaptics), 0.06f);
+            }
+        } else {
+            leftStickHeldFor_ = 0.0f;
+        }
         const int weapon = settings_.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
         const bool battle = game_->frame().inBattle;
         const bool attacked = battle && (combat.swingStarted || (buttons.a && !panel_.isOpen()));

@@ -151,6 +151,8 @@ private:
     Pose lastGrip_[2];  // each hand's last tracked grip pose, and when (HandScreen placement)
     double lastGripAt_[2] = {0.0, 0.0};
     bool keybladeShown_ = false;
+    bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
+    float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
     float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
     double keybladeAppearedAt_ = 0.0;

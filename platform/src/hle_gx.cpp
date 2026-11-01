@@ -2298,7 +2298,12 @@ void GxCaptureWorld(PlatformWorld *out) {
         // pom-pom faces it always): one only once it has kept facing the camera a while.
         const bool onCharacter = w.obj && gCharacterObjs.count(w.obj);
         const uint64_t charKey = onCharacter ? Fnv(&w.obj, 4, Fnv(&w.texParam, 4, Fnv(&w.palBase, 4))) : 0;
-        if (spriteLike && hasPlayer) {
+        if (spriteLike && gWorldStats.playerObj) {
+            // Roxas's own models are known (TagPlayerModels): none of theirs, and everything else
+            // may be, however near him (sprites near you in first person kept facing the game's
+            // camera, behind him).
+            spriteLike = w.model == 0;
+        } else if (spriteLike && hasPlayer) {
             double cx = 0, cy = 0, cz = 0;
             for (int i = 0; i < w.n; ++i) {
                 cx += pv[i].x / w.n;

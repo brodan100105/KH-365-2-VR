@@ -100,6 +100,9 @@ private:
     Vec3 stepAsked_;  // all room-scale steps given to the game (world space)
     bool frameShown_ = false;
     void TakeHands(const PlatformWorld &w);
+    // A cutscene's capture without its camera, within a second of one with it: kept out.
+    bool KeepPlacedScene();
+    double placedSceneAt_ = -1e9;  // steady-clock seconds a cutscene was last placed in the world
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;

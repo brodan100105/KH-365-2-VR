@@ -310,7 +310,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             texturedWorld_ = TexturedWorld();
             ++texturedWorld_.revision;
         }
-    } else if (latestWorldRevision_ != shownWorldRevision_) {
+    } else if (latestWorldRevision_ != shownWorldRevision_ && !KeepPlacedScene()) {
         shownWorldRevision_ = latestWorldRevision_;
         const PlatformWorld &w = *latestWorld_;
         TexturedWorld &t = texturedWorld_;
@@ -564,6 +564,21 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         }
     }
     CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
+}
+
+bool DecompGame::KeepPlacedScene() {
+    // A cutscene placed in the world whose camera is lost for a moment (a quick zoom, Day 52's
+    // Tailbunker over the archway) keeps its last placed picture rather than dropping to the
+    // giant screen and back (a black flicker), for up to a second.
+    const PlatformWorld &w = *latestWorld_;
+    const bool event = latestPlayer_.event || w.eventScene;
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (!event) return false;
+    if (w.worldSpace && !w.vertices.empty()) {
+        placedSceneAt_ = now;
+        return false;
+    }
+    return now - placedSceneAt_ < 1.0;
 }
 
 void DecompGame::TakeHands(const PlatformWorld &w) {
