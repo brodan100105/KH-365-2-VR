@@ -111,8 +111,16 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     if (c.b) held |= kDsB;
     if (c.x) held |= kDsX;
     if (c.y) held |= kDsY;
-    // (The left thumbstick's press is no DS button: held, it puts the second screen away. As
-    // Select it stopped Roxas moving.)
+    // The left thumbstick's press: held half a second it puts the second screen away (the app);
+    // let go sooner, it is Select on the giant screen and in menus, and nothing standing in the
+    // world (there Select stopped Roxas moving).
+    if (c.stickClick[0]) {
+        leftStickHeld_ += dt;
+    } else {
+        if (leftStickHeld_ > 0.0f && leftStickHeld_ < 0.5f && (mode == ViewMode::GiantScreen || menuStick_))
+            AddPulse(kDsSelect);
+        leftStickHeld_ = 0.0f;
+    }
     // In a menu or a tutorial's pages the triggers are L and R in every view (first person keeps
     // one for magic otherwise, and the pages turn with L/R).
     const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_ &&

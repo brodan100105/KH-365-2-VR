@@ -103,6 +103,9 @@ private:
     // A cutscene's capture without its camera, within a second of one with it: kept out.
     bool KeepPlacedScene();
     double placedSceneAt_ = -1e9;  // steady-clock seconds a cutscene was last placed in the world
+    size_t placedTriangles_ = 0;   // and its triangles then
+    int fadeSeen_[2][3] = {};      // each screen's fade (0..16) in the last three captures
+    int fadeModeSeen_[2] = {0, 0};
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;

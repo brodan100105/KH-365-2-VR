@@ -432,7 +432,7 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     const bool fpProfile = s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile;
     label(tr, kMargin, top, "Trigger", !fpProfile ? "DS L" : weaponRight ? "DS L / 1st person: cast" : "DS L / 1st person: DS L");
     label(up, kMargin, top + 60, "Y", "DS Y");
-    label(st, kMargin, top + 120, "Thumbstick", "move / hold: 2nd screen");
+    label(st, kMargin, top + 120, "Thumbstick", "move / hold: 2nd screen / tap: SELECT (menus)");
     label(lo, kMargin, top + 180, "X", "DS X");
     label(mn, kMargin, top + 240, "Menu", "tap: START / hold: settings");
     label(gr, kMargin, top + 300, "Grip", fpProfile && weaponRight ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-");

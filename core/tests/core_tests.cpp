@@ -855,6 +855,29 @@ TEST(MapperFirstPersonButtonsSameByDefault) {
     CHECK(!(profile.heldButtons() & kDsR));   // the other trigger casts instead
 }
 
+TEST(MapperLeftStickSelectOnlyOnTheGiantScreen) {
+    // A short press of the left thumbstick: Select on the giant screen (on letting go), nothing
+    // standing in the world; held, nothing either (the app takes it).
+    Settings s;
+    for (ViewMode mode : {ViewMode::GiantScreen, ViewMode::FirstPerson}) {
+        InputMapper m;
+        ControllerState c;
+        c.stickClick[0] = true;
+        for (int i = 0; i < 10; ++i) m.Update(s, mode, c, nullptr, 0, 0, 0.011f);
+        c.stickClick[0] = false;
+        m.Update(s, mode, c, nullptr, 0, 0, 0.011f);
+        const bool select = (m.SampleForGameFrame() & kDsSelect) != 0;
+        CHECK(select == (mode == ViewMode::GiantScreen));
+    }
+    InputMapper held;
+    ControllerState c;
+    c.stickClick[0] = true;
+    for (int i = 0; i < 60; ++i) held.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+    c.stickClick[0] = false;
+    held.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+    CHECK(!(held.SampleForGameFrame() & kDsSelect));
+}
+
 TEST(MapperSwingPulse) {
     Settings s;
     InputMapper m;

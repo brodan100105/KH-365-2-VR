@@ -417,8 +417,25 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         t.lockOnKind = w.lockOnKind;
         t.lockOnLocked = w.lockOnLocked;
         std::copy(w.viewport, w.viewport + 4, t.viewport);
-        std::copy(w.fadeMode, w.fadeMode + 2, t.fadeMode);
-        std::copy(w.fadeFactor, w.fadeFactor + 2, t.fadeFactor);
+        // The game's fades, but none that comes for a frame or two only (a flash over a zoom, Day
+        // 52's Tailbunker): on the DS a blink, in the headset your whole view going black. A fade
+        // shows once it has held three captures (a tenth of a second), at the least of them.
+        for (int i = 0; i < 2; ++i) {
+            const int seen = w.fadeMode[i] ? w.fadeFactor[i] : 0;
+            fadeSeen_[i][2] = fadeSeen_[i][1];
+            fadeSeen_[i][1] = fadeSeen_[i][0];
+            fadeSeen_[i][0] = w.fadeMode[i] ? seen : 0;
+            if (w.fadeMode[i]) fadeModeSeen_[i] = w.fadeMode[i];
+            const int held = std::min({fadeSeen_[i][0], fadeSeen_[i][1], fadeSeen_[i][2]});
+            if (seen > held + 4) {
+                char line[96];
+                std::snprintf(line, sizeof line, "view: a brief fade left out (screen %d, mode %d, %d/16)", i,
+                              w.fadeMode[i], w.fadeFactor[i]);
+                Platform::Get().LogLine(line);
+            }
+            t.fadeMode[i] = held ? fadeModeSeen_[i] : 0;
+            t.fadeFactor[i] = held;
+        }
         ++t.revision;
         // Gameplay, for the view rigs: the player in the field with the world captured in world
         // space, and no menu or movie. An event scene (an in-engine cutscene) too when View >
@@ -574,12 +591,31 @@ bool DecompGame::KeepPlacedScene() {
     const PlatformWorld &w = *latestWorld_;
     const bool event = latestPlayer_.event || w.eventScene;
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (!event) return false;
-    if (w.worldSpace && !w.vertices.empty()) {
-        placedSceneAt_ = now;
+    if (!event) {
+        placedTriangles_ = 0;
         return false;
     }
-    return now - placedSceneAt_ < 1.0;
+    if (w.worldSpace && !w.vertices.empty()) {
+        // A capture with most of the scene gone at once (a tenth of what it had) for a moment:
+        // kept out too, for up to a quarter of a second.
+        const size_t n = w.triangleFlags.size();
+        if (placedTriangles_ > 200 && n * 10 < placedTriangles_ && now - placedSceneAt_ < 0.25) {
+            Platform::Get().LogLine("view: a cutscene frame with most of the scene missing left out");
+            return true;
+        }
+        placedSceneAt_ = now;
+        placedTriangles_ = n;
+        return false;
+    }
+    if (now - placedSceneAt_ < 1.0) {
+        static double logged = 0;
+        if (now - logged > 1.0) {
+            logged = now;
+            Platform::Get().LogLine("view: a cutscene frame without its camera left out");
+        }
+        return true;
+    }
+    return false;
 }
 
 void DecompGame::TakeHands(const PlatformWorld &w) {

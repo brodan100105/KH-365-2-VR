@@ -82,6 +82,7 @@ private:
     AppActions actions_;
     float menuHeld_ = 0.0f;
     float rightStickHeld_ = 0.0f;
+    float leftStickHeld_ = 0.0f;  // seconds the left thumbstick has been held down
     bool rightStickWasDown_ = false;
     bool modeToggleFired_ = false;
     bool settingsFired_ = false;
