@@ -567,6 +567,8 @@ TEST(CombatGuardPose) {
     // Blade pointing left, level, in front of the face.
     in.hands[1].orientation = Quat::Yaw(DegToRad(90));
     bool guarding = false, started = false;
+    for (int i = 0; i < 20; ++i) started |= r.Update(s, in).guardStarted;
+    CHECK(!started);  // a moment sideways is no guard
     for (int i = 0; i < 30; ++i) {
         CombatFrame f = r.Update(s, in);
         guarding = f.guarding;
@@ -574,6 +576,25 @@ TEST(CombatGuardPose) {
     }
     CHECK(guarding);
     CHECK(started);
+}
+
+TEST(CombatTrackingJumpIsNoSwing) {
+    // The controller held still, its tracking jumping 0.4 m and back now and then (lost from
+    // view, turned sideways against the body).
+    Settings s;
+    CombatRecognizer r;
+    CombatInput in;
+    in.dt = 1.0f / 90.0f;
+    in.head.position = {0, 1.6f, 0};
+    in.handValid[1] = true;
+    in.hands[1].orientation = Quat::Yaw(DegToRad(90));
+    int swings = 0;
+    for (int i = 0; i < 270; ++i) {
+        const bool jumped = (i / 4) % 10 == 5;
+        in.hands[1].position = {0.25f, 1.2f + (jumped ? 0.4f : 0.0f), -0.3f};
+        swings += r.Update(s, in).swingStarted;
+    }
+    CHECK(swings == 0);
 }
 
 TEST(CombatStickFlickDodges) {

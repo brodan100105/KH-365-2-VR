@@ -15,7 +15,12 @@ constexpr float kVelocitySmoothing = 0.012f;
 // Guard: blade within this angle of horizontal, hand at most this far from the head.
 constexpr float kGuardMaxTiltDeg = 35.0f;
 constexpr float kGuardMaxReach = 0.75f;
-constexpr float kGuardHoldSeconds = 0.12f;
+// Held this long, nearly still: a blade only turned sideways for a moment (between swings, or
+// moved slowly) is no guard (it pressed Block, which looked like a swing).
+constexpr float kGuardHoldSeconds = 0.35f;
+// The hand moving faster than this from one frame to the next is the tracking jumping (the
+// controller lost from view, as when it is turned sideways against the body), not a swing.
+constexpr float kTrackingJump = 7.0f;
 // Dodge: a flick is released within this long; held longer, the stick is walking.
 constexpr float kFlickMaxHold = 0.25f;
 // Physical jump: upward head speed (m/s).
@@ -72,7 +77,12 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         }
         Vec3 tip = BladeTip(in.hands[h], length, gripAngle);
         const Vec3 grip = in.hands[h].position;
-        if (st.hasPrev) {
+        if (st.hasPrev && Length(grip - st.prevGrip) / in.dt > kTrackingJump) {
+            // Start over from where tracking found it again.
+            st.velocity = st.gripVelocity = Vec3{0, 0, 0};
+            st.armPath = 0.0f;
+            st.fastFrames = 0;
+        } else if (st.hasPrev) {
             Vec3 raw = (tip - st.prevTip) / in.dt;
             float k = 1.0f - std::exp(-in.dt / kVelocitySmoothing);
             st.velocity = Lerp(st.velocity, raw, k);
@@ -128,7 +138,7 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
                            Normalize(Vec3{fwd.x, 0, fwd.z})) > 0.3f;
         bool reach = Length(toHand) < kGuardMaxReach;
         bool height = toHand.y > -0.55f && toHand.y < 0.25f;  // chest to just above the eyes
-        bool slow = Length(hands_[weaponHand].velocity) < threshold * 0.5f;
+        bool slow = Length(hands_[weaponHand].velocity) < threshold * 0.3f;
         // Across the body: the blade points sideways, not forward.
         Vec3 right = in.head.orientation.Right();
         bool across = std::fabs(Dot(axis, Normalize(Vec3{right.x, 0, right.z}))) > 0.6f;
