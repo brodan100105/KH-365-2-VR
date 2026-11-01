@@ -419,6 +419,8 @@ void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys)
 // is one too when it has a HUD piece's texture right where one was. Never what is near Roxas or
 // the cursor's target (a camera turning round them, a soft lock, keeps them in place too), nor
 // solid polygons: HUD art is see-through.
+std::unordered_set<uint32_t> gCharacterObjs;  // the last capture's character models (TagPlayerModels)
+
 void ClassifyHud(const std::vector<WorldPoly> &polys) {
     g.hudShown.assign(polys.size(), 0);
     // Cutscenes have no 3D HUD, and their camera tracks a face as closely as a HUD piece keeps
@@ -455,6 +457,8 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
     for (size_t k = 0; k < polys.size(); ++k) {
         const WorldPoly &w = polys[k];
         if (w.proj >= g.inSceneShown.size() || !g.inSceneShown[w.proj]) continue;
+        // A character standing still (an NPC's see-through hair) keeps its place too: never HUD.
+        if (w.obj && gCharacterObjs.count(w.obj)) continue;
         const Mat4d &m = g.toCameraShown[w.proj], &mw = g.toWorldShown[w.proj];
         uint64_t key = Fnv(&w.texParam, 4, Fnv(&w.palBase, 4, Fnv(&w.attr, 4)));
         Seen s{k, 0, false, true, {0, 0, 0}};
@@ -1749,7 +1753,6 @@ std::vector<std::string> TakePlayerJointTable() {
     return t;
 }
 
-std::unordered_set<uint32_t> gCharacterObjs;  // this capture's character models (TagPlayerModels)
 
 void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, const std::vector<bool> &inScene) {
     for (WorldPoly &w : g.worldShown) w.model = 0;
