@@ -2261,6 +2261,11 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+        // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
+        // transparent) show both sides: the DS draws one, the side its camera sees, and from
+        // where you stand you may see the other (a stall's awning from under it went).
+        if (!wire && tex >= 0 && ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1)))
+            flags |= kWorldFront | kWorldBack;
         PlatformWorldVertex pv[4];
         for (int i = 0; i < w.n; ++i) {
             const Vertex &v = w.v[i];
