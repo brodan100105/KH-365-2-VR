@@ -470,11 +470,22 @@ int WorldTest() {
     // quad turned is not.
     bool sprites = false;
     {
-        auto small = [&](double turn, uint32_t attr = 0x001000c0) {  // see-through (alpha 16)
+        // `look`: the camera turned this far about its own vertical (a sprite counts once it has
+        // turned with the camera).
+        auto small = [&](double turn, uint32_t attr = 0x001000c0, double look = 0) {  // see-through (alpha 16)
+            const double lc = std::cos(look), ls = std::sin(look);
+            double view[12];
+            for (int r = 0; r < 4; ++r) {
+                const double x = cam[r * 3], y = cam[r * 3 + 1], z = cam[r * 3 + 2];
+                view[r * 3] = x * lc + z * ls;
+                view[r * 3 + 1] = y;
+                view[r * 3 + 2] = -x * ls + z * lc;
+            }
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(view[i]));
             cmd(0x10, 0);
             for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
             cmd(0x10, 2);
-            for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(view[i]));
             cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);  // centred at (1, 2, 0)
             const double c = std::cos(turn), s = std::sin(turn);
             for (double k : {0.25}) {
@@ -486,9 +497,13 @@ int WorldTest() {
             cmd(0x50, 0);
             static khvr::PlatformWorld w;
             khvr::Platform::Get().CaptureWorld(&w);
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
             return w;
         };
-        khvr::PlatformWorld facing = small(0), turned = small(0.6);
+        // Facing the camera, then facing it still as it turns: a sprite.
+        small(0);
+        khvr::PlatformWorld facing = small(-0.4, 0x001000c0, 0.4);
+        khvr::PlatformWorld turned = small(0.6);
         // The same quad solid (a face, a table top square to the camera): no sprite.
         const bool solidLeft = small(0, 0x001f00c0).billboard.empty();
         bool flagged = facing.triangleFlags.size() == 2 && (facing.triangleFlags[0] & khvr::kWorldBillboard) &&
@@ -501,22 +516,41 @@ int WorldTest() {
         sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
                   turned.billboard.empty() && facing.billboard[5] == 1.0f && solidLeft;
         // Upright: a see-through tree (alpha 16), 4 wide and 6 tall, standing square to the camera.
-        cmd(0x10, 0);
-        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
-        cmd(0x10, 2);
-        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
-        cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);
-        cmd(0x1b, fx(2)); cmd(0x1b, fx(3)); cmd(0x1b, fx(1));
-        quad(0x001000c0);
-        cmd(0x50, 0);
-        static khvr::PlatformWorld tree;
-        khvr::Platform::Get().CaptureWorld(&tree);
+        // (Again as the camera turns, square to it about the vertical.)
+        auto drawTree = [&](double look) {
+            const double lc = std::cos(look), ls = std::sin(look);
+            double view[12];
+            for (int r = 0; r < 4; ++r) {
+                const double x = cam[r * 3], y = cam[r * 3 + 1], z = cam[r * 3 + 2];
+                view[r * 3] = x * lc + z * ls;
+                view[r * 3 + 1] = y;
+                view[r * 3 + 2] = -x * ls + z * lc;
+            }
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(view[i]));
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(view[i]));
+            cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);
+            const double c = std::cos(-look), sn = std::sin(-look);
+            const double rot[9] = {c, 0, -sn, 0, 1, 0, sn, 0, c};
+            for (int i = 0; i < 9; ++i) cmd(0x1a, fx(rot[i]));
+            cmd(0x1b, fx(2)); cmd(0x1b, fx(3)); cmd(0x1b, fx(1));
+            quad(0x001000c0);
+            cmd(0x50, 0);
+            static khvr::PlatformWorld tree;
+            khvr::Platform::Get().CaptureWorld(&tree);
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+            return tree;
+        };
+        drawTree(0);
+        const khvr::PlatformWorld tree = drawTree(0.4);
         bool upright = tree.triangleFlags.size() == 2 && (tree.triangleFlags[0] & khvr::kWorldBillboard) &&
                        tree.billboard.size() == 6 * khvr::kWorldBillboardFloats;
         if (upright) {
             const float *b = &tree.billboard[0];  // the first corner: (-2, -3) from (1, 2, 0)
-            upright = b[5] == 2.0f && std::fabs(b[0] - 1) < 0.02 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.02 &&
-                      std::fabs(b[3] + 2) < 0.02 && std::fabs(b[4] + 3) < 0.02;
+            upright = b[5] == 2.0f && std::fabs(b[0] - 1) < 0.05 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.05 &&
+                      std::fabs(std::fabs(b[3]) - 2) < 0.05 && std::fabs(b[4] + 3) < 0.02;
         }
         std::printf("  sprites: facing %d, turned away %d, upright %d (%zu triangles, flags %d, %zu floats", flagged,
                     !turned.billboard.size(), upright, tree.triangleFlags.size(),

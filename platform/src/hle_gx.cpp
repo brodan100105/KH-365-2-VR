@@ -434,7 +434,6 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
         g.prevKeys.clear();
         g.hudKeys.clear();
         g.hudPlaces.clear();
-        g.hudTextures.clear();
         return;
     }
     // The camera turned: a camera that only travels (following Roxas) keeps what moves with it
@@ -513,7 +512,10 @@ void ClassifyHud(const std::vector<WorldPoly> &polys) {
                 }
             }
         }
-        if (!isHud && !s.same) {
+        if (!isHud) {
+            // A texture seen as a HUD piece before, at a HUD piece's depth: one again, with the
+            // camera still too (the heart counter coming up after a kill while you stood still
+            // went into the world, in the middle of the area).
             const uint64_t tex = (uint64_t(w.palBase) << 32) | w.texParam;
             if (auto it = g.hudTextures.find(tex); it != g.hudTextures.end())
                 isHud = std::fabs(it->second - s.c[2]) < 0.1 * std::fabs(it->second) + 0.02;
@@ -2092,7 +2094,8 @@ void GxCaptureWorld(PlatformWorld *out) {
                 const int run = gCharSpriteRuns.count(k) ? gCharSpriteRuns[k] : 0;
                 // Facing the camera this frame, one more; once established, kept while drawn.
                 if (v == 1) next[k] = std::min(run + 1, 1 << 20);
-                else if (run >= kCharSpriteFrames) next[k] = run;
+                else if (run >= kCharSpriteFrames || (run >= 1 && gCharSpriteTurns.count(k) && gCharSpriteTurns[k].turned))
+                    next[k] = run;
             }
             gCharSpriteRuns.swap(next);
             // A run that broke starts its turn afresh.
@@ -2297,7 +2300,7 @@ void GxCaptureWorld(PlatformWorld *out) {
         // On a character (a face's decals flickered, flat to the camera now and then; a Moogle's
         // pom-pom faces it always): one only once it has kept facing the camera a while.
         const bool onCharacter = w.obj && gCharacterObjs.count(w.obj);
-        const uint64_t charKey = onCharacter ? Fnv(&w.obj, 4, Fnv(&w.texParam, 4, Fnv(&w.palBase, 4))) : 0;
+        const uint64_t charKey = Fnv(&w.obj, 4, Fnv(&w.texParam, 4, Fnv(&w.palBase, 4)));
         if (spriteLike && gWorldStats.playerObj) {
             // Roxas's own models are known (TagPlayerModels): none of theirs, and everything else
             // may be, however near him (sprites near you in first person kept facing the game's
@@ -2414,7 +2417,9 @@ void GxCaptureWorld(PlatformWorld *out) {
                 }
             }
         }
-        if (onCharacter && spriteLike) {
+        // Any sprite: one only once it has turned with the game's camera (a window or a plate on a
+        // wall the camera looks at square on never does). On a character, also a while facing it.
+        if (spriteLike) {
             auto &now = gCharSpritesNow[charKey];
             now = (now == 0 ? 1 : now) & (mode != 0 ? 1 : 2);  // 1 all facing, 2 or 0 not all
             // It must have turned with the camera while facing it (a billboard does; hair facing a
@@ -2437,11 +2442,11 @@ void GxCaptureWorld(PlatformWorld *out) {
             }
             auto it = gCharSpriteRuns.find(charKey);
             auto turn = gCharSpriteTurns.find(charKey);
-            const bool established = it != gCharSpriteRuns.end() && it->second >= kCharSpriteFrames &&
+            const bool established = it != gCharSpriteRuns.end() && it->second >= (onCharacter ? kCharSpriteFrames : 1) &&
                                      turn != gCharSpriteTurns.end() && turn->second.turned;
             if (!established) {
                 mode = 0;
-            } else if (mode == 0) {
+            } else if (mode == 0 && onCharacter) {
                 // Up close it is no longer flat across the game's view (a Moogle's pom-pom near
                 // your face): still the sprite it was, facing you.
                 const double *c = cameraD.data();
