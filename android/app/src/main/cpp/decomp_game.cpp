@@ -540,9 +540,12 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         size_t n = 0;
         for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;
         if (n != k.vertices.size() / 3) {
-            char line[160];
-            std::snprintf(line, sizeof line, "keyblade: taken for your hand, %zu triangles, %.2f long (its model units), %zu textures",
-                          n, frame.length, w.textures.size());
+            char line[256];
+            std::snprintf(line, sizeof line,
+                          "keyblade: taken for your hand, %zu triangles, %.2f long (its model units), %zu textures; "
+                          "in its model, blade %+.2f %+.2f %+.2f, teeth %+.2f %+.2f %+.2f",
+                          n, frame.length, w.textures.size(), frame.blade.x, frame.blade.y, frame.blade.z,
+                          -frame.side.x, -frame.side.y, -frame.side.z);
             Platform::Get().LogLine(line);
         }
     }

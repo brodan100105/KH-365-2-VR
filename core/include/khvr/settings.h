@@ -60,6 +60,7 @@ enum class SettingId : int {
     FpGripAngle,
     FpKeybladeLength,
     FpKeybladeGrip,
+    FpKeybladeTurn,
     FpHandSize,
     FpHandTurn,
     FpArmsFollow,

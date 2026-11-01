@@ -32,6 +32,8 @@ extern std::atomic<int32_t> gMoveHeading;
 extern std::atomic<int32_t> gReachBonus;
 // The player actor of the last SWAP_BUFFERS, 0 none.
 uint32_t SwapPlayerActor();
+// Room-scale walking: the player's step for this frame (fx32 x, z), taken once.
+void TakePlayerStep(int32_t xz[2]);
 // The index of the joint named `name` in a render object's model, -1 none.
 int ModelJointIndex(uint32_t obj, const char *name);
 

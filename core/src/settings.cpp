@@ -135,6 +135,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade height", 0.0f, -0.3f, 0.3f, 0.01f, "m",
                   "Moves the Keyblade up or down in your hand, along its blade (down if it sits above "
                   "your hand). The change shows at once while the panel is open."));
+    d.push_back(F(S::FpKeybladeTurn, "First person", "keyblade_turn", "Keyblade turn", 0.0f, -180.0f, 180.0f, 15.0f,
+                  "deg", "Turns the Keyblade about its blade in your hand (if its teeth face the wrong way). "
+                  "The change shows at once while the panel is open."));
     d.push_back(F(S::FpHandSize, "First person", "hand_size", "Hand size", 1.0f, 0.5f, 1.5f, 0.05f, "x",
                   "How big Roxas's hands are on your controllers."));
     d.push_back(F(S::FpHandTurn, "First person", "hand_turn", "Hand turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",

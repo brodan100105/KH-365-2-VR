@@ -331,33 +331,32 @@ void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
 namespace hle {
 std::atomic<int32_t> gMoveHeading{-1};
 
-// Room-scale walking: your steps in your room, still to be given to the player (game units).
+// Room-scale walking: your steps in your room, still to be given to the player (game units), and
+// whether the game took them in its last frame (Ov022_ApplyExternalPush, TakePlayerStep).
 std::mutex gPlayerStepMu;
 double gPlayerStep[2] = {0, 0};
+bool gPlayerStepTaken = false;
 
-// Between frames (the guest idle): moves the player by the steps asked since, in the field only.
-void ApplyPlayerStep() {
-    double step[2];
-    {
-        std::lock_guard<std::mutex> lock(gPlayerStepMu);
-        step[0] = gPlayerStep[0];
-        step[1] = gPlayerStep[1];
-        gPlayerStep[0] = gPlayerStep[1] = 0;
+void TakePlayerStep(int32_t xz[2]) {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    for (int k = 0; k < 2; ++k) {
+        xz[k] = static_cast<int32_t>(std::lround(gPlayerStep[k] * 4096.0));
+        gPlayerStep[k] -= xz[k] / 4096.0;  // the part below the game's precision waits
     }
-    if (step[0] == 0 && step[1] == 0) return;
-    PlatformPlayer p;
-    if (!Platform::Get().ReadPlayerNow(&p) || p.menu || p.event || p.choice || !p.actor) return;
-    // His position (actor +0x48c, x y z in 20.12 fixed point); its height stays the game's.
-    for (int k : {0, 2}) {
-        const uint32_t a = p.actor + 0x48c + 4 * k;
-        const int32_t v = static_cast<int32_t>(Read32(a)) + static_cast<int32_t>(std::lround(step[k / 2] * 4096.0));
-        Write32(a, static_cast<uint32_t>(v));
-    }
+    gPlayerStepTaken = true;
     static uint32_t logged = 0;
-    if (logged < 3) {
+    if ((xz[0] || xz[1]) && logged < 3) {
         ++logged;
-        Log("room-scale: moved the player by %.3f %.3f (game units)", step[0], step[1]);
+        Log("room-scale: the player's step takes %.3f %.3f (game units)", xz[0] / 4096.0, xz[1] / 4096.0);
     }
+}
+
+// Before each frame: steps the game did not take in its last one (a menu, an event scene) go,
+// so he does not lurch with them later.
+void ApplyPlayerStep() {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    if (!gPlayerStepTaken) gPlayerStep[0] = gPlayerStep[1] = 0;
+    gPlayerStepTaken = false;
 }
 }
 void Platform::AddPlayerStep(float dx, float dz) {

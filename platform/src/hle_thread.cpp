@@ -327,6 +327,15 @@ u32 w2c_env_khvr_host_reach_bonus(struct w2c_env *, u32 actor) {
     return actor && actor == SwapPlayerActor() ? static_cast<u32>(gReachBonus.load()) : 0u;
 }
 
+void w2c_env_khvr_host_room_step(struct w2c_env *, u32 actor, u32 xz) {
+    int32_t step[2] = {0, 0};
+    if (actor && actor == SwapPlayerActor()) TakePlayerStep(step);
+    if (xz && xz + 8 <= GuestMemSize()) {
+        Write32(xz, static_cast<uint32_t>(step[0]));
+        Write32(xz + 4, static_cast<uint32_t>(step[1]));
+    }
+}
+
 void w2c_env_khvr_host_joint(struct w2c_env *, u32 obj, u32 node) { GxJoint(obj, node); }
 
 void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }

@@ -207,8 +207,8 @@ public:
     // Analog movement: while the player's D-pad is held, the game moves him this way instead of
     // the D-pad's eight (u16: 0 the camera's forward, 0x4000 its left), -1 the D-pad's own.
     void SetMoveHeading(int heading);
-    // Room-scale walking: moves the player by this much (game units, along x and z) before the
-    // game's next frame, in the field (not in a menu, an event scene or a choice).
+    // Room-scale walking: adds this much (game units, along x and z) to the player's next step,
+    // which the game's mover takes against its walls (dropped when the game does not move him).
     void AddPlayerStep(float dx, float dz);
     // Roxas's swings reach this much further (game units) against enemies: first person in VR.
     void SetReachBonus(float units);

@@ -48,6 +48,9 @@ long khvr_host_move_heading(const void *actor);
 void khvr_host_joint(const void *renderObj, unsigned long node);
 /* How much further (fx32) the attacker's swings reach: Roxas's, in first person; 0 otherwise. */
 long khvr_host_reach_bonus(const void *actor);
+/* The player's room-scale step (fx32, x and z) into xz for this frame, taken once; 0 0 for any
+ * other actor (Ov022_ApplyExternalPush adds it to his step, which meets the walls). */
+void khvr_host_room_step(const void *actor, long *xz);
 /* NNS_G3dDraw draws this render object (NNSG3dRenderObj) from begin to end. */
 void khvr_host_model_begin(const void *obj);
 void khvr_host_model_end(void);
