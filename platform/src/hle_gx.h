@@ -70,6 +70,9 @@ void GxSetArmTargets(bool on, const float left[3], bool leftValid, const float r
 void GxJoint(uint32_t obj, uint32_t node);
 // The polygons from here on are of this render object (guest address; 0 none: NNS_G3dDraw's end).
 void GxModelBegin(uint32_t obj);
+// The last frame drawn was 3D for the other screen, in a scene drawing both in turn (left out of
+// the world; its screens are left out of the picture too).
+bool GxLastSwapOtherScreen();
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

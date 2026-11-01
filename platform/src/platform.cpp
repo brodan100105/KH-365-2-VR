@@ -501,6 +501,15 @@ void Platform::NoteDisplay(bool skipped, float captureMs) {
 }
 
 void Platform::CaptureScreens(PlatformScreens *out) {
+    // A scene drawing 3D on both screens in turn: its frames for the other screen show the
+    // screens the other way round, the top screen's text box on and off with them (Agrabah,
+    // Aladdin's scene): the last of the world's frames stays.
+    static PlatformScreens kept;
+    static bool hasKept = false;
+    if (hle::GxLastSwapOtherScreen() && hasKept) {
+        *out = kept;
+        return;
+    }
     const bool split = gWorldCapture.load() && (hle::IoReg16(0x304) & 0x8000);  // engine A on top
     hle::Render2D(out, g3dScale.load(), split);
     out->split = split;
@@ -512,6 +521,8 @@ void Platform::CaptureScreens(PlatformScreens *out) {
         out->topScale = 1;
         out->split = false;
     }
+    kept = *out;
+    hasKept = true;
 }
 
 void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {

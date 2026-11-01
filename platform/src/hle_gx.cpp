@@ -134,6 +134,7 @@ struct Gx {
     bool lastAOnTop = true;
     int swapRun = 0;
     float phasePolys[2] = {0, 0};
+    bool lastSwapOther = false;  // the last frame was the other screen's (left out of the world)
     // Roxas's hands: their joints' pivots (Bip01_L_Hand, Bip01_R_Hand) as the frame being drawn
     // has them, and as the shown one has them (GxJoint; TagPlayerModels).
     float handPivotList[2][3] = {}, handPivotShown[2][3] = {};
@@ -1009,9 +1010,11 @@ void Exec(uint8_t cmd, const uint32_t *p) {
                 for (int a = 0; a < 2; ++a) g.handList[a] = false;
                 g.vertexCount = 0;
                 ++gWorldStats.otherScreenFrames;
+                g.lastSwapOther = true;
                 break;
             }
         }
+        g.lastSwapOther = false;
         g.worldShown.swap(g.worldList);
         g.worldList.clear();
         g.projShown.swap(g.projList);
@@ -1759,6 +1762,8 @@ void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &piec
 }
 
 void GxModelBegin(uint32_t obj) { g.obj = obj; }
+
+bool GxLastSwapOtherScreen() { return g.lastSwapOther; }
 
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
