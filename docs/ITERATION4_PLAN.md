@@ -18,9 +18,10 @@ and into VR as real geometry around you.
 4. The chosen ideas, in this order: haptics that tell hits apart; hits felt in the picture; guard
    with the blade across the body; chests by striking or touching; a pointer and a wrist quickbar;
    sound from where it happens; speech bubbles above the speaker.
-5. Step 6, the clock tower as the loading area.
-6. The open ideas, as chosen.
-7. A PCVR build (once the Quest version is stable): see the last section.
+5. Photo mode: pause, fly around the scene, take pictures with the trigger.
+6. Step 6, the clock tower as the loading area.
+7. The open ideas, as chosen.
+8. A PCVR build (once the Quest version is stable): see the last section.
 
 ## Step 1: the world as geometry (capture, textures, a stereo giant screen)
 
@@ -150,6 +151,9 @@ and into VR as real geometry around you.
       kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
       press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
       soft-locked, so swinging on plays the chain through.
+- [ ] Roxas's hands close into a fist as you press the grip and while the Keyblade is in that
+      hand, and open as you let go: a short animation, the fingers of his one-piece hand bent at
+      the knuckles (next build).
 - [ ] Keyblade effects in first person: the game's own summoning effect (as the game plays it
       when Roxas draws his Keyblade, read from the running game) when it appears in your hand,
       with the grow-in kept; trails on your swings, and damage numbers floating up briefly from
@@ -200,8 +204,19 @@ the body; chests opened by striking or touching them; a pointer and a wrist quic
       High Jump; arms out to glide.
 - [ ] The Grey Area and the castle at full scale: the people around you life-sized, a seat on
       the couches, the mission board as a panel you touch.
-- [ ] A photo mode: freeze the game and walk around the scene, with a snapshot to the headset's
-      gallery.
+- [x] Chosen: a photo mode (see "Photo mode" below).
+
+## Photo mode (chosen)
+
+- [ ] A dedicated mode, turned on and off in the settings panel (its own switch, not a view
+      mode). While it is on, everything in the scene pauses: the game, its animations and
+      effects, its sound.
+- [ ] You move apart from Roxas, flying freely in any direction (up and down too) at a slow to
+      medium speed with the sticks, through the paused scene; turning as in the comfort settings.
+      Turning it off puts you back where you were with Roxas.
+- [ ] The trigger takes a photo: what you see (one eye's view, at the headset's resolution) saved
+      as a picture in a new folder of its own, KHDaysVR/Screenshots, named by date and time;
+      a shutter flash and sound to show it was taken.
 
 ## Step 6: the loading area on the clock tower
 
