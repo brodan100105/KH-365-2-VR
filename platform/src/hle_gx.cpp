@@ -2255,12 +2255,15 @@ void GxCaptureWorld(PlatformWorld *out) {
                 x0 = std::min(x0, cs[i][0]); x1 = std::max(x1, cs[i][0]);
                 y0 = std::min(y0, cs[i][1]); y1 = std::max(y1, cs[i][1]);
             }
-            // They may be large (a tree's cut-out): no wall is see-through.
-            const double most = 8.0;
+            // They may be large (a tree's cut-out): no wall is see-through. Far off, larger still
+            // (the sun low over the hills, Day 23's sunset): left flat, facing the game's camera,
+            // it showed edge-on to where you stand, a thin streak.
+            const double depth = std::fabs(cs[0][2]);
+            const double most = std::max(8.0, 0.3 * depth);
             flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < most && y1 - y0 < most * 1.5;
             // A large one standing straight up (a tree) is an upright sprite rather (below): it
             // stays upright when you look down at it.
-            if (flat && !(x1 - x0 < 1.2 && y1 - y0 < 1.2)) {
+            if (flat && depth < 40.0 && !(x1 - x0 < 1.2 && y1 - y0 < 1.2)) {
                 const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
                 const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
                 const double n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};

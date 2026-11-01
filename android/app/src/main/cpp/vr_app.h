@@ -148,6 +148,7 @@ private:
     bool laserOnPanel_ = false, laserOnBottom_ = false;
     bool panelPlaced_ = false;
     // First person: the Keyblade held out (the grip held, or an attack lately) and since when.
+    bool bottomBlank_ = true;  // the touch screen shows nothing (UpdateTextures)
     bool keybladeShown_ = false;
     double keybladeShownUntil_ = 0.0, keybladeAppearedAt_ = 0.0;
     int laserHand_ = 1;             // the hand the laser comes from
