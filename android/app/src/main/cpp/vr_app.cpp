@@ -414,11 +414,11 @@ void VrApp::UpdateStatus(double now) {
 }
 
 BottomScreenPlacement VrApp::HandScreenPlacementNow() const {
-    // Standing in a cutscene, the wrist / hand screen goes while it shows nothing: it would draw
-    // the eye from the scene. With something on it (a scene's text waiting for a button, as the
-    // Moogle's before his shop opens) it stays.
-    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inCutscene && bottomBlank_)
-        return BottomScreenPlacement::Hidden;
+    // Standing in the world while the game's script runs (an NPC's text, a question, a
+    // cutscene), the wrist / hand screen goes: it would draw the eye from the scene. By the
+    // script's own state, not by how its camera looks (looking down at the screen for a while
+    // took the view for an event scene's, and the screen went).
+    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inScript) return BottomScreenPlacement::Hidden;
     return settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
 }
 
@@ -445,12 +445,6 @@ void VrApp::ApplyPlatformSettings() {
 void VrApp::UpdateTextures() {
     const DsScreens &s = game_->screens();
     if (s.revision != screensRevision_) {
-        {
-            // Blank: (almost) all of it one colour.
-            size_t other = 0;
-            for (size_t i = 0; i < s.bottom.size(); i += 7) other += (s.bottom[i] & 0xffffff) != (s.bottom[0] & 0xffffff);
-            bottomBlank_ = other * 7 < s.bottom.size() / 50;
-        }
         const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
         auto upload = [&](Texture &tex, const std::vector<uint32_t> &px) {
             if (filter == TextureFilter::Smooth) {

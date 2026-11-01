@@ -418,6 +418,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         frame_.inMenu = !playing;
         frame_.inCutscene = event;
         frame_.inBattle = pl.battle;
+        frame_.inScript = pl.event || pl.choice;
         if (pl.valid) {
             frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
             frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});
