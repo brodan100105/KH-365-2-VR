@@ -78,6 +78,9 @@ struct PlatformPlayer {
     bool menu = false;         // a menu over the field runs (camp menu, shop, save point...)
     bool event = false;        // an event script (ov023) drives the scene: a cutscene
     bool choice = false;       // a choice waits for an answer (an NPC's question, a confirmation)
+    // Room-scale steps the game has taken in all (AddPlayerStep, game units along x and z): those
+    // its position already shows.
+    float stepTaken[2] = {0, 0};
     bool battle = false;       // a battle area (enemies' overlays loaded), not the Grey Area or a town
 };
 

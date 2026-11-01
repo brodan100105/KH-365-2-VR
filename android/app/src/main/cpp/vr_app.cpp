@@ -1096,10 +1096,11 @@ void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
     // to knuckles up the grip's +Y, the palm's way across it (to the left for the right hand, to
     // the right for the left), as a fist holds a sword along -Z. Hand turn turns it about that.
     const float turn = DegToRad(settings_.Get(SettingId::FpHandTurn)) * (h ? 1.0f : -1.0f);
-    // (Turned half round across the hand: the log's first look had them upside down and
-    // backwards.)
+    // (Turned half round across the hand: the first look had them upside down and backwards;
+    // and each half round about its own wrist-to-knuckle line: the next had the palms up when
+    // yours were down.)
     const Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, kPi) * Quat::AxisAngle({0, 1, 0}, turn) *
-                   Quat::AxisAngle({0, 1, 0}, h ? kPi : 0.0f);
+                   Quat::AxisAngle({0, 1, 0}, h ? 0.0f : kPi);
     const float size = 0.17f * settings_.Get(SettingId::FpHandSize);  // a hand's length, metres
     const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
     const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;

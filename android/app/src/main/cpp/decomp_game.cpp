@@ -272,7 +272,10 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         frameShown_ = false;
         const Vec3 step = requests.hasRoomScaleStep ? requests.roomScaleStep : Vec3{};
         const Vec3 more = step - stepSent_;
-        if (std::fabs(more.x) > 1e-6f || std::fabs(more.z) > 1e-6f) Platform::Get().AddPlayerStep(more.x, more.z);
+        if (std::fabs(more.x) > 1e-6f || std::fabs(more.z) > 1e-6f) {
+            Platform::Get().AddPlayerStep(more.x, more.z);
+            stepAsked_ += Vec3{more.x, 0.0f, more.z};
+        }
         stepSent_ = step;
     }
 
@@ -430,6 +433,8 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         frame_.inCutscene = event;
         frame_.inBattle = pl.battle;
         frame_.inScript = pl.event || pl.choice;
+        frame_.roomStepsReported = true;
+        frame_.roomStepTaken = {pl.stepTaken[0], 0.0f, pl.stepTaken[1]};
         if (pl.valid) {
             frame_.playerPos = {pl.position[0], pl.position[1], pl.position[2]};
             frame_.playerYaw = YawOf(Vec3{std::sin(pl.heading), 0.0f, std::cos(pl.heading)});
@@ -452,18 +457,19 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             std::copy(w.view, w.view + 16, frame_.camera.view);
         }
     }
+    // Your room-scale steps the player's position does not show yet (asked since it was read).
+    frame_.roomStepUnapplied = stepAsked_ - frame_.roomStepTaken;
 }
 
 // The triangles of one of Roxas's models (kWorldModel...) into `to`, each vertex where `place`
 // puts its point in the model's own space, with the textures they use.
 template <typename Place>
 void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedWorld *to) {
-    TexturedWorld &k = *to;
+    // Into a new one first: when nothing changed (a rigid model, as it mostly is), the old stays,
+    // its revision too, so the renderer keeps what it built (and the textures are not copied).
+    TexturedWorld k;
+    std::vector<int32_t> source;  // per texture of k: its index in w
     const size_t triangles = w.triangleFlags.size();
-    k.vertices.clear();
-    k.triangleTexture.clear();
-    k.triangleFlags.clear();
-    k.textures.clear();
     std::vector<int32_t> remap(w.textures.size(), -1);
     for (size_t t = 0; t < triangles; ++t) {
         if (w.triangleModel[t] != model) continue;
@@ -484,9 +490,9 @@ void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedW
                 b.repeatT = a.repeatT;
                 b.flipS = a.flipS;
                 b.flipT = a.flipT;
-                b.rgba = a.rgba;
                 remap[tex] = static_cast<int32_t>(k.textures.size());
                 k.textures.push_back(std::move(b));
+                source.push_back(tex);
             }
             tex = remap[tex];
         } else {
@@ -496,7 +502,15 @@ void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedW
         // Its sprite-ness is the world's business: in the hand it is plain triangles.
         k.triangleFlags.push_back(w.triangleFlags[t] & static_cast<uint8_t>(~kTriBillboard));
     }
-    ++k.revision;
+    TexturedWorld &old = *to;
+    bool same = old.vertices.size() == k.vertices.size() && old.triangleTexture == k.triangleTexture &&
+                old.triangleFlags == k.triangleFlags && old.textures.size() == k.textures.size() &&
+                std::memcmp(old.vertices.data(), k.vertices.data(), k.vertices.size() * sizeof(TexturedVertex)) == 0;
+    for (size_t i = 0; same && i < k.textures.size(); ++i) same = old.textures[i].key == k.textures[i].key;
+    if (same) return;
+    for (size_t i = 0; i < k.textures.size(); ++i) k.textures[i].rgba = w.textures[source[i]].rgba;
+    k.revision = old.revision + 1;
+    old = std::move(k);
 }
 
 void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {

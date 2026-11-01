@@ -240,6 +240,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         center_ = headFloor;
         lastHeadFloor_ = headFloor;
         pendingStep_ = {};
+        lastStepTaken_ = game.roomStepTaken;
         lastGameFrame_ = game.frameCounter;
         initialized_ = true;
         if (t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
@@ -263,7 +264,13 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     // The game applies a requested room-scale step on its next frame; until then, show it as
     // already applied so the view does not lag behind your head at the game's frame rate.
     Vec3 consumed;  // the room-scale steps the game has now applied, which the view already showed
-    if (game.frameCounter != lastGameFrame_) {
+    if (game.roomStepsReported) {
+        // The game says which of them its position shows: the rest are shown on top of it.
+        consumed = game.roomStepTaken - lastStepTaken_;
+        lastStepTaken_ = game.roomStepTaken;
+        pendingStep_ = game.roomStepUnapplied;
+        lastGameFrame_ = game.frameCounter;
+    } else if (game.frameCounter != lastGameFrame_) {
         consumed = pendingStep_;
         pendingStep_ = {};
         lastGameFrame_ = game.frameCounter;

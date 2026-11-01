@@ -199,6 +199,7 @@ void Platform::Stop() {
 
 namespace hle {
 void ApplyPlayerStep();  // below
+void ReadPlayerStepTotal(float out[2]);
 }
 
 bool Platform::VBlank(int timeoutMs) {
@@ -331,19 +332,21 @@ void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
 namespace hle {
 std::atomic<int32_t> gMoveHeading{-1};
 
-// Room-scale walking: your steps in your room, still to be given to the player (game units), and
-// whether the game took them in its last frame (Ov022_ApplyExternalPush, TakePlayerStep).
+// Room-scale walking: your steps in your room, still to be given to the player (game units); all
+// those taken (or dropped) so far; and the VBlanks since the game last took any.
 std::mutex gPlayerStepMu;
 double gPlayerStep[2] = {0, 0};
-bool gPlayerStepTaken = false;
+double gPlayerStepTotal[2] = {0, 0};
+int gVBlanksSinceStepTaken = 0;
 
 void TakePlayerStep(int32_t xz[2]) {
     std::lock_guard<std::mutex> lock(gPlayerStepMu);
     for (int k = 0; k < 2; ++k) {
         xz[k] = static_cast<int32_t>(std::lround(gPlayerStep[k] * 4096.0));
         gPlayerStep[k] -= xz[k] / 4096.0;  // the part below the game's precision waits
+        gPlayerStepTotal[k] += xz[k] / 4096.0;
     }
-    gPlayerStepTaken = true;
+    gVBlanksSinceStepTaken = 0;
     static uint32_t logged = 0;
     if ((xz[0] || xz[1]) && logged < 3) {
         ++logged;
@@ -351,12 +354,23 @@ void TakePlayerStep(int32_t xz[2]) {
     }
 }
 
-// Before each frame: steps the game did not take in its last one (a menu, an event scene) go,
-// so he does not lurch with them later.
+// Before each VBlank: steps the game has not taken for a while (a menu, an event scene) go, so he
+// does not lurch with them later. (Its logic runs at 30 frames a second, every other VBlank:
+// steps waiting one VBlank are its next frame's.)
 void ApplyPlayerStep() {
     std::lock_guard<std::mutex> lock(gPlayerStepMu);
-    if (!gPlayerStepTaken) gPlayerStep[0] = gPlayerStep[1] = 0;
-    gPlayerStepTaken = false;
+    if (++gVBlanksSinceStepTaken > 8) {
+        for (int k = 0; k < 2; ++k) {
+            gPlayerStepTotal[k] += gPlayerStep[k];
+            gPlayerStep[k] = 0;
+        }
+    }
+}
+
+void ReadPlayerStepTotal(float out[2]) {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    out[0] = static_cast<float>(gPlayerStepTotal[0]);
+    out[1] = static_cast<float>(gPlayerStepTotal[1]);
 }
 }
 void Platform::AddPlayerStep(float dx, float dz) {
@@ -392,6 +406,7 @@ bool Platform::ReadPlayerNow(PlatformPlayer *out) {
     using namespace hle;
     *out = PlatformPlayer();
     out->battle = gBattleArea;
+    ReadPlayerStepTotal(out->stepTaken);
     if (!Guest()) return false;
     auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
     // What else runs, from the object registry's step functions (as the heartbeat lists them):

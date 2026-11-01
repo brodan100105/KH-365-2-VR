@@ -103,6 +103,7 @@ private:
     // Where the view stands over him: it follows him at once while you walk him with the stick,
     // and glides after him otherwise (his attacks lunge him a step at a time).
     Vec3 standing_;
+    Vec3 lastStepTaken_;  // GameFrame::roomStepTaken as last seen
     float steppedAgo_ = 1e9f;  // seconds since your head last moved over the floor (room-scale)
     uint32_t lastGameFrame_ = 0;
     TurnController turn_;

@@ -48,6 +48,10 @@ struct GameFrame {
     bool inBattle = false;       // a battle area (enemies about), not the Grey Area or a town
     bool menuInput = false;      // the game reads the D-pad as a menu cursor (no player in the field)
     uint32_t frameCounter = 0;   // increments once per game frame (30 Hz or 60 Hz)
+    // Room-scale steps, when the game says how far it has got with them: the steps it has taken
+    // in all (world space, as asked), and those asked that playerPos does not show yet.
+    bool roomStepsReported = false;
+    Vec3 roomStepTaken, roomStepUnapplied;
     GameCamera camera;           // the game's own camera this frame
     Vec3 playerPos;              // player actor feet position
     float playerYaw = 0.0f;      // heading, radians, 0 = facing -Z

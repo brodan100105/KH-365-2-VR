@@ -97,6 +97,7 @@ private:
     TexturedWorld hands_[2];
     // Room-scale steps already given to the game this game frame, and whether a frame was shown.
     Vec3 stepSent_;
+    Vec3 stepAsked_;  // all room-scale steps given to the game (world space)
     bool frameShown_ = false;
     void TakeHands(const PlatformWorld &w);
     std::atomic<bool> worldCapture_{false};

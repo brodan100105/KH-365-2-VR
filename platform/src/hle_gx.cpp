@@ -2055,8 +2055,12 @@ void GxCaptureWorld(PlatformWorld *out) {
     struct RunsUpdate {
         ~RunsUpdate() {
             std::unordered_map<uint64_t, int> next;
-            for (const auto &[k, v] : gCharSpritesNow)
-                if (v == 1) next[k] = std::min(gCharSpriteRuns.count(k) ? gCharSpriteRuns[k] + 1 : 1, 1 << 20);
+            for (const auto &[k, v] : gCharSpritesNow) {
+                const int run = gCharSpriteRuns.count(k) ? gCharSpriteRuns[k] : 0;
+                // Facing the camera this frame, one more; once established, kept while drawn.
+                if (v == 1) next[k] = std::min(run + 1, 1 << 20);
+                else if (run >= kCharSpriteFrames) next[k] = run;
+            }
             gCharSpriteRuns.swap(next);
         }
     } runsUpdate;
@@ -2358,7 +2362,36 @@ void GxCaptureWorld(PlatformWorld *out) {
             auto &now = gCharSpritesNow[charKey];
             now = (now == 0 ? 1 : now) & (mode != 0 ? 1 : 2);  // 1 all facing, 2 or 0 not all
             auto it = gCharSpriteRuns.find(charKey);
-            if (it == gCharSpriteRuns.end() || it->second < kCharSpriteFrames) mode = 0;
+            const bool established = it != gCharSpriteRuns.end() && it->second >= kCharSpriteFrames;
+            if (!established) {
+                mode = 0;
+            } else if (mode == 0) {
+                // Up close it is no longer flat across the game's view (a Moogle's pom-pom near
+                // your face): still the sprite it was, facing you.
+                const double *c = cameraD.data();
+                mode = 1;
+                for (int i = 0; i < w.n; ++i) {
+                    const double x = pv[i].x, y = pv[i].y, z = pv[i].z;
+                    cs[i][0] = x * c[0] + y * c[4] + z * c[8] + c[12];
+                    cs[i][1] = x * c[1] + y * c[5] + z * c[9] + c[13];
+                    cs[i][2] = x * c[2] + y * c[6] + z * c[10] + c[14];
+                    if (cs[i][2] >= 0) mode = 0;  // behind the camera
+                }
+                if (mode == 1) {
+                    double z = 0;
+                    for (int i = 0; i < w.n; ++i) z += cs[i][2] / w.n;
+                    key[0] = z;
+                    for (int k = 0; k < 3; ++k) {
+                        origin[k] = z * ci[8 + k] + ci[12 + k];
+                        right[k] = ci[k];
+                        up[k] = ci[4 + k];
+                    }
+                    for (int i = 0; i < w.n; ++i) {
+                        along[i][0] = cs[i][0];
+                        along[i][1] = cs[i][1];
+                    }
+                }
+            }
         }
         flat = mode != 0;
         if (flat) {

@@ -510,6 +510,37 @@ TEST(FirstPersonWalksInTheRoomWithoutLag) {
     CHECK(worst < 0.02f);
 }
 
+TEST(FirstPersonRoomStepsAsTheGameReportsThem) {
+    // The game takes each step a frame or two late and says so: the view shows your head where
+    // it is all along, without stepping back and forth.
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.Set(SettingId::FpEyeHeight, 1.5f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.roomStepsReported = true;
+    rig.Update(s, g, MakeTracking({0, 1.6f, 0}));
+    Vec3 asked{0, 0, 0}, queued{0, 0, 0}, taken{0, 0, 0};
+    float x = 0, worst = 0;
+    for (int i = 1; i <= 180; ++i) {
+        x = 0.005f * i;
+        RigOutput o = rig.Update(s, g, MakeTracking({x, 1.6f, 0}));
+        worst = std::fmax(worst, Length(o.trackingToWorld.Transform({x, 1.6f, 0}) - Vec3{x, 1.6f, 0}));
+        if (o.requests.hasRoomScaleStep) asked = asked + o.requests.roomScaleStep;  // sent next frame
+        if (i % 3 == 0) {
+            // The game's frame: it takes what had been sent before this one.
+            g.playerPos = g.playerPos + queued;
+            taken = taken + queued;
+            queued = asked - taken;
+            g.frameCounter++;
+        }
+        g.roomStepTaken = taken;
+        g.roomStepUnapplied = asked - taken;
+    }
+    CHECK(worst < 0.02f);
+}
+
 TEST(SmootherPlaysStepsOutBetweenGameFrames) {
     MotionSmoother m;
     m.Reset({0, 0, 0});
