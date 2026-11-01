@@ -99,21 +99,21 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::TpWallFade, "Camera", "wall_fade", "Fade walls", true,
                   "Fade geometry between you and the character."));
     // ---- First person ----
-    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.75f, 0.5f, 4.0f, 0.05f, "x",
+    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.85f, 0.5f, 4.0f, 0.05f, "x",
                   "How big the world looks around you in first person: above 1 larger, below 1 smaller "
                   "(on top of Match character height)."));
-    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 1.7f,
+    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 2.5f,
                   1.0f, 2.5f, 0.05f, "m", "Eye height of the character you play."));
     d.push_back(B(S::FpMatchCharacterHeight, "First person", "match_height",
                   "Match character height", true,
                   "Scale the world so your real eye height matches the character's."));
-    d.push_back(E(S::FpMoveRelativeTo, "First person", "move_relative_to", "Stick direction", 1,
+    d.push_back(E(S::FpMoveRelativeTo, "First person", "move_relative_to", "Stick direction", 0,
                   {"head", "left_controller", "view"}, {"Head", "Left controller", "View"},
                   "What 'forward' on the movement stick means."));
     d.push_back(B(S::FpRoomScale, "First person", "room_scale", "Room-scale walking", true,
                   "Walking in your room moves the character. Walls push you back."));
     // A new key: Body without head became the default, so an old file's choice is not used.
-    d.push_back(E(S::FpShowBody, "First person", "body2", "Show body", 1,
+    d.push_back(E(S::FpShowBody, "First person", "body2", "Show body", 0,
                   {"hidden", "hands_and_weapon", "full_body", "without_head"},
                   {"Hidden", "Hands and Keyblade", "Full body", "Body without head"},
                   "Which parts of the character model are drawn in first person. Body without head: "
@@ -152,13 +152,13 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::CombatSwingSpeed, "Combat", "swing_speed", "Swing threshold", 2.2f, 1.0f,
                   6.0f, 0.1f, "m/s", "Blade-tip speed a swing needs to count as an attack."));
     // The swing keys are new with each raise of their defaults, so older files' values do not hold them back.
-    d.push_back(F(S::CombatArmSpeed, "Combat", "arm_swing_speed2", "Arm swing speed", 1.3f, 0.0f, 4.0f, 0.1f, "m/s",
+    d.push_back(F(S::CombatArmSpeed, "Combat", "arm_swing_speed3", "Arm swing speed", 1.1f, 0.0f, 4.0f, 0.1f, "m/s",
                   "How fast your hand itself must move for a swing to attack, so the arm swings and not "
                   "just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone."));
-    d.push_back(F(S::CombatArmDistance, "Combat", "swing_length2", "Swing length", 0.33f, 0.0f, 1.2f, 0.05f, "m",
+    d.push_back(F(S::CombatArmDistance, "Combat", "swing_length3", "Swing length", 0.25f, 0.0f, 1.2f, 0.05f, "m",
                   "How far your hand must travel in one fast motion before the swing attacks: longer "
                   "asks for a full swing (the attack comes that much later in it). 0: at once."));
-    d.push_back(F(S::CombatSwingCooldown, "Combat", "swing_delay", "Swing cooldown", 0.35f,
+    d.push_back(F(S::CombatSwingCooldown, "Combat", "swing_delay2", "Swing cooldown", 0.25f,
                   0.05f, 1.5f, 0.01f, "s", "Minimum time between two swings."));
     d.push_back(F(S::CombatAimAssist, "Combat", "aim_assist", "Aim assist", 0.5f, 0.0f, 1.0f,
                   0.05f, "", "How strongly swings turn the character toward the nearest enemy."));

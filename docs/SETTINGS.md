@@ -53,12 +53,12 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `world_scale` | World scale | 0.5 to 4 x | `1.75` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
-| `eye_height` | Character eye height | 1 to 2.5 m | `1.7` | Eye height of the character you play. |
+| `world_scale` | World scale | 0.5 to 4 x | `1.85` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
+| `eye_height` | Character eye height | 1 to 2.5 m | `2.5` | Eye height of the character you play. |
 | `match_height` | Match character height | `true` / `false` | `true` | Scale the world so your real eye height matches the character's. |
-| `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
+| `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `head` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
-| `body2` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `hands_and_weapon` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
+| `body2` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `hidden` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
 | `head_cut2` | Head cut height | 0.5 to 1 | `0.78` | Body without head: the part of Roxas's height above which he is not drawn (his head and hair). Lower it if hair still shows; raise it if his shoulders go. |
 | `weapon_hand` | Keyblade hand | `left`, `right` | `right` | The hand that holds the Keyblade. |
 | `dual_wield` | Dual wield | `true` / `false` | `false` | Put a second Keyblade in the other hand when the character has one. |
@@ -76,9 +76,9 @@ hands, DS + giant screen) and the options changed most.
 | `motion_combat` | Motion combat | `true` / `false` | `true` | Swing the controller to attack (first person). |
 | `physical_hits` | Physical hits only | `true` / `false` | `false` | Attacks only land where the Keyblade touches an enemy. |
 | `swing_speed` | Swing threshold | 1 to 6 m/s | `2.2` | Blade-tip speed a swing needs to count as an attack. |
-| `arm_swing_speed2` | Arm swing speed | 0 to 4 m/s | `1.3` | How fast your hand itself must move for a swing to attack, so the arm swings and not just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone. |
-| `swing_length2` | Swing length | 0 to 1.2 m | `0.33` | How far your hand must travel in one fast motion before the swing attacks: longer asks for a full swing (the attack comes that much later in it). 0: at once. |
-| `swing_delay` | Swing cooldown | 0.05 to 1.5 s | `0.35` | Minimum time between two swings. |
+| `arm_swing_speed3` | Arm swing speed | 0 to 4 m/s | `1.1` | How fast your hand itself must move for a swing to attack, so the arm swings and not just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone. |
+| `swing_length3` | Swing length | 0 to 1.2 m | `0.25` | How far your hand must travel in one fast motion before the swing attacks: longer asks for a full swing (the attack comes that much later in it). 0: at once. |
+| `swing_delay2` | Swing cooldown | 0.05 to 1.5 s | `0.25` | Minimum time between two swings. |
 | `aim_assist` | Aim assist | 0 to 1 | `0.5` | How strongly swings turn the character toward the nearest enemy. |
 | `guard_gesture` | Guard gesture | `true` / `false` | `true` | Hold the Keyblade across your body to block. |
 | `magic_gesture` | Magic / commands | `button`, `point_and_trigger` | `point_and_trigger` | How the selected command is cast. |

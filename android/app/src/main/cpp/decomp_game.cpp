@@ -265,6 +265,16 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         buttons_ = bits;
     }
     touch_ = (requests.touching ? 0x80000000u : 0u) | requests.touchX | (static_cast<uint32_t>(requests.touchY) << 8);
+    {
+        // Room-scale walking: the steps asked since the last game frame come again with every
+        // call until that frame shows (then they start over); the game gets each part once.
+        if (frameShown_) stepSent_ = {};
+        frameShown_ = false;
+        const Vec3 step = requests.hasRoomScaleStep ? requests.roomScaleStep : Vec3{};
+        const Vec3 more = step - stepSent_;
+        if (std::fabs(more.x) > 1e-6f || std::fabs(more.z) > 1e-6f) Platform::Get().AddPlayerStep(more.x, more.z);
+        stepSent_ = step;
+    }
 
     std::lock_guard<std::mutex> lock(screensMu_);
     if (latestRevision_ != shownRevision_) {
@@ -285,6 +295,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         if (latest_->topScale > 1) screens_.topHi = latest_->topHi;
         ++screens_.revision;
         ++frame_.frameCounter;
+        frameShown_ = true;
     }
     // Without a player in the field (title, menus, mission review), with a menu or event scene
     // over it, or while a choice waits (an NPC's question: up and down), the stick moves a cursor.

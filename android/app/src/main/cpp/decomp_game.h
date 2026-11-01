@@ -95,6 +95,9 @@ private:
     void TakeHeldWeapon(const PlatformWorld &w);
     // ... and his hands, into hands_.
     TexturedWorld hands_[2];
+    // Room-scale steps already given to the game this game frame, and whether a frame was shown.
+    Vec3 stepSent_;
+    bool frameShown_ = false;
     void TakeHands(const PlatformWorld &w);
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;

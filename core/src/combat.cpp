@@ -13,11 +13,11 @@ constexpr float kEndFraction = 0.45f;
 // Velocity smoothing time constant (s).
 constexpr float kVelocitySmoothing = 0.012f;
 // Guard: blade within this angle of horizontal, hand at most this far from the head.
-constexpr float kGuardMaxTiltDeg = 35.0f;
+constexpr float kGuardMaxTiltDeg = 25.0f;
 constexpr float kGuardMaxReach = 0.75f;
 // Held this long, nearly still: a blade only turned sideways for a moment (between swings, or
 // moved slowly) is no guard (it pressed Block, which looked like a swing).
-constexpr float kGuardHoldSeconds = 0.35f;
+constexpr float kGuardHoldSeconds = 0.6f;
 // The hand moving faster than this from one frame to the next is the tracking jumping (the
 // controller lost from view, as when it is turned sideways against the body), not a swing.
 constexpr float kTrackingJump = 7.0f;

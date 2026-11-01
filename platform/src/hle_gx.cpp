@@ -2041,8 +2041,22 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     }
 }
 
+// Sprites on characters: how many captures in a row each (model, texture) has faced the camera.
+constexpr int kCharSpriteFrames = 30;
+std::unordered_map<uint64_t, int> gCharSpriteRuns;
+std::unordered_map<uint64_t, uint8_t> gCharSpritesNow;
+
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
+    gCharSpritesNow.clear();
+    struct RunsUpdate {
+        ~RunsUpdate() {
+            std::unordered_map<uint64_t, int> next;
+            for (const auto &[k, v] : gCharSpritesNow)
+                if (v == 1) next[k] = std::min(gCharSpriteRuns.count(k) ? gCharSpriteRuns[k] + 1 : 1, 1 << 20);
+            gCharSpriteRuns.swap(next);
+        }
+    } runsUpdate;
     out->lockOn = g.lockOnShown;
     std::copy(g.lockOnShownAt, g.lockOnShownAt + 3, out->lockOnAt);
     out->lockOnKind = g.lockOnShownKind;
@@ -2221,8 +2235,11 @@ void GxCaptureWorld(PlatformWorld *out) {
         // a face's or a table's solid polygons that happen to lie square to the camera for a frame
         // are none. Nor is anything on Roxas.
         bool spriteLike = g.sceneHasCamera && !wire && tex >= 0 &&
-                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1)) &&
-                          !(w.obj && gCharacterObjs.count(w.obj));  // a face's decals flickered
+                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
+        // On a character (a face's decals flickered, flat to the camera now and then; a Moogle's
+        // pom-pom faces it always): one only once it has kept facing the camera a while.
+        const bool onCharacter = w.obj && gCharacterObjs.count(w.obj);
+        const uint64_t charKey = onCharacter ? Fnv(&w.obj, 4, Fnv(&w.texParam, 4, Fnv(&w.palBase, 4))) : 0;
         if (spriteLike && hasPlayer) {
             double cx = 0, cy = 0, cz = 0;
             for (int i = 0; i < w.n; ++i) {
@@ -2333,6 +2350,12 @@ void GxCaptureWorld(PlatformWorld *out) {
                     }
                 }
             }
+        }
+        if (onCharacter && spriteLike) {
+            auto &now = gCharSpritesNow[charKey];
+            now = (now == 0 ? 1 : now) & (mode != 0 ? 1 : 2);  // 1 all facing, 2 or 0 not all
+            auto it = gCharSpriteRuns.find(charKey);
+            if (it == gCharSpriteRuns.end() || it->second < kCharSpriteFrames) mode = 0;
         }
         flat = mode != 0;
         if (flat) {

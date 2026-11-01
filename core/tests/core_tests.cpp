@@ -480,6 +480,36 @@ TEST(FirstPersonRoomScaleStep) {
     CHECK(Near(o.trackingToWorld.Transform({0.2f, 1.6f, 0}), {0, 1.6f, 0}));
 }
 
+TEST(FirstPersonWalksInTheRoomWithoutLag) {
+    // Walking across the room, the game applying each step on its next frame: the view keeps
+    // your head over him, not gliding behind.
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.Set(SettingId::FpEyeHeight, 1.5f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    rig.Update(s, g, MakeTracking({0, 1.6f, 0}));
+    RigOutput o;
+    float x = 0;
+    // The headset at 90 frames a second, the game at 30: it takes the steps asked since its last
+    // frame on its next one.
+    Vec3 asked{0, 0, 0};
+    float worst = 0;
+    for (int i = 1; i <= 180; ++i) {
+        x = 0.005f * i;
+        o = rig.Update(s, g, MakeTracking({x, 1.6f, 0}));
+        if (o.requests.hasRoomScaleStep) asked = asked + o.requests.roomScaleStep;
+        if (i % 3 == 0) {
+            g.playerPos = g.playerPos + asked;
+            asked = {0, 0, 0};
+            g.frameCounter++;
+        }
+        worst = std::fmax(worst, Length(o.trackingToWorld.Transform({x, 1.6f, 0}) - Vec3{x, 1.6f, 0}));
+    }
+    CHECK(worst < 0.02f);
+}
+
 TEST(SmootherPlaysStepsOutBetweenGameFrames) {
     MotionSmoother m;
     m.Reset({0, 0, 0});
@@ -569,7 +599,7 @@ TEST(CombatGuardPose) {
     bool guarding = false, started = false;
     for (int i = 0; i < 20; ++i) started |= r.Update(s, in).guardStarted;
     CHECK(!started);  // a moment sideways is no guard
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; i < 60; ++i) {
         CombatFrame f = r.Update(s, in);
         guarding = f.guarding;
         started |= f.guardStarted;

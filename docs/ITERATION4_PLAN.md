@@ -150,9 +150,10 @@ and into VR as real geometry around you.
       kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
       press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
       soft-locked, so swinging on plays the chain through.
-- [ ] Keyblade effects in first person: the summoning effect when it appears in your hand,
-      trails on your swings, and damage numbers floating up briefly from an enemy you hit
-      (first person in VR only).
+- [ ] Keyblade effects in first person: the game's own summoning effect (as the game plays it
+      when Roxas draws his Keyblade, read from the running game) when it appears in your hand,
+      with the grow-in kept; trails on your swings, and damage numbers floating up briefly from
+      an enemy you hit (first person in VR only).
 
 ## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
 

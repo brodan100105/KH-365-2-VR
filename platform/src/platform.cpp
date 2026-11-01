@@ -197,6 +197,10 @@ void Platform::Stop() {
     if (hle::gState == PlatformState::Running) hle::gState = PlatformState::Stopped;
 }
 
+namespace hle {
+void ApplyPlayerStep();  // below
+}
+
 bool Platform::VBlank(int timeoutMs) {
     using namespace hle;
     if (gState != PlatformState::Running) return false;
@@ -220,6 +224,7 @@ bool Platform::VBlank(int timeoutMs) {
     IpcRaiseIfReply();
     IoVBlank(kFrameCycles);
     GxVBlank();
+    ApplyPlayerStep();
     ++gFrames;
     // The idle thread leaves halt, the game runs its frame and halts again.
     uint64_t halts = ThreadsWakeIdle();
@@ -325,6 +330,40 @@ void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
 
 namespace hle {
 std::atomic<int32_t> gMoveHeading{-1};
+
+// Room-scale walking: your steps in your room, still to be given to the player (game units).
+std::mutex gPlayerStepMu;
+double gPlayerStep[2] = {0, 0};
+
+// Between frames (the guest idle): moves the player by the steps asked since, in the field only.
+void ApplyPlayerStep() {
+    double step[2];
+    {
+        std::lock_guard<std::mutex> lock(gPlayerStepMu);
+        step[0] = gPlayerStep[0];
+        step[1] = gPlayerStep[1];
+        gPlayerStep[0] = gPlayerStep[1] = 0;
+    }
+    if (step[0] == 0 && step[1] == 0) return;
+    PlatformPlayer p;
+    if (!Platform::Get().ReadPlayerNow(&p) || p.menu || p.event || p.choice || !p.actor) return;
+    // His position (actor +0x48c, x y z in 20.12 fixed point); its height stays the game's.
+    for (int k : {0, 2}) {
+        const uint32_t a = p.actor + 0x48c + 4 * k;
+        const int32_t v = static_cast<int32_t>(Read32(a)) + static_cast<int32_t>(std::lround(step[k / 2] * 4096.0));
+        Write32(a, static_cast<uint32_t>(v));
+    }
+    static uint32_t logged = 0;
+    if (logged < 3) {
+        ++logged;
+        Log("room-scale: moved the player by %.3f %.3f (game units)", step[0], step[1]);
+    }
+}
+}
+void Platform::AddPlayerStep(float dx, float dz) {
+    std::lock_guard<std::mutex> lock(hle::gPlayerStepMu);
+    hle::gPlayerStep[0] += dx;
+    hle::gPlayerStep[1] += dz;
 }
 void Platform::SetMoveHeading(int heading) { hle::gMoveHeading = heading; }
 

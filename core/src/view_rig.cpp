@@ -271,10 +271,14 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     const Vec3 followed = s.Bool(SettingId::ViewSmoothMotion)
                               ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed)
                               : game.playerPos;
-    // Walking him with the stick, the view keeps right with him; otherwise (his attacks lunge him
-    // forward a step at a time) it glides after him, so a combo does not jerk you about.
-    // Room-scale steps are yours: they move the view at once too.
-    if (Length(t.moveAxis) > 0.2f || !s.Bool(SettingId::ViewSmoothMotion)) {
+    // Walking him with the stick or in your room, the view keeps right with him; otherwise (his
+    // attacks lunge him forward a step at a time) it glides after him, so a combo does not jerk
+    // you about. (Gliding while you walked in your room held you back behind your steps.)
+    if (Length(headFloor - lastHeadFloor_) > 1e-4f || Length(pendingStep_) > 1e-4f || Length(consumed) > 1e-4f)
+        steppedAgo_ = 0.0f;
+    else
+        steppedAgo_ += t.dt;
+    if (Length(t.moveAxis) > 0.2f || steppedAgo_ < 0.4f || !s.Bool(SettingId::ViewSmoothMotion)) {
         standing_ = followed;
     } else {
         standing_ += consumed;

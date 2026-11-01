@@ -825,16 +825,24 @@ void VrApp::Frame(const XrFrameInput &in) {
         for (int h = 0; h < 2; ++h) xr_->Haptic(h, combat.hapticAmplitude[h], combat.hapticSeconds[h]);
     }
     {
-        // First person, in a battle area: the Keyblade is in your hand while you hold that hand's
-        // grip, and for a while after an attack (a swing or the attack button). It appears with a
-        // flash. Elsewhere (the Grey Area) it stays away.
+        // First person, in a battle area: a short hold of the Keyblade hand's grip brings the
+        // Keyblade out, and it stays until the next short hold puts it away; an attack (a swing or
+        // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
+        // Area) it stays away.
         const int weapon = settings_.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
         const bool battle = game_->frame().inBattle;
         const bool attacked = battle && (combat.swingStarted || (buttons.a && !panel_.isOpen()));
-        if (attacked) keybladeShownUntil_ = in.time + 2.5;
-        if (!battle) keybladeShownUntil_ = 0.0;
-        const bool show = mode == ViewMode::FirstPerson && battle &&
-                          (buttons.grip[weapon] > 0.6f || in.time < keybladeShownUntil_);
+        constexpr float kGripHoldSeconds = 0.3f;
+        if (buttons.grip[weapon] > 0.6f && !panel_.isOpen()) {
+            const bool was = gripHeldFor_ >= kGripHoldSeconds;
+            gripHeldFor_ += in.dt;
+            if (!was && gripHeldFor_ >= kGripHoldSeconds && battle) keybladeOut_ = !keybladeOut_;
+        } else if (buttons.grip[weapon] < 0.4f) {
+            gripHeldFor_ = 0.0f;
+        }
+        if (attacked) keybladeOut_ = true;
+        if (!battle) keybladeOut_ = false;
+        const bool show = mode == ViewMode::FirstPerson && battle && keybladeOut_;
         if (show && !keybladeShown_) {
             keybladeAppearedAt_ = in.time;
             xr_->Haptic(weapon, 0.5f * settings_.Get(SettingId::CombatHaptics), 0.08f);
@@ -1036,23 +1044,8 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-namespace {
-// The summoning flash: motes of light bursting out from the Keyblade as it appears and fading,
-// `t` 0..1 through it.
-void AddSummonFlash(WorldDrawList *list, const Vec3 &at, float t) {
-    static const Vec3 kDirs[12] = {{1, 0.2f, 0}, {-1, 0.3f, 0.2f}, {0, 1, 0.3f}, {0.3f, -1, 0}, {0, 0.2f, 1}, {0.2f, 0, -1},
-                                   {0.7f, 0.7f, 0}, {-0.7f, 0.6f, -0.3f}, {0.6f, -0.5f, 0.6f}, {-0.5f, -0.6f, -0.6f},
-                                   {0.4f, 0.8f, -0.5f}, {-0.6f, 0.2f, 0.8f}};
-    const float r = 0.04f + 0.3f * t, size = 0.012f * (1.0f - t) + 0.003f;
-    const uint8_t a = static_cast<uint8_t>(255.0f * (1.0f - t));
-    for (const Vec3 &d : kDirs)
-        AddOrientedBox(list, at + Normalize(d) * r, {size, size, size}, Quat::AxisAngle(Normalize(d), t * 6.0f),
-                       Rgba(255, 244, 190, a));
-}
-}  // namespace
-
 void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
-    WorldDrawList props, flash;
+    WorldDrawList props;
     const ViewMode mode = lastMode_;
     BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
     int weapon = settings_.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
@@ -1065,12 +1058,11 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
             // Roxas's own hand (as the game last drew it), and the Keyblade along the blade axis
             // the combat code uses.
             DrawHand(h, g, vpTracking);
-            // Held out (the grip, an attack): the game's own once seen, the placeholder before; it
-            // grows in over a fifth of a second as it appears, in a burst of light.
+            // Out (the grip, an attack): the game's own once seen; it grows in over a fifth of a
+            // second as it appears.
             if ((h == weapon || dual) && keybladeShown_) {
                 const float since = static_cast<float>(in.time - keybladeAppearedAt_);
                 const float grow = Clamp(since / 0.2f, 0.0f, 1.0f);
-                if (since < 0.5f) AddSummonFlash(&flash, g.position + BladeAxis(g, DegToRad(settings_.Get(SettingId::FpGripAngle))) * 0.3f, since / 0.5f);
                 float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength) *
                             std::max(0.05f, grow * grow * (3.0f - 2.0f * grow));
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
@@ -1094,7 +1086,6 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         // Outside first person the hands are not drawn: the wrist screen and the laser are enough.
     }
     if (!props.triangles.empty()) renderer_.DrawTriangles(props, vpTracking);
-    if (!flash.triangles.empty()) renderer_.DrawTriangles(flash, vpTracking, 0.999f, true);  // blended: they fade
 }
 
 void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
@@ -1104,7 +1095,10 @@ void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
     // to knuckles up the grip's +Y, the palm's way across it (to the left for the right hand, to
     // the right for the left), as a fist holds a sword along -Z. Hand turn turns it about that.
     const float turn = DegToRad(settings_.Get(SettingId::FpHandTurn)) * (h ? 1.0f : -1.0f);
-    const Quat q = g.orientation * Quat::AxisAngle({0, 1, 0}, turn) * Quat::AxisAngle({0, 1, 0}, h ? kPi : 0.0f);
+    // (Turned half round across the hand: the log's first look had them upside down and
+    // backwards.)
+    const Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, kPi) * Quat::AxisAngle({0, 1, 0}, turn) *
+                   Quat::AxisAngle({0, 1, 0}, h ? kPi : 0.0f);
     const float size = 0.17f * settings_.Get(SettingId::FpHandSize);  // a hand's length, metres
     const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
     const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;

@@ -149,7 +149,9 @@ private:
     bool panelPlaced_ = false;
     // First person: the Keyblade held out (the grip held, or an attack lately) and since when.
     bool keybladeShown_ = false;
-    double keybladeShownUntil_ = 0.0, keybladeAppearedAt_ = 0.0;
+    bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
+    float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
+    double keybladeAppearedAt_ = 0.0;
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),
