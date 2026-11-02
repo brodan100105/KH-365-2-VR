@@ -58,6 +58,9 @@ private:
     void RenderEye(const XrFrameInput &in, int eye);
     // Roxas's hand on controller h at grip pose g (first person).
     void DrawHand(int h, const Pose &g, const Mat4 &vpTracking);
+    // The saved place (Game > Saved place as the loading area) around you, its player's spot on
+    // your floor, facing where you first looked; false when there is none.
+    bool DrawPlace(const Mat4 &vpTracking);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
     // Handheld > Handheld DS: a small DS where the touch screen is, both screens on it, drawn at
     // `scale` of its size and `alpha` opacity (the grow and fade of the hand screen).
@@ -153,6 +156,10 @@ private:
     bool keybladeShown_ = false;
     uint32_t lastActionsTaken_ = 0;  // GameFrame::actionsTaken as last seen
     std::vector<uint32_t> barScratch_;  // a 2D layer without letterbox rows (UpdateTextures)
+    TexturedWorld place_;          // the saved place, when loaded (DecompGame::LoadPlace)
+    Vec3 placeFeet_;
+    float placeYaw_ = 0.0f;
+    bool placeTried_ = false;  // the saved place has been looked for
     bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
     float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away

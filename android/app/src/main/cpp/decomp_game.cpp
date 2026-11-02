@@ -114,6 +114,7 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     }
     PlatformConfig cfg;
     cfg.romPath = rom;
+    dataDir_ = dataDir;
     cfg.savePath = dataDir + "/khdays.sav";
     cfg.logPath = dataDir + "/khvr_boot.log";
     cfg.fileListPath = dataDir + "/khvr_files.txt";
@@ -302,6 +303,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
     }
     // Without a player in the field (title, menus, mission review), with a menu or event scene
     // over it, or while a choice waits (an NPC's question: up and down), the stick moves a cursor.
+    frame_.inTitle = latestPlayer_.title;
     frame_.menuInput = !latestPlayer_.valid || latestPlayer_.menu || latestPlayer_.event || latestPlayer_.choice;
     if (!worldCapture_.load()) {
         frame_.inGameplay = false;
@@ -582,6 +584,68 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         }
     }
     CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
+}
+
+bool DecompGame::SavePlace() {
+    std::lock_guard<std::mutex> lock(screensMu_);
+    if (dataDir_.empty() || !latestWorld_ || !latestWorld_->worldSpace || !latestPlayer_.valid) return false;
+    const PlatformWorld &w = *latestWorld_;
+    const size_t triangles = w.triangleFlags.size();
+    if (w.vertices.size() != triangles * 3) return false;
+    // Without Roxas and what he holds (his tagged models), and without the sprites' turning.
+    PlatformWorld place;
+    place.textures = w.textures;
+    place.worldSpace = true;
+    const bool tagged = w.triangleModel.size() == triangles;
+    for (size_t t = 0; t < triangles; ++t) {
+        if (tagged && w.triangleModel[t] != 0) continue;
+        for (int k = 0; k < 3; ++k) place.vertices.push_back(w.vertices[t * 3 + k]);
+        place.triangleTexture.push_back(w.triangleTexture[t]);
+        place.triangleFlags.push_back(w.triangleFlags[t] & static_cast<uint8_t>(~kWorldBillboard));
+    }
+    if (place.triangleFlags.empty() || !PlatformWorldWrite(dataDir_ + "/khvr_place.bin", place)) return false;
+    if (FILE *f = std::fopen((dataDir_ + "/khvr_place.txt").c_str(), "w")) {
+        std::fprintf(f, "%f %f %f %f\n", latestPlayer_.position[0], latestPlayer_.position[1], latestPlayer_.position[2],
+                     latestPlayer_.heading);
+        std::fclose(f);
+    }
+    Platform::Get().LogLine("place: saved as the loading area (" + std::to_string(place.triangleFlags.size()) + " triangles)");
+    return true;
+}
+
+bool DecompGame::LoadPlace(TexturedWorld *world, Vec3 *feet, float *yaw) {
+    if (dataDir_.empty()) return false;
+    PlatformWorld w;
+    if (!PlatformWorldRead(dataDir_ + "/khvr_place.bin", &w) || w.vertices.size() != w.triangleFlags.size() * 3) return false;
+    float x = 0, y = 0, z = 0, heading = 0;
+    FILE *f = std::fopen((dataDir_ + "/khvr_place.txt").c_str(), "r");
+    if (!f) return false;
+    const int n = std::fscanf(f, "%f %f %f %f", &x, &y, &z, &heading);
+    std::fclose(f);
+    if (n != 4) return false;
+    TexturedWorld &t = *world;
+    t = TexturedWorld();
+    t.vertices.reserve(w.vertices.size());
+    for (const PlatformWorldVertex &v : w.vertices) t.vertices.push_back({{v.x, v.y, v.z}, v.u, v.v, v.color});
+    t.triangleTexture = w.triangleTexture;
+    t.triangleFlags = w.triangleFlags;
+    t.textures.resize(w.textures.size());
+    for (size_t i = 0; i < w.textures.size(); ++i) {
+        const PlatformWorldTexture &a = w.textures[i];
+        WorldTexture &b = t.textures[i];
+        b.key = a.key;
+        b.width = a.width;
+        b.height = a.height;
+        b.repeatS = a.repeatS;
+        b.repeatT = a.repeatT;
+        b.flipS = a.flipS;
+        b.flipT = a.flipT;
+        b.rgba = a.rgba;
+    }
+    t.revision = 1;
+    *feet = {x, y, z};
+    *yaw = YawOf(Vec3{std::sin(heading), 0.0f, std::cos(heading)});
+    return true;
 }
 
 bool DecompGame::KeepPlacedScene() {

@@ -190,5 +190,7 @@ hands, DS + giant screen) and the options changed most.
 | `language` | Language | `english`, `french`, `german`, `italian`, `spanish` | `english` | Game text language (EU release). Applies on the next launch. |
 | `invert_turn` | Invert turning | `true` / `false` | `false` | Swap the direction of right-stick turning. |
 | `analog_move` | Move any direction | `true` / `false` | `true` | Roxas walks and runs the exact way the thumbstick points instead of the DS D-pad's eight directions (in the field; menus keep the D-pad). |
+| `use_place` | Saved place as the loading area | `true` / `false` | `true` | Before the game starts (loading, and behind the title and its menus) you stand in the place saved with the option below, instead of the plain loading area. |
+| `save_place` | Save this place as the loading area | `true` / `false` | `false` | Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it as the loading area; it turns itself off once saved. Saved on your headset from your own game, next to your save. |
 | `units_per_meter` | World units per meter | 0.05 to 64 | `1` | Calibration: game world units in one real meter at life size. |
 | `show_fps` | Show frame rate | `true` / `false` | `false` | Shows game and headset frame rates on the HUD. |

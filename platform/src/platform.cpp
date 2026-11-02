@@ -429,6 +429,7 @@ bool Platform::ReadPlayerNow(PlatformPlayer *out) {
             for (const char *m : kMenus)
                 if (!std::strncmp(fn, m, 6)) out->menu = true;
             if (!std::strncmp(fn, "Ov023_", 6)) out->event = true;
+            if (!std::strncmp(fn, "Ov000_", 6)) out->title = true;
         }
     }
     // A choice waits for an answer (an NPC's question, a confirmation): game state flag 0x20ef,

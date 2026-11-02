@@ -41,6 +41,13 @@ public:
     // View > Stand in the world: report gameplay (the player in the field, no menu or event
     // scene) so the app leaves the giant screen for the captured world around you.
     void SetStandInWorld(bool on) { standInWorld_ = on; }
+    // A place for the loading area and the menu's backdrop (Game > Use this place as the
+    // loading area): the world captured where the player stands now, Roxas left out, saved next
+    // to the save (khvr_place.bin, with where he stood and faced in khvr_place.txt). Made from
+    // the user's own game as it runs; never part of the app.
+    bool SavePlace();
+    // Loads it: the world, where he stood (feet) and the way he faced (yaw, radians).
+    bool LoadPlace(TexturedWorld *world, Vec3 *feet, float *yaw);
     // Picture > Draw while the game runs: the screens of a frame are drawn on a thread of their
     // own while the game runs the next frame, as the DS does, instead of before it.
     void SetParallelCapture(bool on) { parallel_ = on; }
@@ -111,6 +118,7 @@ private:
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
     PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
     std::atomic<bool> standInWorld_{false};
+    std::string dataDir_;  // the KHDaysVR folder (the save, the boot log, the saved place)
     std::atomic<bool> cutscenesInWorld_{false};
     bool eventAnchored_ = false;  // a cutscene without the player has its view's place
     HidePlayer hidePlayer_ = HidePlayer::None;

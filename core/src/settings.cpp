@@ -373,6 +373,13 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::GameAnalogMove, "Game", "analog_move", "Move any direction", true,
                   "Roxas walks and runs the exact way the thumbstick points instead of the DS "
                   "D-pad's eight directions (in the field; menus keep the D-pad)."));
+    d.push_back(B(S::GameUsePlace, "Game", "use_place", "Saved place as the loading area", true,
+                  "Before the game starts (loading, and behind the title and its menus) you stand in the "
+                  "place saved with the option below, instead of the plain loading area."));
+    d.push_back(B(S::GameSavePlace, "Game", "save_place", "Save this place as the loading area", false,
+                  "Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it "
+                  "as the loading area; it turns itself off once saved. Saved on your headset from your "
+                  "own game, next to your save."));
     d.push_back(F(S::GameUnitsPerMeter, "Game", "units_per_meter", "World units per meter", 1.0f,
                   0.05f, 64.0f, 0.05f, "",
                   "Calibration: game world units in one real meter at life size."));

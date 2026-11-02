@@ -859,6 +859,16 @@ void VrApp::Frame(const XrFrameInput &in) {
         // Keyblade out, and it stays until the next short hold puts it away; an attack (a swing or
         // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
         // Area) it stays away.
+#ifdef KHVR_HAS_GAME
+        // Game > Save this place as the loading area: saved where you stand, then it turns off.
+        if (settings_.Bool(SettingId::GameSavePlace)) {
+            settings_.SetBool(SettingId::GameSavePlace, false);
+            if (decomp_ && game_->frame().inGameplay && decomp_->SavePlace()) {
+                placeTried_ = false;  // loaded afresh when next drawn
+                xr_->Haptic(1, 0.6f, 0.15f);
+            }
+        }
+#endif
         // Holding the left thumbstick down (half a second) puts the second screen (the wrist,
         // hand or floating touch screen) away, or brings it back; a press alone does nothing.
         if (buttons.stickClick[0] && !panel_.isOpen()) {
@@ -1138,6 +1148,32 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     if (!props.triangles.empty()) renderer_.DrawTriangles(props, vpTracking);
 }
 
+bool VrApp::DrawPlace(const Mat4 &vpTracking) {
+#ifdef KHVR_HAS_GAME
+    if (!settings_.Bool(SettingId::GameUsePlace) || !decomp_) return false;
+    if (!placeTried_) {
+        placeTried_ = true;
+        if (!decomp_->LoadPlace(&place_, &placeFeet_, &placeYaw_)) place_ = TexturedWorld();
+    }
+    if (place_.vertices.empty()) return false;
+    // Its player's spot on your floor (where you stood at the start), facing where you looked.
+    const float floorY = screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f;
+    Similarity toWorld;
+    toWorld.scale = FirstPersonScale(settings_, 0.0f);
+    toWorld.rotation = Quat::Yaw(placeYaw_ - screenYaw_);
+    const Vec3 floor{screenAnchor_.x, floorY, screenAnchor_.z};
+    toWorld.translation = placeFeet_ - toWorld.rotation.Rotate(floor * toWorld.scale);
+    const Mat4 vpWorld = vpTracking * Mat4::FromSimilarity(toWorld.Inverse());
+    const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+    renderer_.DrawTexturedWorld(place_, vpWorld, filter == TextureFilter::Nearest || filter == TextureFilter::Sharp,
+                                WorldMotion(), 4);
+    return true;
+#else
+    (void)vpTracking;
+    return false;
+#endif
+}
+
 void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
     const TexturedWorld &hand = game_->hand(h);
     if (hand.vertices.empty()) return;  // until the game has drawn his: none
@@ -1231,15 +1267,17 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     glEnable(GL_DEPTH_TEST);
 
     if (Loading()) {
-        // The loading area instead of a black giant screen, until the game draws something.
-        renderer_.DrawTriangles(loadingArea_, vpTracking);
-        if (stationTex_.id()) {
+        // The loading area instead of a black giant screen, until the game draws something: the
+        // saved place, else the pillar.
+        const bool place = DrawPlace(vpTracking);
+        if (!place) renderer_.DrawTriangles(loadingArea_, vpTracking);
+        if (stationTex_.id() && !place) {
             // The window lies face up on the pillar, its top toward where you first looked.
             Pose floor{Quat::Yaw(screenYaw_) * Quat::AxisAngle({1, 0, 0}, -kPi / 2),
                        loadingCenter_ + Vec3{0, 0.002f, 0}};
             renderer_.DrawQuad(stationTex_.id(), floor, 6.4f, 6.4f, vpTracking);
         }
-        renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
+        if (!place) renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
         // The motes face your eye, farthest first so their glows blend over each other.
         const Vec3 eyePos = in.eyes[eye].pose.position;
         std::vector<const Mote *> order;
@@ -1256,6 +1294,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     } else if (mode == ViewMode::GiantScreen && handheld_ && (!settings_.Bool(SettingId::HandScreenDsGiant) || DsOnly())) {
         // The handheld shows the top screen instead.
     } else if (mode == ViewMode::GiantScreen) {
+        // While the game's title and its menu are up, they float in the saved place; after, black.
+        if (game_->frame().inTitle) DrawPlace(vpTracking);
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
         const bool world3d = World3d();
