@@ -135,6 +135,7 @@ struct Gx {
     int swapRun = 0;
     float phasePolys[2] = {0, 0};
     bool lastSwapOther = false;  // the last frame was the other screen's (left out of the world)
+    int keptPhase = -1;  // which way round (engine A on top or not) the world's frames come, -1 none
     // Roxas's hands: their joints' pivots (Bip01_L_Hand, Bip01_R_Hand) as the frame being drawn
     // has them, and as the shown one has them (GxJoint; TagPlayerModels).
     float handPivotList[2][3] = {}, handPivotShown[2][3] = {};
@@ -1001,7 +1002,17 @@ void Exec(uint8_t cmd, const uint32_t *p) {
             const float n = static_cast<float>(g.worldList.size());
             g.phasePolys[aOnTop] += (n - g.phasePolys[aOnTop]) * 0.3f;
             const bool alternating = g.swapRun >= 3;
-            if (alternating && g.phasePolys[aOnTop] < 0.7f * g.phasePolys[!aOnTop]) {
+            // One of the two pictures is kept for the world, the busier, and stays kept until the
+            // other is clearly busier (a fifth more): with both about as busy, each was let
+            // through in turn and the view flipped between the two scenes.
+            if (!alternating) {
+                g.keptPhase = -1;
+            } else if (g.keptPhase < 0) {
+                g.keptPhase = g.phasePolys[1] >= g.phasePolys[0] ? 1 : 0;
+            } else if (g.phasePolys[!g.keptPhase] > 1.2f * g.phasePolys[g.keptPhase] + 8.0f) {
+                g.keptPhase = !g.keptPhase;
+            }
+            if (alternating && static_cast<int>(aOnTop) != g.keptPhase) {
                 g.worldList.clear();
                 g.projList.clear();
                 g.glbList.clear();

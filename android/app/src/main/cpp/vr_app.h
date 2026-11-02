@@ -165,6 +165,8 @@ private:
     Pose visionPose_;
     float visionAlpha_ = 0.0f;
     bool visionPlaced_ = false;
+    bool bottomStatic_ = false;  // the touch screen shows static (UpdateTextures)
+    int staticFrames_ = 0;
     bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
     float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
