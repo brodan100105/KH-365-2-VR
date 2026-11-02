@@ -506,6 +506,7 @@ uint16_t VramRead16(uint32_t addr) { return static_cast<uint16_t>(VramByte(addr)
 uint8_t IoReg8(uint32_t off) { return gRegs[off]; }
 uint16_t IoReg16(uint32_t off) { return R16(off); }
 uint32_t IoReg32(uint32_t off) { return R32(off); }
+void IoDispCapDone() { W32(0x64, R32(0x64) & 0x7fffffffu); }
 
 }  // namespace khvr::hle
 

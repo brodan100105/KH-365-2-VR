@@ -448,7 +448,10 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // A cutscene drawn as a picture on a few polygons (the scene captured and shown through a
         // flat card, with static over it: Agrabah, Sora through the static) is no world to stand
         // in: it goes to the giant screen as the DS draws it, not a speck in an empty sky.
-        const bool flatPicture = (latestPlayer_.event || w.eventScene) && (w.triangleFlags.size() < 16 || w.capturedPicture);
+        // So too a cutscene drawing 3D on both screens in turn (Agrabah: the scene above, Sora
+        // through the static below): the DS's two pictures show it as it is meant to be seen.
+        const bool flatPicture = (latestPlayer_.event || w.eventScene) &&
+                                 (w.triangleFlags.size() < 16 || w.capturedPicture || w.alternatingScreens);
         const bool placed = standInWorld_.load() && w.worldSpace && !w.vertices.empty() && !screens_.movie && !flatPicture;
         const bool playing = placed && !pl.menu && (event ? cutscenesInWorld_.load() : pl.valid);
         frame_.inGameplay = playing;

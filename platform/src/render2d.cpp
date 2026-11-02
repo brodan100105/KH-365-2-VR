@@ -217,10 +217,6 @@ void Objects(const Engine &e, int y, ObjLine *out) {
         int ox = Sext(a1 & 511, 9);
         int ly = y - oy;
         if (ly < 0 || ly >= bh) continue;
-        if (mode == 3) {
-            LogOnce("obj-bitmap", "render2d: bitmap sprites are not drawn yet");
-            continue;
-        }
         bool c256 = a0 & 0x2000;
         uint32_t tile = a2 & 0x3ff, pal = a2 >> 12, prio = (a2 >> 10) & 3;
         int16_t pa = 256, pb = 0, pc = 0, pd = 256;
@@ -245,6 +241,24 @@ void Objects(const Engine &e, int y, ObjLine *out) {
                 ty = (a1 & 0x2000) ? h - 1 - ly : ly;
             }
             uint32_t addr;
+            if (mode == 3) {
+                // A bitmap sprite: 15-bit colours straight from OBJ VRAM (bit 15 opaque), 1D (in
+                // 128- or 256-byte steps) or 2D (rows of 128 or 256 dots). A game shows a screen
+                // it captured this way (3D on both screens: the other screen's picture).
+                if (e.dispcnt & 0x40) {
+                    addr = tile * ((e.dispcnt & 0x400000) ? 256u : 128u) + (static_cast<uint32_t>(ty) * w + tx) * 2;
+                } else if (e.dispcnt & 0x20) {
+                    addr = (tile & 0x1f) * 0x10 + (tile & 0x3e0) * 0x80 + (static_cast<uint32_t>(ty) * 256 + tx) * 2;
+                } else {
+                    addr = (tile & 0x0f) * 0x10 + (tile & 0x3f0) * 0x80 + (static_cast<uint32_t>(ty) * 128 + tx) * 2;
+                }
+                const uint16_t c = Rd16(e.obj, addr);
+                if (!(c & 0x8000) || prio > out->prio[sx]) continue;
+                out->c[sx] = c & 0x7fff;
+                out->prio[sx] = static_cast<uint8_t>(prio);
+                out->semi[sx] = false;
+                continue;
+            }
             uint32_t tcol = static_cast<uint32_t>(tx) / 8, trow = static_cast<uint32_t>(ty) / 8;
             uint32_t px = static_cast<uint32_t>(tx) & 7, py = static_cast<uint32_t>(ty) & 7;
             uint32_t idx;
@@ -566,6 +580,44 @@ bool RenderEngine(int index, uint32_t *rgba, uint32_t *hud, bool *has3d, uint32_
 
 }  // namespace
 
+// Display capture (DISPCAPCNT): engine A's picture of this frame written into a VRAM bank as
+// 15-bit colours, alone or blended with what a bank already holds, as the DS does at the end of
+// its frame. A game drawing 3D on both screens captures one screen this way and shows the
+// capture on the other next frame (bitmap sprites): without it that screen stayed black.
+void DisplayCapture(const uint32_t *engineA) {
+    const uint32_t cnt = IoReg32(0x64);
+    if (!(cnt & 0x80000000u)) return;
+    static const int kW[4] = {128, 256, 256, 256}, kH[4] = {128, 64, 128, 192};
+    const int size = (cnt >> 20) & 3, w = kW[size], h = kH[size];
+    const int bank = (cnt >> 16) & 3;
+    const uint32_t writeOff = ((cnt >> 18) & 3) * 0x8000, readOff = ((cnt >> 26) & 3) * 0x8000;
+    const int source = (cnt >> 29) & 3;  // 0 A, 1 B, 2-3 A and B blended
+    const uint32_t eva = std::min<uint32_t>(cnt & 31, 16), evb = std::min<uint32_t>((cnt >> 8) & 31, 16);
+    uint8_t *dst = VramBank(bank);
+    const uint32_t bankSize = VramBankSize(bank);
+    // Source B: the bank shown in VRAM display mode (DISPCNT A bits 18-19).
+    const uint8_t *srcB = VramBank(static_cast<int>((IoReg32(0) >> 18) & 3));
+    const uint32_t bSize = VramBankSize(static_cast<int>((IoReg32(0) >> 18) & 3));
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const uint32_t p = engineA[y * kScreenW + x];
+            const uint16_t a = static_cast<uint16_t>(((p & 0xff) >> 3) | (((p >> 8) & 0xff) >> 3) << 5 |
+                                                     (((p >> 16) & 0xff) >> 3) << 10);
+            const uint32_t i = static_cast<uint32_t>(y * w + x) * 2;
+            uint16_t b = 0;
+            if (source != 0) {
+                const uint32_t at = (readOff + i) % bSize;
+                b = static_cast<uint16_t>(srcB[at] | (srcB[at + 1] << 8));
+            }
+            uint16_t c = source == 0 ? a : source == 1 ? b : Blend(a, b, eva, evb);
+            c |= 0x8000;
+            const uint32_t at = (writeOff + i) % bankSize;
+            dst[at] = static_cast<uint8_t>(c);
+            dst[at + 1] = static_cast<uint8_t>(c >> 8);
+        }
+    IoDispCapDone();
+}
+
 void Render2D(PlatformScreens *out, int scale3d, bool split) {
     // POWCNT1 bit 15: engine A on the top screen.
     bool aOnTop = IoReg16(0x304) & 0x8000;
@@ -584,6 +636,7 @@ void Render2D(PlatformScreens *out, int scale3d, bool split) {
         has3d = false;  // 3D on the bottom screen: the VR view shows the top
     }
     out->top3d = has3d;
+    DisplayCapture(aOnTop ? out->top : out->bottom);
 }
 
 }  // namespace khvr::hle

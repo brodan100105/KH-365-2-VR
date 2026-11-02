@@ -2124,6 +2124,7 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->worldSpace = false;
     out->eventScene = false;
     out->capturedPicture = false;
+    out->alternatingScreens = g.swapRun >= 3;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
     if (!g.sceneKnown) return;

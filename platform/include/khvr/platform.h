@@ -102,6 +102,9 @@ struct PlatformWorld {
     // A large direct-colour texture is drawn: a picture the DS captured of its own screen, shown
     // on a card (a cutscene's static over the scene, Agrabah).
     bool capturedPicture = false;
+    // The game draws 3D on both screens in turn (one captured and shown on the other): its world
+    // alternates between two scenes.
+    bool alternatingScreens = false;
     // The game sorts its translucent polygons itself (SWAP_BUFFERS manual sort); otherwise the DS
     // orders them, and a viewer should draw them back to front.
     bool manualSort = false;

@@ -78,6 +78,7 @@ void IoOnIrqTaken(int bit);  // re-raises timers with more overflows queued
 uint8_t IoReg8(uint32_t off);  // plain register storage, for the renderers (offset from 0x04000000)
 uint16_t IoReg16(uint32_t off);
 uint32_t IoReg32(uint32_t off);
+void IoDispCapDone();  // a display capture finished: DISPCAPCNT's enable bit clears
 uint64_t IoCycles();  // emulated ARM9 bus cycles (33.5 MHz) since boot
 
 // The VRAM banks A-I and how the guest has mapped them (VRAMCNT).
