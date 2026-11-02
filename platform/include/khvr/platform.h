@@ -99,6 +99,9 @@ struct PlatformWorld {
     // Otherwise (an event scene's lens without it) camera space, for the giant screen only.
     bool worldSpace = false;
     bool eventScene = false;  // drawn with an event scene's own lens
+    // A large direct-colour texture is drawn: a picture the DS captured of its own screen, shown
+    // on a card (a cutscene's static over the scene, Agrabah).
+    bool capturedPicture = false;
     // The game sorts its translucent polygons itself (SWAP_BUFFERS manual sort); otherwise the DS
     // orders them, and a viewer should draw them back to front.
     bool manualSort = false;

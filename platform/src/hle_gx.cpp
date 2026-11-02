@@ -2121,6 +2121,7 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->hasCamera = false;
     out->worldSpace = false;
     out->eventScene = false;
+    out->capturedPicture = false;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
     if (!g.sceneKnown) return;
@@ -2266,6 +2267,7 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) out->capturedPicture = true;
         // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
         // transparent) show both sides: the DS draws one, the side its camera sees, and from
         // where you stand you may see the other (a stall's awning from under it went).
