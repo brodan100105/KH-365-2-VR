@@ -121,15 +121,23 @@ void LogOpen(const char *path) {
     if (gLogFile) std::fclose(gLogFile);
     gLogFile = nullptr;
     if (!path || !*path) return;
-    // Keep the previous sessions (a stop is often followed by a relaunch), unless the log has
-    // grown past 1 MB.
+    // Keep the previous sessions (a stop is often followed by a relaunch). Past 1 MB the log
+    // moves to khvr_boot_prev.log (replacing the one before) and starts afresh: a crash's
+    // session, relaunched right after, was wiped with it.
     long size = 0;
     if (FILE *old = std::fopen(path, "rb")) {
         std::fseek(old, 0, SEEK_END);
         size = std::ftell(old);
         std::fclose(old);
     }
-    gLogFile = std::fopen(path, size > (1L << 20) ? "w" : "a");
+    if (size > (1L << 20)) {
+        std::string prev = path;
+        const size_t dot = prev.rfind(".log");
+        prev = dot == std::string::npos ? prev + ".prev" : prev.substr(0, dot) + "_prev.log";
+        std::remove(prev.c_str());
+        std::rename(path, prev.c_str());
+    }
+    gLogFile = std::fopen(path, "a");
     if (gLogFile) {
         std::time_t now = std::time(nullptr);
         char when[32];
