@@ -507,7 +507,11 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     // Aladdin's scene): the last of the world's frames stays.
     static PlatformScreens kept;
     static bool hasKept = false;
-    if (gWorldCapture.load() && hle::GxLastSwapOtherScreen() && hasKept) {
+    // (Captured on its own schedule, the screens may also be taken while engine A, the one with
+    // the top screen's 3D and text box, shows on the bottom: those keep the last ones as well.)
+    const bool aOnTopNow = hle::IoReg16(0x304) & 0x8000;
+    if (gWorldCapture.load() && hasKept &&
+        (hle::GxLastSwapOtherScreen() || (hle::GxAlternatingScreens() && !aOnTopNow))) {
         *out = kept;
         return;
     }

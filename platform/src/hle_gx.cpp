@@ -1765,6 +1765,8 @@ void GxModelBegin(uint32_t obj) { g.obj = obj; }
 
 bool GxLastSwapOtherScreen() { return g.lastSwapOther; }
 
+bool GxAlternatingScreens() { return g.swapRun >= 3; }
+
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
     // The game's thread alone writes the pending sight (and moves it to the shown one at the swap).
