@@ -861,6 +861,18 @@ void VrApp::Frame(const XrFrameInput &in) {
         // Area) it stays away.
 #ifdef KHVR_HAS_GAME
         // Game > Save this place as the loading area: saved where you stand, then it turns off.
+        {
+            // A two-screen cutscene's other picture: a window ahead of you and a little above,
+            // where you looked as it appeared, facing you; it stays there and fades in and out.
+            const bool want = mode != ViewMode::GiantScreen && game_->frame().visionScreen;
+            if (want && !visionPlaced_) {
+                const Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
+                visionPose_ = FacingFrom(in.head.position + fwd * 1.5f + Vec3{0.0f, 0.25f, 0.0f}, in.head.position);
+                visionPlaced_ = true;
+            }
+            visionAlpha_ = Clamp(visionAlpha_ + (want ? 1.0f : -1.0f) * in.dt / 0.3f, 0.0f, 1.0f);
+            if (!want && visionAlpha_ <= 0.0f) visionPlaced_ = false;
+        }
         if (settings_.Bool(SettingId::GameSavePlace)) {
             settings_.SetBool(SettingId::GameSavePlace, false);
             if (decomp_ && game_->frame().inGameplay && decomp_->SavePlace()) {
@@ -1399,6 +1411,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                 renderer_.SetScreenSmoothing(0.0f);
             }
         }
+    }
+    if (visionAlpha_ > 0.0f && visionPlaced_ && bottomTex_.id()) {
+        // The other picture of a two-screen cutscene, a window in the air (see visionPose_).
+        renderer_.SetScreenSmoothing(screenSmoothing);
+        renderer_.DrawQuad(bottomTex_.id(), visionPose_, 1.0f, 0.75f, vpTracking, 0.9f * visionAlpha_);
+        renderer_.SetScreenSmoothing(0.0f);
     }
     if (Loading() && titleTex_.id()) {
         // The title floats: a slow rise and fall of a couple of centimetres.

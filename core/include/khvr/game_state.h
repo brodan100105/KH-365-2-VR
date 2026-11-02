@@ -45,6 +45,9 @@ struct GameFrame {
     bool inCutscene = false;     // an event script or camera animation drives the camera
     bool inMenu = false;         // pause / camp menu, shops, title: show the giant screen
     bool inTitle = false;        // the game's title (logos, title screen, its menu) runs
+    // A cutscene drawing 3D on both screens in turn: the world is its main scene, and the touch
+    // screen shows the other (Agrabah: Sora through the static), for a window in the air.
+    bool visionScreen = false;
     bool inScript = false;       // the game's script runs: an NPC's text, a question, an event scene
     bool inBattle = false;       // a battle area (enemies about), not the Grey Area or a town
     bool menuInput = false;      // the game reads the D-pad as a menu cursor (no player in the field)

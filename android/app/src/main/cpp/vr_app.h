@@ -160,6 +160,11 @@ private:
     Vec3 placeFeet_;
     float placeYaw_ = 0.0f;
     bool placeTried_ = false;  // the saved place has been looked for
+    // The window in the air for a two-screen cutscene's other picture (GameFrame::visionScreen):
+    // placed where you look as it appears, faded in and out.
+    Pose visionPose_;
+    float visionAlpha_ = 0.0f;
+    bool visionPlaced_ = false;
     bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
     float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
