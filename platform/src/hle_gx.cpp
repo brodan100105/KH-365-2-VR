@@ -2271,6 +2271,9 @@ void GxCaptureWorld(PlatformWorld *out) {
         // where you stand you may see the other (a stall's awning from under it went).
         if (!wire && tex >= 0 && ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1)))
             flags |= kWorldFront | kWorldBack;
+        // An event scene's set is built for its camera, one side to each wall; standing in it you
+        // may see a wall from the other side (Axel's mission: a wall gone in the cutscene).
+        if (!wire && g.eventScene) flags |= kWorldFront | kWorldBack;
         PlatformWorldVertex pv[4];
         for (int i = 0; i < w.n; ++i) {
             const Vertex &v = w.v[i];
