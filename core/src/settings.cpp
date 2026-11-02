@@ -380,6 +380,11 @@ std::vector<SettingDef> BuildDefs() {
                   "Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it "
                   "as the loading area; it turns itself off once saved. Saved on your headset from your "
                   "own game, next to your save."));
+    d.push_back(F(S::GamePlaceScale, "Game", "place_scale", "Saved place size", 2.5f, 0.5f, 5.0f, 0.1f, "x",
+                  "How big the saved place looks around you (above 1 larger). The change shows at once."));
+    d.push_back(F(S::GamePlaceHeight, "Game", "place_height", "Saved place floor", -0.6f, -3.0f, 1.0f, 0.05f, "m",
+                  "Moves the saved place's floor down (below 0) or up, so the giant screen stands above "
+                  "it. The change shows at once."));
     d.push_back(F(S::GameUnitsPerMeter, "Game", "units_per_meter", "World units per meter", 1.0f,
                   0.05f, 64.0f, 0.05f, "",
                   "Calibration: game world units in one real meter at life size."));

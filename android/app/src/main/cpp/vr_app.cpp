@@ -1157,9 +1157,9 @@ bool VrApp::DrawPlace(const Mat4 &vpTracking) {
     }
     if (place_.vertices.empty()) return false;
     // Its player's spot on your floor (where you stood at the start), facing where you looked.
-    const float floorY = screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f;
+    const float floorY = (screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f) + settings_.Get(SettingId::GamePlaceHeight);
     Similarity toWorld;
-    toWorld.scale = FirstPersonScale(settings_, 0.0f);
+    toWorld.scale = settings_.Get(SettingId::GameUnitsPerMeter) / std::max(0.1f, settings_.Get(SettingId::GamePlaceScale));
     toWorld.rotation = Quat::Yaw(placeYaw_ - screenYaw_);
     const Vec3 floor{screenAnchor_.x, floorY, screenAnchor_.z};
     toWorld.translation = placeFeet_ - toWorld.rotation.Rotate(floor * toWorld.scale);

@@ -445,7 +445,11 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // gone: the view stays where it was). Otherwise everything stays on the giant screen.
         const PlatformPlayer &pl = latestPlayer_;
         const bool event = pl.event || w.eventScene;
-        const bool placed = standInWorld_.load() && w.worldSpace && !w.vertices.empty() && !screens_.movie;
+        // A cutscene drawn as a picture on a few polygons (the scene captured and shown through a
+        // flat card, with static over it: Agrabah, Sora through the static) is no world to stand
+        // in: it goes to the giant screen as the DS draws it, not a speck in an empty sky.
+        const bool flatPicture = (latestPlayer_.event || w.eventScene) && w.triangleFlags.size() < 16;
+        const bool placed = standInWorld_.load() && w.worldSpace && !w.vertices.empty() && !screens_.movie && !flatPicture;
         const bool playing = placed && !pl.menu && (event ? cutscenesInWorld_.load() : pl.valid);
         frame_.inGameplay = playing;
         frame_.inMenu = !playing;

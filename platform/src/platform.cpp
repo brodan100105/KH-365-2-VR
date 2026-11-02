@@ -507,7 +507,7 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     // Aladdin's scene): the last of the world's frames stays.
     static PlatformScreens kept;
     static bool hasKept = false;
-    if (hle::GxLastSwapOtherScreen() && hasKept) {
+    if (gWorldCapture.load() && hle::GxLastSwapOtherScreen() && hasKept) {
         *out = kept;
         return;
     }
