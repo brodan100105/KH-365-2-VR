@@ -460,9 +460,18 @@ void VrApp::UpdateTextures() {
                     }
             const double perPixel = n ? static_cast<double>(diff) / n : 0.0;
             // Held a few frames either way, so it does not flicker with the noise itself.
-            staticFrames_ = perPixel > 60.0 ? std::min(staticFrames_ + 1, 10) : std::max(staticFrames_ - 1, 0);
+            staticFrames_ = perPixel > 36.0 ? std::min(staticFrames_ + 1, 10) : std::max(staticFrames_ - 1, 0);
+            const bool was = bottomStatic_;
             if (staticFrames_ >= 6) bottomStatic_ = true;
             if (staticFrames_ <= 2) bottomStatic_ = false;
+#ifdef KHVR_HAS_GAME
+            if (bottomStatic_ != was) {
+                char line[96];
+                std::snprintf(line, sizeof line, "view: the touch screen %s static (%.0f)", bottomStatic_ ? "shows" : "no longer shows",
+                              perPixel);
+                Platform::Get().LogLine(line);
+            }
+#endif
         }
         const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
         auto upload = [&](Texture &tex, const std::vector<uint32_t> &px) {

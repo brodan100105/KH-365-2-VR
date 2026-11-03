@@ -510,8 +510,10 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     // (Captured on its own schedule, the screens may also be taken while engine A, the one with
     // the top screen's 3D and text box, shows on the bottom: those keep the last ones as well.)
     const bool aOnTopNow = hle::IoReg16(0x304) & 0x8000;
-    if (gWorldCapture.load() && hasKept &&
-        (hle::GxLastSwapOtherScreen() || (hle::GxAlternatingScreens() && !aOnTopNow))) {
+    // (Only by which screen engine A shows now: the world's choice of frames is its own, and
+    // keeping the screens by it too froze them for a whole Agrabah cutscene, its text box and
+    // static gone.)
+    if (gWorldCapture.load() && hasKept && hle::GxAlternatingScreens() && !aOnTopNow) {
         *out = kept;
         return;
     }
