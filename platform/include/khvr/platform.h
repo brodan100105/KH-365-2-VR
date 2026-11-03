@@ -146,6 +146,8 @@ constexpr uint8_t kWorldModelPlayer = 1, kWorldModelAttached = 2;
 constexpr uint8_t kWorldModelEffect = 7;
 // His hands (the polygons of his hand joints): kWorldModelHand + 0 the left, + 1 the right.
 constexpr uint8_t kWorldModelHand = 8;
+// Other characters (models of some polygons, a few units across): the people about him.
+constexpr uint8_t kWorldModelCharacter = 10;
 constexpr int kWorldAttachedMax = 4;
 
 // A captured world to a file and back (world_file.cpp).

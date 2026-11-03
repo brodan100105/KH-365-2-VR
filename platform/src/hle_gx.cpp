@@ -1958,6 +1958,9 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
     for (WorldPoly &w : g.worldShown)
         if (w.obj)
             if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
+    // The other characters (a saved place leaves them out: those following him were in it).
+    for (WorldPoly &w : g.worldShown)
+        if (w.model == 0 && w.obj && w.obj != st.playerObj && gCharacterObjs.count(w.obj)) w.model = kWorldModelCharacter;
     // His hands: the polygons drawn from his hand joints (for your hands in first person).
     {
         uint32_t count[2] = {0, 0};
@@ -2102,10 +2105,16 @@ struct CharSpriteTurn {
 };
 std::unordered_map<uint64_t, CharSpriteTurn> gCharSpriteTurns;
 
+constexpr int kStaticRunToShow = 6;  // captures of static before its card shows
+
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
     gCharSpritesNow.clear();
     std::unordered_map<int32_t, bool> blackCards;  // per texture: an all-black captured picture
+    // Static must hold a few captures before its card shows (the cards before and after it, dark
+    // and still, flickered in for a frame); with none this capture, it goes at once.
+    static int sStaticRun = 0;
+    bool staticSeen = false;
     struct RunsUpdate {
         ~RunsUpdate() {
             std::unordered_map<uint64_t, int> next;
@@ -2302,6 +2311,8 @@ void GxCaptureWorld(PlatformWorld *out) {
                 known = blackCards.emplace(tex, !(n > 0 && diff > 36 * n)).first;
             }
             if (known->second) continue;
+            staticSeen = true;
+            if (sStaticRun < kStaticRunToShow) continue;
             staticCard = true;
         }
         // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
@@ -2628,6 +2639,7 @@ void GxCaptureWorld(PlatformWorld *out) {
     gWorldStats.triangles = static_cast<uint32_t>(out->triangleTexture.size());
     gWorldStats.textures = static_cast<uint32_t>(out->textures.size());
     gWorldStats.leftOut = out->polygonsLeftOut;
+    sStaticRun = staticSeen ? std::min(sStaticRun + 1, 1000) : 0;
     ++gWorldStats.captures;
 }
 

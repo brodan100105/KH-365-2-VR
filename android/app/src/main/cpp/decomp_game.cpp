@@ -389,8 +389,10 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             const PlatformWorldVertex *v = &w.vertices[tri * 3];
             if (hideHead && his(tri) && inHead(v)) continue;
             // His Keyblade is in your hand, and his swings' trails are not drawn.
-            if (hideHead && tagged && w.triangleModel[tri] >= kWorldModelAttached) continue;
-            if (hide && tagged && w.triangleModel[tri] != 0) continue;
+            const uint8_t model = tagged ? w.triangleModel[tri] : 0;
+            const bool his2 = model != 0 && model != kWorldModelCharacter;  // his, not another's
+            if (hideHead && his2 && model >= kWorldModelAttached) continue;
+            if (hide && his2) continue;
             if (hide && !tagged && ((onPlayer(v[0]) && onPlayer(v[1]) && onPlayer(v[2])) || nearPlayer(v))) continue;
             for (int k = 0; k < 3; ++k) t.vertices.push_back({{v[k].x, v[k].y, v[k].z}, v[k].u, v[k].v, v[k].color});
             t.triangleTexture.push_back(w.triangleTexture[tri]);
@@ -599,7 +601,8 @@ bool DecompGame::SavePlace() {
     const PlatformWorld &w = *latestWorld_;
     const size_t triangles = w.triangleFlags.size();
     if (w.vertices.size() != triangles * 3) return false;
-    // Without Roxas and what he holds (his tagged models), and without the sprites' turning.
+    // Without Roxas and what he holds (his tagged models), the other characters (those following
+    // him), and the sprites' turning.
     PlatformWorld place;
     place.textures = w.textures;
     place.worldSpace = true;

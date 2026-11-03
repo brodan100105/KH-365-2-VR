@@ -1157,9 +1157,13 @@ bool VrApp::DrawPlace(const Mat4 &vpTracking) {
     }
     if (place_.vertices.empty()) return false;
     // Its player's spot on your floor (where you stood at the start), facing where you looked.
-    const float floorY = (screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f) + settings_.Get(SettingId::GamePlaceHeight);
+    // Your floor, his spot on it, at first person's scale (your eye at Roxas's, as when you stood
+    // there in the game): the place as big as it was, not a giant's.
+    const float realFloor = screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f;
+    const float floorY = realFloor + settings_.Get(SettingId::GamePlaceHeight);
     Similarity toWorld;
-    toWorld.scale = settings_.Get(SettingId::GameUnitsPerMeter) / std::max(0.1f, settings_.Get(SettingId::GamePlaceScale));
+    toWorld.scale = FirstPersonScale(settings_, screenAnchor_.y - realFloor) /
+                    std::max(0.1f, settings_.Get(SettingId::GamePlaceScale));
     toWorld.rotation = Quat::Yaw(placeYaw_ - screenYaw_);
     const Vec3 floor{screenAnchor_.x, floorY, screenAnchor_.z};
     toWorld.translation = placeFeet_ - toWorld.rotation.Rotate(floor * toWorld.scale);
