@@ -449,11 +449,9 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // flat card, with static over it: Agrabah, Sora through the static) is no world to stand
         // in: it goes to the giant screen as the DS draws it, not a speck in an empty sky.
         // (A cutscene drawing 3D on both screens in turn stays in the world: its main scene around
-        // you, the other screen's picture in a window in the air; its frames of the other screen
-        // are left out of the world already.)
+        // you, its frames of the other screen left out of the world already.)
         const bool flatPicture = (latestPlayer_.event || w.eventScene) && !w.alternatingScreens &&
                                  (w.triangleFlags.size() < 16 || w.capturedPicture);
-        frame_.visionScreen = (latestPlayer_.event || w.eventScene) && w.alternatingScreens;
         const bool placed = standInWorld_.load() && w.worldSpace && !w.vertices.empty() && !screens_.movie && !flatPicture;
         const bool playing = placed && !pl.menu && (event ? cutscenesInWorld_.load() : pl.valid);
         frame_.inGameplay = playing;

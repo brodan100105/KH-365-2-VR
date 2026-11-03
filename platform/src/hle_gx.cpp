@@ -2105,6 +2105,7 @@ std::unordered_map<uint64_t, CharSpriteTurn> gCharSpriteTurns;
 void GxCaptureWorld(PlatformWorld *out) {
     std::lock_guard<std::mutex> lock(gShownMu);
     gCharSpritesNow.clear();
+    std::unordered_map<int32_t, bool> blackCards;  // per texture: an all-black captured picture
     struct RunsUpdate {
         ~RunsUpdate() {
             std::unordered_map<uint64_t, int> next;
@@ -2281,7 +2282,21 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
-        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) out->capturedPicture = true;
+        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) {
+            out->capturedPicture = true;
+            // A captured picture (the DS's own screen, shown on a card) that is all black: left
+            // out. Agrabah's two-screen cutscene keeps one before you, black but for the static
+            // part, and it hid the scene behind it.
+            auto known = blackCards.find(tex);
+            if (known == blackCards.end()) {
+                const std::vector<uint32_t> &px = out->textures[tex].rgba;
+                size_t lit = 0, n = 0;
+                for (size_t i = 0; i < px.size(); i += 7, ++n)
+                    lit += (px[i] >> 24) > 0x40 && ((px[i] & 0xff) > 0x18 || ((px[i] >> 8) & 0xff) > 0x18 || ((px[i] >> 16) & 0xff) > 0x18);
+                known = blackCards.emplace(tex, n > 0 && lit * 50 < n).first;
+            }
+            if (known->second) continue;
+        }
         // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
         // transparent) show both sides: the DS draws one, the side its camera sees, and from
         // where you stand you may see the other (a stall's awning from under it went).

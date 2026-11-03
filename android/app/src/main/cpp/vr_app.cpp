@@ -447,32 +447,6 @@ void VrApp::ApplyPlatformSettings() {
 void VrApp::UpdateTextures() {
     const DsScreens &s = game_->screens();
     if (s.revision != screensRevision_) {
-        {
-            // The touch screen shows static (a two-screen cutscene's vision): neighbouring pixels
-            // differ a lot on average, as no drawn picture does.
-            uint64_t diff = 0, n = 0;
-            if (s.bottom.size() == static_cast<size_t>(DsScreens::kWidth) * DsScreens::kHeight)
-                for (int y = 8; y < DsScreens::kHeight - 8; y += 4)
-                    for (int x = 8; x < DsScreens::kWidth - 8; x += 3) {
-                        const uint32_t a = s.bottom[y * DsScreens::kWidth + x], b = s.bottom[y * DsScreens::kWidth + x + 1];
-                        for (int k = 0; k < 24; k += 8) diff += std::abs(int((a >> k) & 255) - int((b >> k) & 255));
-                        ++n;
-                    }
-            const double perPixel = n ? static_cast<double>(diff) / n : 0.0;
-            // Held a few frames either way, so it does not flicker with the noise itself.
-            staticFrames_ = perPixel > 36.0 ? std::min(staticFrames_ + 1, 10) : std::max(staticFrames_ - 1, 0);
-            const bool was = bottomStatic_;
-            if (staticFrames_ >= 6) bottomStatic_ = true;
-            if (staticFrames_ <= 2) bottomStatic_ = false;
-#ifdef KHVR_HAS_GAME
-            if (bottomStatic_ != was) {
-                char line[96];
-                std::snprintf(line, sizeof line, "view: the touch screen %s static (%.0f)", bottomStatic_ ? "shows" : "no longer shows",
-                              perPixel);
-                Platform::Get().LogLine(line);
-            }
-#endif
-        }
         const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
         auto upload = [&](Texture &tex, const std::vector<uint32_t> &px) {
             if (filter == TextureFilter::Smooth) {
@@ -887,18 +861,6 @@ void VrApp::Frame(const XrFrameInput &in) {
         // Area) it stays away.
 #ifdef KHVR_HAS_GAME
         // Game > Save this place as the loading area: saved where you stand, then it turns off.
-        {
-            // A two-screen cutscene's other picture: a window ahead of you and a little above,
-            // where you looked as it appeared, facing you; it stays there and fades in and out.
-            const bool want = mode != ViewMode::GiantScreen && game_->frame().visionScreen && bottomStatic_;
-            if (want && !visionPlaced_) {
-                const Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
-                visionPose_ = FacingFrom(in.head.position + fwd * 1.5f + Vec3{0.0f, 0.25f, 0.0f}, in.head.position);
-                visionPlaced_ = true;
-            }
-            visionAlpha_ = Clamp(visionAlpha_ + (want ? 1.0f : -1.0f) * in.dt / 0.3f, 0.0f, 1.0f);
-            if (!want && visionAlpha_ <= 0.0f) visionPlaced_ = false;
-        }
         if (settings_.Bool(SettingId::GameSavePlace)) {
             settings_.SetBool(SettingId::GameSavePlace, false);
             if (decomp_ && game_->frame().inGameplay && decomp_->SavePlace()) {
@@ -1437,12 +1399,6 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                 renderer_.SetScreenSmoothing(0.0f);
             }
         }
-    }
-    if (visionAlpha_ > 0.0f && visionPlaced_ && bottomTex_.id()) {
-        // The other picture of a two-screen cutscene, a window in the air (see visionPose_).
-        renderer_.SetScreenSmoothing(screenSmoothing);
-        renderer_.DrawQuad(bottomTex_.id(), visionPose_, 1.0f, 0.75f, vpTracking, 0.9f * visionAlpha_);
-        renderer_.SetScreenSmoothing(0.0f);
     }
     if (Loading() && titleTex_.id()) {
         // The title floats: a slow rise and fall of a couple of centimetres.
