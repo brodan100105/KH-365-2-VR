@@ -2282,20 +2282,27 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+        bool staticCard = false;
         if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) {
             out->capturedPicture = true;
-            // A captured picture (the DS's own screen, shown on a card) that is all black: left
-            // out. Agrabah's two-screen cutscene keeps one before you, black but for the static
-            // part, and it hid the scene behind it.
+            // A captured picture (the DS's own screen, shown on a card) shows only while it is
+            // static (neighbouring texels far apart on average, as no drawn picture is): Agrabah's
+            // two-screen cutscene keeps one before you, dark but for the static part, and it hid
+            // the scene behind it. Shown, it is drawn nearly opaque (the game's is faint in VR).
             auto known = blackCards.find(tex);
             if (known == blackCards.end()) {
-                const std::vector<uint32_t> &px = out->textures[tex].rgba;
-                size_t lit = 0, n = 0;
-                for (size_t i = 0; i < px.size(); i += 7, ++n)
-                    lit += (px[i] >> 24) > 0x40 && ((px[i] & 0xff) > 0x18 || ((px[i] >> 8) & 0xff) > 0x18 || ((px[i] >> 16) & 0xff) > 0x18);
-                known = blackCards.emplace(tex, n > 0 && lit * 50 < n).first;
+                const PlatformWorldTexture &t = out->textures[tex];
+                uint64_t diff = 0, n = 0;
+                for (int y = 0; y < t.height; y += 3)
+                    for (int x = 0; x + 1 < t.width; x += 3) {
+                        const uint32_t a = t.rgba[static_cast<size_t>(y) * t.width + x], b = t.rgba[static_cast<size_t>(y) * t.width + x + 1];
+                        for (int k = 0; k < 24; k += 8) diff += std::abs(int((a >> k) & 255) - int((b >> k) & 255));
+                        ++n;
+                    }
+                known = blackCards.emplace(tex, !(n > 0 && diff > 36 * n)).first;
             }
             if (known->second) continue;
+            staticCard = true;
         }
         // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
         // transparent) show both sides: the DS draws one, the side its camera sees, and from
@@ -2321,6 +2328,11 @@ void GxCaptureWorld(PlatformWorld *out) {
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
             pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
         }
+        if (staticCard)
+            for (int i = 0; i < w.n; ++i) {
+                const uint32_t a = std::max<uint32_t>(pv[i].color >> 24, 0xe0);
+                pv[i].color = (pv[i].color & 0xffffffu) | (a << 24);
+            }
         if (tex >= 0) {
             // A polygon that shows its texture once (not tiled) samples it no closer than half a
             // texel to its edges: smoothed, the edge took the colour of the far side (a texture
