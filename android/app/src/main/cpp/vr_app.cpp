@@ -1171,6 +1171,9 @@ bool VrApp::DrawPlace(const Mat4 &vpTracking) {
     const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
     renderer_.DrawTexturedWorld(place_, vpWorld, filter == TextureFilter::Nearest || filter == TextureFilter::Sharp,
                                 WorldMotion(), 4);
+    // It is the backdrop: what comes after (the giant screen, the panels) draws over it, never
+    // into its walls and floor.
+    glClear(GL_DEPTH_BUFFER_BIT);
     return true;
 #else
     (void)vpTracking;
