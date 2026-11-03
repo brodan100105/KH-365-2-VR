@@ -169,6 +169,13 @@ and into VR as real geometry around you.
       the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
       where the Keyblade points.
 
+## Two-screen cutscenes: fallback (if the black flicker stays)
+
+Agrabah's Aladdin and Abu scene draws 3D on both screens in turn. The current fix keeps the
+world's frames and holds the two-screen state through missed turns. If the main view still
+flickers black, the plan is: in scenes that use both screens, turn the wrist screen on and show
+the second screen there only, with no floating second panel over the main view.
+
 ## Ideas: quality of life and immersion
 
 Each would be an option in the settings. Chosen by the user (in this order of priority, after

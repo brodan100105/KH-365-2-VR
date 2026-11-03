@@ -17,6 +17,7 @@
 namespace khvr::hle {
 
 namespace {
+constexpr int kAlternatingHoldSwaps = 30;  // about half a second at 60 swaps
 
 // ---------------------------------------------------------------------------------------------
 // Geometry engine state
@@ -133,6 +134,7 @@ struct Gx {
     // many swaps in a row it has changed, and each way's polygons (averaged).
     bool lastAOnTop = true;
     int swapRun = 0;
+    int alternatingHold = 0;  // swaps the two-screen state still holds without a swap of screens
     float phasePolys[2] = {0, 0};
     bool lastSwapOther = false;  // the last frame was the other screen's (left out of the world)
     int keptPhase = -1;  // which way round (engine A on top or not) the world's frames come, -1 none
@@ -999,9 +1001,14 @@ void Exec(uint8_t cmd, const uint32_t *p) {
             const bool aOnTop = IoReg16(0x304) & 0x8000;
             g.swapRun = aOnTop != g.lastAOnTop ? g.swapRun + 1 : 0;
             g.lastAOnTop = aOnTop;
+            // Once found, it holds through a missed turn or two (the game slowed, a frame drawn
+            // twice to the same screen): dropping out let the other screen's frames, black, in
+            // for a few frames each time (Agrabah: a black flicker before and after the static).
+            if (g.swapRun >= 3) g.alternatingHold = kAlternatingHoldSwaps;
+            else if (g.alternatingHold > 0 && g.swapRun == 0) --g.alternatingHold;
             const float n = static_cast<float>(g.worldList.size());
             g.phasePolys[aOnTop] += (n - g.phasePolys[aOnTop]) * 0.3f;
-            const bool alternating = g.swapRun >= 3;
+            const bool alternating = g.alternatingHold > 0;
             // One of the two pictures is kept for the world, the busier, and stays kept until the
             // other is clearly busier (a fifth more): with both about as busy, each was let
             // through in turn and the view flipped between the two scenes.
@@ -1776,7 +1783,7 @@ void GxModelBegin(uint32_t obj) { g.obj = obj; }
 
 bool GxLastSwapOtherScreen() { return g.lastSwapOther; }
 
-bool GxAlternatingScreens() { return g.swapRun >= 3; }
+bool GxAlternatingScreens() { return g.alternatingHold > 0; }
 
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
@@ -2145,7 +2152,7 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->worldSpace = false;
     out->eventScene = false;
     out->capturedPicture = false;
-    out->alternatingScreens = g.swapRun >= 3;
+    out->alternatingScreens = g.alternatingHold > 0;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
     if (!g.sceneKnown) return;
