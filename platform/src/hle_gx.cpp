@@ -1967,8 +1967,32 @@ void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, con
         if (w.obj)
             if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
     // The other characters (a saved place leaves them out: those following him were in it).
+    // And what they hold: small solid models touching one of them (Axel's chakrams, a guard's
+    // spear), not his.
+    std::unordered_set<uint32_t> gear;
+    for (const auto &[obj, b] : boxes) {
+        if (obj == st.playerObj || tag.count(obj) || gCharacterObjs.count(obj) || b.polygons == 0 ||
+            (b.polygons & 0x80000000u) || b.polygons >= 60 || b.translucent * 2 > b.polygons)
+            continue;
+        if (std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) > 2.5) continue;
+        for (uint32_t c : gCharacterObjs) {
+            if (c == st.playerObj) continue;
+            const auto it = boxes.find(c);
+            if (it == boxes.end()) continue;
+            const Box &cb = it->second;
+            constexpr double kTouch = 0.3;
+            bool touching = true;
+            for (int k = 0; k < 3; ++k)
+                touching &= b.lo[k] < cb.hi[k] + kTouch && b.hi[k] > cb.lo[k] - kTouch;
+            if (touching) {
+                gear.insert(obj);
+                break;
+            }
+        }
+    }
     for (WorldPoly &w : g.worldShown)
-        if (w.model == 0 && w.obj && w.obj != st.playerObj && gCharacterObjs.count(w.obj)) w.model = kWorldModelCharacter;
+        if (w.model == 0 && w.obj && w.obj != st.playerObj && (gCharacterObjs.count(w.obj) || gear.count(w.obj)))
+            w.model = kWorldModelCharacter;
     // His hands: the polygons drawn from his hand joints (for your hands in first person).
     {
         uint32_t count[2] = {0, 0};
