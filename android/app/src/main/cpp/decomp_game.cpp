@@ -461,6 +461,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         frame_.inCutscene = event;
         frame_.inBattle = pl.battle;
         frame_.inScript = pl.event || pl.choice;
+        frame_.twoScreens = w.alternatingScreens;
         frame_.actionsTaken = pl.actionsTaken;
         frame_.roomStepsReported = true;
         frame_.roomStepTaken = {pl.stepTaken[0], 0.0f, pl.stepTaken[1]};

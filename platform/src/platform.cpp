@@ -240,6 +240,7 @@ std::atomic<bool> gWorldCapture{false};
 }
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
+void Platform::SetCapturedCards(bool on) { hle::gCapturedCards = on; }
 void Platform::SetDrawAll(bool on) { hle::gDrawAll = on; }
 
 void Platform::SetWorldCapture(bool on) {
@@ -513,8 +514,21 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     // (Only by which screen engine A shows now: the world's choice of frames is its own, and
     // keeping the screens by it too froze them for a whole Agrabah cutscene, its text box and
     // static gone.)
-    if (gWorldCapture.load() && hasKept && hle::GxAlternatingScreens() && !aOnTopNow) {
+    // Those frames are still drawn (the game captures the screen from them, display capture),
+    // and their bottom screen, engine A's 3D for the other screen, is that screen's picture: it
+    // goes to the wrist, in place of the one engine B shows between (black in Agrabah).
+    static uint32_t otherBottom[PlatformScreens::kWidth * PlatformScreens::kHeight];
+    static bool hasOther = false;
+    const bool twoScreens = gWorldCapture.load() && hle::GxAlternatingScreens();
+    if (!twoScreens) hasOther = false;
+    if (twoScreens && hasKept && !aOnTopNow) {
+        static PlatformScreens other;
+        hle::Render2D(&other, 1, false);
+        std::memcpy(otherBottom, other.bottom, sizeof otherBottom);
+        hasOther = true;
         *out = kept;
+        std::memcpy(out->bottom, otherBottom, sizeof otherBottom);
+        out->twoScreens = true;
         return;
     }
     const bool split = gWorldCapture.load() && (hle::IoReg16(0x304) & 0x8000);  // engine A on top
@@ -528,6 +542,8 @@ void Platform::CaptureScreens(PlatformScreens *out) {
         out->topScale = 1;
         out->split = false;
     }
+    out->twoScreens = twoScreens;
+    if (twoScreens && hasOther) std::memcpy(out->bottom, otherBottom, sizeof otherBottom);
     kept = *out;
     hasKept = true;
 }

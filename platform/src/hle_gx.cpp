@@ -1784,6 +1784,7 @@ void GxModelBegin(uint32_t obj) { g.obj = obj; }
 bool GxLastSwapOtherScreen() { return g.lastSwapOther; }
 
 bool GxAlternatingScreens() { return g.alternatingHold > 0; }
+std::atomic<bool> gCapturedCards{false};
 
 void GxNoteLockOn(uint32_t position, int kind, bool locked) {
     if (!position || position + 12 > GuestMemSize()) return;
@@ -2319,6 +2320,7 @@ void GxCaptureWorld(PlatformWorld *out) {
             }
             if (known->second) continue;
             staticSeen = true;
+            if (!gCapturedCards.load()) continue;
             if (sStaticRun < kStaticRunToShow) continue;
             staticCard = true;
         }

@@ -126,6 +126,7 @@ private:
     Vec3 eye_;                   // the camera's eye, smoothed (world)
     float cameraYaw_ = 0.0f;     // its heading, smoothed
     float yawOffset_ = 0.0f;     // tracking -Z to the camera's heading at placement, plus turning
+    float sinceCut_ = 1e9f;      // seconds since the camera last jumped
     TurnController turn_;
 };
 

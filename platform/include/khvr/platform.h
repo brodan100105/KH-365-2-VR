@@ -37,6 +37,9 @@ struct PlatformScreens {
     // with the flat 3D HUD pieces, and its 2D behind the 3D layer (opaque), to go around the
     // captured world. `split` says they are filled.
     bool split = false;
+    // A scene drawing 3D on both screens in turn: bottom is the other screen's own picture (its
+    // frames with engine A on the bottom), not the one engine B shows between them.
+    bool twoScreens = false;
     uint32_t topFront[kWidth * kHeight];
     uint32_t topBack[kWidth * kHeight];
 };
@@ -196,6 +199,9 @@ public:
     void SetOwnCursors(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
+    // Captured pictures on cards in the world (the DS's own screen shown through a card, as
+    // Agrabah's static): off, left out (the second screen goes to the wrist instead).
+    void SetCapturedCards(bool on);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
     // how long CaptureScreens took.
     void NoteDisplay(bool skipped, float captureMs);

@@ -153,6 +153,7 @@ enum class SettingId : int {
     GameInvertTurn,
     GameAnalogMove,
     GameUsePlace,
+    CutsceneFloatingScreen,
     GameSavePlace,
     GamePlaceScale,
     GamePlaceHeight,

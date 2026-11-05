@@ -75,6 +75,8 @@ void GxModelBegin(uint32_t obj);
 bool GxLastSwapOtherScreen();
 // A scene is drawing 3D on both screens in turn (the screens swap every frame).
 bool GxAlternatingScreens();
+// Captured pictures drawn on cards in the world (Platform::SetCapturedCards): off by default.
+extern std::atomic<bool> gCapturedCards;
 // Polygons in the list GxRender draws (for the heartbeat and tests).
 uint32_t GxPolygonsShown();
 

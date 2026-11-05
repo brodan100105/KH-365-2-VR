@@ -47,6 +47,7 @@ struct GameFrame {
     bool inTitle = false;        // the game's title (logos, title screen, its menu) runs
     bool inScript = false;       // the game's script runs: an NPC's text, a question, an event scene
     bool inBattle = false;       // a battle area (enemies about), not the Grey Area or a town
+    bool twoScreens = false;     // the game draws 3D on both screens in turn (a two-screen scene)
     bool menuInput = false;      // the game reads the D-pad as a menu cursor (no player in the field)
     uint32_t frameCounter = 0;   // increments once per game frame (30 Hz or 60 Hz)
     // Room-scale steps, when the game says how far it has got with them: the steps it has taken

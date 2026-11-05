@@ -16,6 +16,7 @@ constexpr float kTeleportFollowMeters = 2.5f;
 constexpr float kSettleSeconds = 4.0f;
 // A cutscene's camera moving farther than this in one step is a cut.
 constexpr float kCutsceneCutMeters = 3.0f;
+constexpr float kCutsceneBlinkGap = 1.0f;  // seconds: a jump this soon after another is camera motion
 constexpr float kSettledSeconds = 0.5f;
 
 Vec3 Flat(const Vec3 &v) { return {v.x, 0.0f, v.z}; }
@@ -348,13 +349,18 @@ RigOutput CutsceneRig::Update(const Settings &s, const GameFrame &game, const Tr
     // A cut: the camera jumps (far, or turns sharply in one step). Place the view again there.
     const bool cut = initialized_ && (Length(eye - eye_) > kCutsceneCutMeters * scale ||
                                       std::fabs(WrapAngle(cameraYaw - cameraYaw_)) > DegToRad(30.0f));
+    sinceCut_ += t.dt;
+    // Jumps close after one another are a fast camera (a swoop, a quick pan), not cuts: the view
+    // follows them without a blink (each was a flash of black).
+    const bool quickCamera = cut && sinceCut_ < kCutsceneBlinkGap;
+    if (cut) sinceCut_ = 0.0f;
     if (!initialized_ || t.recenter || cut) {
         refHead_ = t.head.position;
         yawOffset_ = -headYaw;  // where you look now is where the camera looks
         eye_ = eye;
         cameraYaw_ = cameraYaw;
         initialized_ = true;
-        if (cut || t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
+        if ((cut && !quickCamera) || t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     } else {
         // Follow the camera's moves and turns, smoothed out of the game's frame steps; that
         // motion is artificial, so it drives the vignette.

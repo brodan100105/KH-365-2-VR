@@ -191,6 +191,7 @@ hands, DS + giant screen) and the options changed most.
 | `invert_turn` | Invert turning | `true` / `false` | `false` | Swap the direction of right-stick turning. |
 | `analog_move` | Move any direction | `true` / `false` | `true` | Roxas walks and runs the exact way the thumbstick points instead of the DS D-pad's eight directions (in the field; menus keep the D-pad). |
 | `use_place` | Saved place as the loading area | `true` / `false` | `true` | Before the game starts (loading, and behind the title and its menus) you stand in the place saved with the option below, instead of the plain loading area. |
+| `floating_screen` | Second screen floating in scenes | `true` / `false` | `false` | Scenes that use both screens (Agrabah's static): off, the second screen shows on your wrist only; on, the game's own floating picture shows in the scene too. |
 | `save_place` | Save this place as the loading area | `true` / `false` | `false` | Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it as the loading area; it turns itself off once saved. Saved on your headset from your own game, next to your save. |
 | `place_scale2` | Saved place size | 0.5 to 3 x | `1` | How big the saved place looks around you: 1 is its size in first person (as when you saved it), above 1 larger. The change shows at once. |
 | `place_height2` | Saved place floor | -3 to 1 m | `0` | Moves the saved place's floor down (below 0) or up, so the giant screen stands above it. The change shows at once. |

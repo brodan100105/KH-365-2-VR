@@ -418,7 +418,10 @@ BottomScreenPlacement VrApp::HandScreenPlacementNow() const {
     // cutscene), the wrist / hand screen goes: it would draw the eye from the scene. By the
     // script's own state, not by how its camera looks (looking down at the screen for a while
     // took the view for an event scene's, and the screen went).
-    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inScript) return BottomScreenPlacement::Hidden;
+    // A scene with 3D on both screens is the exception: its second screen (Agrabah's static)
+    // shows there, on your wrist, and nowhere in the scene.
+    const bool twoScreens = lastMode_ != ViewMode::GiantScreen && game_->frame().twoScreens;
+    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inScript && !twoScreens) return BottomScreenPlacement::Hidden;
     // Put away with a long press of the left thumbstick (and brought back the same way).
     if (!secondScreenOn_) return BottomScreenPlacement::Hidden;
     return settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
@@ -739,6 +742,7 @@ void VrApp::Frame(const XrFrameInput &in) {
         decomp_->SetOwnCursors(standInWorld);
         decomp_->SetCutscenesInWorld(settings_.Enum<CutsceneView>(SettingId::CutsceneView) == CutsceneView::SameAsGameplay);
         decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
+        decomp_->SetCapturedCards(settings_.Bool(SettingId::CutsceneFloatingScreen));
         {
             const BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
             const bool fp = lastMode_ == ViewMode::FirstPerson;

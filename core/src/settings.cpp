@@ -376,6 +376,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::GameUsePlace, "Game", "use_place", "Saved place as the loading area", true,
                   "Before the game starts (loading, and behind the title and its menus) you stand in the "
                   "place saved with the option below, instead of the plain loading area."));
+    d.push_back(B(S::CutsceneFloatingScreen, "Game", "floating_screen", "Second screen floating in scenes", false,
+                  "Scenes that use both screens (Agrabah's static): off, the second screen shows on your "
+                  "wrist only; on, the game's own floating picture shows in the scene too."));
     d.push_back(B(S::GameSavePlace, "Game", "save_place", "Save this place as the loading area", false,
                   "Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it "
                   "as the loading area; it turns itself off once saved. Saved on your headset from your "

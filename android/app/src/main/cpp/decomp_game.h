@@ -79,6 +79,7 @@ public:
     bool hasPicture() const { return hasPicture_; }
     // Picture > 3D resolution: 1 to 4 times the DS's.
     void Set3dScale(int scale) { Platform::Get().Set3dScale(scale); }
+    void SetCapturedCards(bool on) { Platform::Get().SetCapturedCards(on); }
     uint32_t gameFrames() const { return Platform::Get().frames(); }
     // A few lines for the in-headset status panel: booting, crashed, the latest log.
     std::vector<std::string> Status(size_t lines) const;

@@ -169,12 +169,18 @@ and into VR as real geometry around you.
       the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
       where the Keyblade points.
 
-## Two-screen cutscenes: fallback (if the black flicker stays)
+## Two-screen cutscenes: the second screen on the wrist (in test)
 
-Agrabah's Aladdin and Abu scene draws 3D on both screens in turn. The current fix keeps the
-world's frames and holds the two-screen state through missed turns. If the main view still
-flickers black, the plan is: in scenes that use both screens, turn the wrist screen on and show
-the second screen there only, with no floating second panel over the main view.
+Agrabah's scenes draw 3D on both screens in turn. Holding the two-screen state through missed
+turns did not stop the black flicker, so the fallback is in: in those scenes the wrist screen
+comes on and shows the second screen's own picture, and the floating card is off by default
+(Game > Second screen floating in scenes). Come back to a fix in the main view later.
+
+## Open bugs from testing
+
+- Beast's Castle, first mission: a gargoyle disappears depending on distance.
+- Looking for Xion, the forest (the 8th wonder): in the cutscene Roxas and Axel float above the
+  ground.
 
 ## Ideas: quality of life and immersion
 
