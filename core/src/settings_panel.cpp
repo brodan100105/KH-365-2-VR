@@ -46,7 +46,7 @@ const std::vector<Page> &Pages() {
 
 // The options people change most, under the profiles.
 const SettingId kQuickOptions[] = {
-    SettingId::ViewMode,         SettingId::Passthrough,         SettingId::ScreenPicture,
+    SettingId::ViewMode,         SettingId::ViewStandInWorld,    SettingId::Passthrough,         SettingId::ScreenPicture,
     SettingId::ScreenWidth,      SettingId::ScreenDistance,      SettingId::HandScreenSide,
     SettingId::HandScreenDsSize, SettingId::HandScreenDsHinge,   SettingId::HandScreenDsTwoHands,
 };
@@ -429,12 +429,13 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     Spot st, up, lo, mn, tr, gr;
     // Left controller.
     controller(400, top + 140, false, &st, &up, &lo, &mn, &tr, &gr);
-    label(tr, kMargin, top, "Trigger", weaponRight ? "DS L / 1st person: cast" : "DS L / 1st person: DS L");
+    const bool fpProfile = s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile;
+    label(tr, kMargin, top, "Trigger", !fpProfile ? "DS L" : weaponRight ? "DS L / 1st person: cast" : "DS L / 1st person: DS L");
     label(up, kMargin, top + 60, "Y", "DS Y");
-    label(st, kMargin, top + 120, "Thumbstick", "move / click: SELECT");
+    label(st, kMargin, top + 120, "Thumbstick", "move / hold: 2nd screen / tap: SELECT (menus)");
     label(lo, kMargin, top + 180, "X", "DS X");
     label(mn, kMargin, top + 240, "Menu", "tap: START / hold: settings");
-    label(gr, kMargin, top + 300, "Grip", weaponRight ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-");
+    label(gr, kMargin, top + 300, "Grip", fpProfile && weaponRight ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-");
     // Right controller.
     controller(624, top + 140, true, &st, &up, &lo, &mn, &tr, &gr);
     const int rx = 772;
@@ -444,7 +445,7 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     label(lo, rx, top + 180, "A", "DS A");
     c.DrawText(rx, top + 240, "hold stick click:", kDim);
     c.DrawText(rx, top + 260, "switch view", kDim);
-    label(gr, rx, top + 300, "Grip", weaponRight ? "-" : "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on");
+    label(gr, rx, top + 300, "Grip", !fpProfile || weaponRight ? "-" : "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on");
 
     // First person's gestures.
     int y = top + 352;
@@ -454,8 +455,9 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     c.DrawText(kMargin, y, "Swing: attack (" + bind(SettingId::CtrlAttackButton) + ")   Hold it level before your face: guard (" +
                                bind(SettingId::CtrlGuardButton) + ")", kText);
     y += 22;
-    c.DrawText(kMargin, y, "Point the other hand and pull its trigger: cast (" + bind(SettingId::CtrlMagicButton) +
-                               ")   Flick the stick: dodge (" + bind(SettingId::CtrlDodgeButton) + ")", kText);
+    c.DrawText(kMargin, y, (fpProfile ? "Point the other hand and pull its trigger: cast (" + bind(SettingId::CtrlMagicButton) + ")   "
+                                      : std::string("Buttons as in the other views.   ")) +
+                               "Flick the stick: dodge (" + bind(SettingId::CtrlDodgeButton) + ")", kText);
     y += 22;
     c.DrawText(kMargin, y, "Aim the other hand at the touch screen and pull its trigger to touch it.", kDim);
 }

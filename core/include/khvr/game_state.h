@@ -44,7 +44,18 @@ struct GameFrame {
     bool inGameplay = false;     // a field scene with a controllable player
     bool inCutscene = false;     // an event script or camera animation drives the camera
     bool inMenu = false;         // pause / camp menu, shops, title: show the giant screen
+    bool inTitle = false;        // the game's title (logos, title screen, its menu) runs
+    bool inScript = false;       // the game's script runs: an NPC's text, a question, an event scene
+    bool inBattle = false;       // a battle area (enemies about), not the Grey Area or a town
+    bool twoScreens = false;     // the game draws 3D on both screens in turn (a two-screen scene)
+    bool menuInput = false;      // the game reads the D-pad as a menu cursor (no player in the field)
     uint32_t frameCounter = 0;   // increments once per game frame (30 Hz or 60 Hz)
+    // Room-scale steps, when the game says how far it has got with them: the steps it has taken
+    // in all (world space, as asked), and those asked that playerPos does not show yet.
+    // Actions the game has taken from the player's buttons, in all (counts up as it takes one).
+    uint32_t actionsTaken = 0;
+    bool roomStepsReported = false;
+    Vec3 roomStepTaken, roomStepUnapplied;
     GameCamera camera;           // the game's own camera this frame
     Vec3 playerPos;              // player actor feet position
     float playerYaw = 0.0f;      // heading, radians, 0 = facing -Z

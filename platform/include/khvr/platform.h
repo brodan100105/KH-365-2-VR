@@ -25,6 +25,7 @@ struct PlatformScreens {
     static constexpr int kWidth = 256, kHeight = 192;
     uint32_t top[kWidth * kHeight];
     uint32_t topHud[kWidth * kHeight];  // top screen 2D layers only: alpha 0 where nothing is drawn
+    uint32_t topObj[kWidth * kHeight];  // the top screen's sprites where they show: alpha 0 elsewhere
     uint32_t bottom[kWidth * kHeight];
     bool top3d = false;                 // the top screen's BG0 shows the 3D engine
     bool movie = false;                 // the top screen shows a movie's picture
@@ -36,6 +37,9 @@ struct PlatformScreens {
     // with the flat 3D HUD pieces, and its 2D behind the 3D layer (opaque), to go around the
     // captured world. `split` says they are filled.
     bool split = false;
+    // A scene drawing 3D on both screens in turn: bottom is the other screen's own picture (its
+    // frames with engine A on the bottom), not the one engine B shows between them.
+    bool twoScreens = false;
     uint32_t topFront[kWidth * kHeight];
     uint32_t topBack[kWidth * kHeight];
 };
@@ -56,7 +60,11 @@ enum PlatformWorldFlags : uint8_t {
     kWorldTexAlpha = 16,    // translucent only through its texture's alpha: its solid texels are
                             // opaque (they hide what is behind them, as on the DS)
     kWorldDepthWrite = 32,  // translucent, and its pixels still set depth (POLYGON_ATTR bit 11)
+    kWorldLine = 64,        // an edge of a wireframe polygon (alpha 0): the line from its first
+                            // vertex to its second (the third repeats the second)
+    kWorldBillboard = 128,  // part of a sprite drawn facing the game's camera (PlatformWorld::billboard)
 };
+constexpr int kWorldBillboardFloats = 6;
 struct PlatformWorldTexture {
     uint64_t key = 0;  // its parameters, texels and palette: equal keys are the same image
     int width = 0, height = 0;
@@ -70,6 +78,17 @@ struct PlatformPlayer {
     uint32_t actor = 0;        // guest address of the player actor
     float position[3] = {};    // feet, world space, game units
     float heading = 0.0f;      // radians; facing (sin, 0, cos)
+    bool menu = false;         // a menu over the field runs (camp menu, shop, save point...)
+    bool event = false;        // an event script (ov023) drives the scene: a cutscene
+    bool choice = false;       // a choice waits for an answer (an NPC's question, a confirmation)
+    bool title = false;        // the title (ov000: the logos, the title screen and its menu) runs
+    // Room-scale steps the game has taken in all (AddPlayerStep, game units along x and z): those
+    // its position already shows.
+    float stepTaken[2] = {0, 0};
+    // Frames in which the game took an action from the player's buttons (an attack, a block...;
+    // Ov022_TranslateCommandToAction's pending action, actor +0x1c, at the frame's end), in all.
+    uint32_t actionsTaken = 0;
+    bool battle = false;       // a battle area (enemies' overlays loaded), not the Grey Area or a town
 };
 
 struct PlatformWorld {
@@ -79,6 +98,19 @@ struct PlatformWorld {
     std::vector<PlatformWorldTexture> textures;
     // The game's camera for this frame, in the same space.
     bool hasCamera = false;
+    // In world space (the game's camera known): gameplay, and event scenes whose camera is found.
+    // Otherwise (an event scene's lens without it) camera space, for the giant screen only.
+    bool worldSpace = false;
+    bool eventScene = false;  // drawn with an event scene's own lens
+    // A large direct-colour texture is drawn: a picture the DS captured of its own screen, shown
+    // on a card (a cutscene's static over the scene, Agrabah).
+    bool capturedPicture = false;
+    // The game draws 3D on both screens in turn (one captured and shown on the other): its world
+    // alternates between two scenes.
+    bool alternatingScreens = false;
+    // The game sorts its translucent polygons itself (SWAP_BUFFERS manual sort); otherwise the DS
+    // orders them, and a viewer should draw them back to front.
+    bool manualSort = false;
     float eye[3] = {0, 0, 0}, target[3] = {0, 0, -1}, up[3] = {0, 1, 0};
     float fovY = 0, nearZ = 0, farZ = 0;  // radians, game units
     // The game's own lens and camera (world to view) matrices, exactly as the DS used them. The
@@ -90,7 +122,36 @@ struct PlatformWorld {
     int viewport[4] = {0, 0, 255, 191};
     int fadeMode[2] = {0, 0}, fadeFactor[2] = {0, 0};
     uint32_t polygonsLeftOut = 0;  // drawn with another projection (HUD pieces): in the DS picture
+    // Sprites face the game's camera: flat across its view (munny, orbs, effects), or upright and
+    // turned to it about the vertical (trees). Per vertex, when any triangle has kWorldBillboard:
+    // the sprite's centre (world), the vertex's offset from it along the sprite's right and up,
+    // and its kind (1 facing, 2 upright), so a viewer can turn the sprite to face itself.
+    // kWorldBillboardFloats floats a vertex (zero for the other triangles), or empty. Not in files.
+    std::vector<float> billboard;
+    // The field's cursor is on a target at this world position (the game's cursors are 2D sprites
+    // placed for its camera, or marks in front of it; a viewer draws its own here). Its kind: 1 or
+    // 3 an enemy, 2 one of the field's entries (a person to talk to, a thing to use); locked when
+    // locked on. Not in files.
+    bool lockOn = false;
+    float lockOnAt[3] = {0, 0, 0};
+    int lockOnKind = 0;
+    bool lockOnLocked = false;
+    // Per triangle, which of Roxas's models it is of (kWorldModel...), 0 none of his; and per
+    // vertex (x, y, z), where the game put it in its model's own space, before the DS's matrices
+    // (game units). Both empty when the capture has none of his. Not in files.
+    std::vector<uint8_t> triangleModel;
+    std::vector<float> local;
 };
+// Roxas's own model, and the models attached to his (kWorldModelAttached + i the i-th, up to
+// kWorldAttachedMax): his Keyblade.
+constexpr uint8_t kWorldModelPlayer = 1, kWorldModelAttached = 2;
+// The see-through models drawn on him: his swings' trails and flashes.
+constexpr uint8_t kWorldModelEffect = 7;
+// His hands (the polygons of his hand joints): kWorldModelHand + 0 the left, + 1 the right.
+constexpr uint8_t kWorldModelHand = 8;
+// Other characters (models of some polygons, a few units across): the people about him.
+constexpr uint8_t kWorldModelCharacter = 10;
+constexpr int kWorldAttachedMax = 4;
 
 // A captured world to a file and back (world_file.cpp).
 bool PlatformWorldWrite(const std::string &path, const PlatformWorld &w);
@@ -127,14 +188,26 @@ public:
     // The game's 3D world (PlatformWorld). Call when CaptureScreens may be called.
     void CaptureWorld(PlatformWorld *out);
     // The player character now (PlatformPlayer). Call when CaptureScreens may be called.
-    bool ReadPlayer(PlatformPlayer *out);
+    bool ReadPlayer(PlatformPlayer *out);  // as of the game's last finished frame
+    bool ReadPlayerNow(PlatformPlayer *out);  // from the game's memory right now
     // CaptureScreens also fills topFront / topBack.
     void SetWorldCapture(bool on);
+    // The game asks the 3D engine whether a model's box is in its camera's view (BOX_TEST) before
+    // drawing it: on, the answer is always yes, so it draws what lies around you too.
+    void SetDrawAll(bool on);
+    // The viewer draws the field's cursors at their targets itself: the game leaves its own out.
+    void SetOwnCursors(bool on);
     // The 3D layer's resolution in CaptureScreens' topHi: 1 (the DS's) to 4 times it.
     void Set3dScale(int scale);
+    // Captured pictures on cards in the world (the DS's own screen shown through a card, as
+    // Agrabah's static): off, left out (the second screen goes to the wrist instead).
+    void SetCapturedCards(bool on);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
     // how long CaptureScreens took.
     void NoteDisplay(bool skipped, float captureMs);
+    // From the viewer, for the heartbeat: a lock-on sight cut from the screen, the sprite pixels
+    // it kept and those it dropped as other sprites.
+    void NoteLockOnCut(int kept, int dropped);
     // The game's sound, 48 kHz stereo (interleaved L, R): fills `frames` frames, silence where
     // nothing has been mixed yet; returns how many were real. For the audio thread.
     size_t ReadAudio(int16_t *stereo, size_t frames);
@@ -152,6 +225,19 @@ public:
     std::string crashReason() const;
     // The last lines of the boot log, for the in-headset status panel.
     std::vector<std::string> RecentLog(size_t lines) const;
+    // Analog movement: while the player's D-pad is held, the game moves him this way instead of
+    // the D-pad's eight (u16: 0 the camera's forward, 0x4000 its left), -1 the D-pad's own.
+    void SetMoveHeading(int heading);
+    // Room-scale walking: adds this much (game units, along x and z) to the player's next step,
+    // which the game's mover takes against its walls (dropped when the game does not move him).
+    void AddPlayerStep(float dx, float dz);
+    // Roxas's swings reach this much further (game units) against enemies: first person in VR.
+    void SetReachBonus(float units);
+    // Roxas's arms reach for your hands: their places in the game's world (0 left, 1 right), and
+    // whether to (first person with his body shown). His own joints are turned (Bip01 arms).
+    void SetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid);
+    // A line from the app into the boot log (what a gesture pressed, ...).
+    void LogLine(const std::string &line);
 };
 
 }  // namespace khvr

@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "guest.h"
@@ -14,6 +17,7 @@
 namespace khvr::hle {
 
 namespace {
+constexpr int kAlternatingHoldSwaps = 30;  // about half a second at 60 swaps
 
 // ---------------------------------------------------------------------------------------------
 // Geometry engine state
@@ -22,6 +26,8 @@ namespace {
 // Row-major 4x4, 20.12 fixed point. The DS multiplies row vectors: v' = v * M, and a new matrix
 // goes in front of the current one (M = N * M).
 using Mtx = std::array<int32_t, 16>;
+// The same in doubles (the world capture's matrix work).
+using Mat4d = std::array<double, 16>;
 
 Mtx Identity() {
     Mtx m{};
@@ -47,6 +53,7 @@ struct Vertex {
     float r, g, b;
     float s, t;
     float px, py, pz;  // through the position matrix only (the world capture's starting point)
+    float lx, ly, lz;  // as given (VTX), in its model's own space
 };
 
 constexpr int kMaxPolyVerts = 10;  // a quad clipped by six planes
@@ -56,6 +63,7 @@ struct Polygon {
     uint32_t attr = 0, texParam = 0, palBase = 0;
     bool translucent = false;
     uint16_t proj = 0;  // the projection it was drawn with (Gx::projList)
+    int32_t world = -1;  // its polygon in the world capture's list (Gx::worldList), when kept
 };
 
 constexpr size_t kMaxPolygons = 2048;
@@ -65,6 +73,10 @@ struct WorldPoly {
     int n = 0;
     uint32_t attr = 0, texParam = 0, palBase = 0;
     uint16_t proj = 0;  // index into the frame's projection matrices
+    uint32_t obj = 0;   // the render object NNS_G3dDraw drew it of (GxModelBegin), 0 none
+    uint32_t joint = 0;  // its position matrix (hashed): the same for a model's joint in a frame
+    float pivot[3] = {};  // that matrix's origin (its joint's pivot), through the position matrix
+    uint8_t model = 0;  // of which of Roxas's models (GxCaptureWorld), 0 none
 };
 constexpr int kW = 256, kH = 192;
 
@@ -79,6 +91,7 @@ struct Gx {
     bool clipDirty = false;
 
     int16_t vx = 0, vy = 0, vz = 0;  // the last vertex, 4.12
+    uint32_t obj = 0;  // the render object being drawn (GxModelBegin)
     uint8_t cr = 31, cg = 31, cb = 31;  // vertex colour, 5 bits a channel
     int16_t rawS = 0, rawT = 0;  // TEXCOORD as given (12.4)
     int32_t s = 0, t = 0;        // after the texture matrix (12.4)
@@ -101,7 +114,48 @@ struct Gx {
     std::vector<Mtx> projList, projShown;
     uint32_t projSerial = 1, projRecorded = 0;
     std::vector<uint8_t> inSceneShown;  // per projShown: draws the scene (else a HUD piece)
+    // NNS_G3dGlb's lens and camera as they were when each projection was first drawn with: the game
+    // may set up the next frame's camera before it swaps, and a camera read at the swap would then
+    // turn the world by the difference whenever the camera swings.
+    struct GlbSnapshot { Mtx lens, camera; bool ok = false; };
+    std::vector<GlbSnapshot> glbList, glbShown;
+    std::vector<Mat4d> toWorldShown;  // per projShown: position-matrix space to world space
+    std::vector<Mat4d> toCameraShown;  // per projShown: position-matrix space to camera space
+    // HUD pieces the game draws in 3D, in front of its camera (the mission's heart counter): per
+    // worldShown polygon, 1 when it is one (ClassifyHud). They stay in the DS picture and on the HUD.
+    std::vector<uint8_t> hudShown;
+    std::unordered_set<uint64_t> prevKeys, hudKeys;
+    struct HudPlace { uint32_t texParam, palBase; double c[3]; };
+    std::vector<HudPlace> hudPlaces;  // last frame's HUD pieces: texture and middle (camera space)
+    // HUD textures seen, with their depth in camera space: a counter's +1 flies across the view
+    // to the counter in one of them, never in one place long enough to be seen as a HUD piece.
+    std::unordered_map<uint64_t, double> hudTextures;
+    // 3D on both screens in turn (case 0x50): which screen engine A showed at the last swap, how
+    // many swaps in a row it has changed, and each way's polygons (averaged).
+    bool lastAOnTop = true;
+    int swapRun = 0;
+    int alternatingHold = 0;  // swaps the two-screen state still holds without a swap of screens
+    float phasePolys[2] = {0, 0};
+    bool lastSwapOther = false;  // the last frame was the other screen's (left out of the world)
+    int keptPhase = -1;  // which way round (engine A on top or not) the world's frames come, -1 none
+    // Roxas's hands: their joints' pivots (Bip01_L_Hand, Bip01_R_Hand) as the frame being drawn
+    // has them, and as the shown one has them (GxJoint; TagPlayerModels).
+    float handPivotList[2][3] = {}, handPivotShown[2][3] = {};
+    bool handList[2] = {}, handShown[2] = {};
+    Mat4d prevCamera{};
+    // The field cursor's target (world), its kind and lock, as the game had them while drawing a
+    // frame, and for the shown frame.
+    bool lockOnPending = false, lockOnShown = false;
+    float lockOnPendingAt[3] = {}, lockOnShownAt[3] = {};
+    int lockOnPendingKind = 0, lockOnShownKind = 0;
+    bool lockOnPendingLocked = false, lockOnShownLocked = false;
+    // The scene's lens and camera for the shown list (SceneOf), decided when it was swapped in.
+    bool sceneKnown = false;
+    bool sceneHasCamera = false;  // the scene is placed in the world (the game's camera known)
+    bool eventScene = false;      // an event scene's own lens (not NNS_G3dGlb's)
+    Mat4d sceneLens{}, sceneCamera{}, sceneLensInv{}, sceneCameraInv{};
     bool shownWBuffer = false, shownManualSort = false;
+    std::array<int, 4> shownVp{0, 0, 255, 191};  // the viewport when the shown list was swapped in
     uint32_t vertexCount = 0;
 
     int vpX1 = 0, vpY1 = 0, vpX2 = 255, vpY2 = 191;
@@ -121,6 +175,24 @@ struct Gx {
 };
 
 Gx g;
+// The shown list (and what SceneOf decided about it) is swapped in by the game's thread at
+// SWAP_BUFFERS and read by the screens' drawing, which may run on another thread while the game
+// runs its next frame (as the DS draws one frame while its CPU works on the next).
+std::mutex gShownMu;
+
+// Roxas's arms following yours (Platform::SetArmTargets, GxJoint): the targets from the app, and
+// his render object and the way from world space to his position-matrix space, from the last
+// capture.
+struct ArmTargets {
+    std::mutex mu;
+    bool on = false;
+    bool valid[2] = {false, false};  // 0 left, 1 right
+    double world[2][3] = {};
+    uint32_t obj = 0;
+    Mat4d worldToPos{};
+    bool hasXform = false;
+};
+ArmTargets gArm;
 uint32_t gCommands = 0, gLastFrame = 0;
 
 uint8_t ParamCount(uint8_t cmd) {
@@ -175,7 +247,6 @@ void Apply(const Mtx &m, bool vecToo) {
     g.clipDirty = true;
 }
 
-using Mat4d = std::array<double, 16>;
 
 Mat4d ToDouble(const Mtx &m) {
     Mat4d d;
@@ -225,23 +296,250 @@ uint64_t Fnv(const void *data, size_t n, uint64_t h = 1469598103934665603ull) {
 // the camera when the game flushed it into the projection) is affine. Otherwise it draws a flat
 // piece over the scene (an orthographic HUD element). `toWorld` gets position-matrix space to
 // world space. NNSG3dGlb (decomp: include/nnsys/g3d.h): the lens at +0x08, the camera at +0x4c.
-bool ReadLensAndCamera(Mat4d *lensInv, Mat4d *cameraInv, Mat4d *lens, Mat4d *camera) {
+Gx::GlbSnapshot ReadGlb() {
     static const uint32_t glb = SymbolAddress("NNS_G3dGlb");
-    if (!glb) return false;
-    Mtx l, c = Identity();
-    for (int i = 0; i < 16; ++i) l[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
+    Gx::GlbSnapshot s;
+    if (!glb) return s;
+    s.camera = Identity();
+    for (int i = 0; i < 16; ++i) s.lens[i] = static_cast<int32_t>(Read32(glb + 0x08 + 4 * i));
     for (int r = 0; r < 4; ++r)
-        for (int k = 0; k < 3; ++k) c[r * 4 + k] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + k)));
-    *lens = ToDouble(l);
-    *camera = ToDouble(c);
-    return Invert(*lens, lensInv) && Invert(*camera, cameraInv);
+        for (int k = 0; k < 3; ++k) s.camera[r * 4 + k] = static_cast<int32_t>(Read32(glb + 0x4c + 4 * (r * 3 + k)));
+    s.ok = true;
+    return s;
 }
 
-bool InScene(const Mtx &proj, const Mat4d &lensInv, const Mat4d &cameraInv, Mat4d *toWorld) {
+bool InScene(const Mtx &proj, const Mat4d &lensInv) {
     Mat4d q = MulD(ToDouble(proj), lensInv);
     const double tol = 1e-3;
-    if (toWorld) *toWorld = MulD(q, cameraInv);
     return std::fabs(q[3]) < tol && std::fabs(q[7]) < tol && std::fabs(q[11]) < tol && std::fabs(q[15] - 1.0) < tol;
+}
+
+// Which projections of the shown list draw the scene, and its lens and camera. Normally the
+// NNS_G3dGlb lens and camera each projection was drawn with (ReadGlb, InScene); the scene's own
+// are those of the projection most of its polygons use. Event scenes (in-engine cutscenes) set
+// the projection without that lens, so none matches: then the perspective projection most
+// polygons use is the scene's lens, with no camera (the polygons stay in camera space). That is
+// not world space, but it draws the same picture at any resolution, which is what the giant
+// screen needs; standing in the world leaves event scenes on the giant screen anyway.
+void SceneOf(const std::vector<Mtx> &projs, const std::vector<WorldPoly> &polys) {
+    g.inSceneShown.assign(projs.size(), 0);
+    g.toWorldShown.assign(projs.size(), ToDouble(Identity()));
+    g.toCameraShown.assign(projs.size(), ToDouble(Identity()));
+    g.sceneKnown = false;
+    std::vector<uint32_t> uses(projs.size(), 0);
+    for (const WorldPoly &w : polys)
+        if (w.proj < uses.size()) ++uses[w.proj];
+    int best = -1;
+    Mat4d lens{}, camera{}, lensInv{}, cameraInv{};
+    const Gx::GlbSnapshot *last = nullptr;
+    bool lastOk = false;
+    for (size_t i = 0; i < projs.size() && i < g.glbShown.size(); ++i) {
+        const Gx::GlbSnapshot &s = g.glbShown[i];
+        if (!s.ok) continue;
+        if (!last || s.lens != last->lens || s.camera != last->camera) {
+            last = &s;
+            lens = ToDouble(s.lens);
+            camera = ToDouble(s.camera);
+            lastOk = Invert(lens, &lensInv) && Invert(camera, &cameraInv);
+        }
+        if (!lastOk || !InScene(projs[i], lensInv)) continue;
+        g.inSceneShown[i] = 1;
+        g.toCameraShown[i] = MulD(ToDouble(projs[i]), lensInv);
+        g.toWorldShown[i] = MulD(g.toCameraShown[i], cameraInv);
+        if (best < 0 || uses[i] > uses[best]) {
+            best = static_cast<int>(i);
+            g.sceneLens = lens;
+            g.sceneCamera = camera;
+            g.sceneLensInv = lensInv;
+            g.sceneCameraInv = cameraInv;
+        }
+    }
+    g.sceneHasCamera = best >= 0;
+    g.eventScene = false;
+    if (best >= 0) {
+        g.sceneKnown = true;
+        return;
+    }
+    if (projs.empty()) return;
+    size_t most = 0;
+    for (size_t i = 1; i < uses.size(); ++i)
+        if (uses[i] > uses[most]) most = i;
+    const Mat4d l = ToDouble(projs[most]);
+    Mat4d lInv;
+    // A perspective projection: w follows z (an orthographic one draws flat HUD pieces).
+    if (!uses[most] || std::fabs(l[11]) < 1e-3 || !Invert(l, &lInv)) return;
+    g.sceneKnown = true;
+    g.sceneLens = l;
+    g.sceneLensInv = lInv;
+    g.sceneCamera = ToDouble(Identity());
+    g.sceneCameraInv = g.sceneCamera;
+    // An event scene's own lens (its zoom), with the camera its script drives through the engine's
+    // camera (NNS_G3dGlb +0x4c, as recorded with the projection): when the projection is a lens
+    // alone, the polygons come in camera space and that camera places them in the world; when it
+    // holds the camera too (camera^-1 x projection is a lens), they come in world space already.
+    // Otherwise the scene stays in camera space (the giant screen still draws it).
+    auto pureLens = [](const Mat4d &m) {
+        const double tol = 1e-3 * (std::fabs(m[0]) + std::fabs(m[5]) + 1);
+        return std::fabs(m[1]) < tol && std::fabs(m[2]) < tol && std::fabs(m[3]) < tol && std::fabs(m[4]) < tol &&
+               std::fabs(m[6]) < tol && std::fabs(m[7]) < tol && std::fabs(m[12]) < tol && std::fabs(m[13]) < tol &&
+               std::fabs(m[15]) < tol && m[0] > 0 && m[5] > 0;
+    };
+    Mat4d evCamera = ToDouble(Identity()), evCameraInv = evCamera, evLens = l, evLensInv = lInv;
+    bool placed = false;
+    if (most < g.glbShown.size() && g.glbShown[most].ok) {
+        evCamera = ToDouble(g.glbShown[most].camera);
+        if (Invert(evCamera, &evCameraInv)) {
+            if (pureLens(l)) {
+                placed = true;
+            } else {
+                const Mat4d inner = MulD(evCameraInv, l);
+                Mat4d innerInv;
+                if (pureLens(inner) && Invert(inner, &innerInv)) {
+                    evLens = inner;
+                    evLensInv = innerInv;
+                    placed = true;
+                }
+            }
+        }
+    }
+    if (placed) {
+        g.sceneLens = evLens;
+        g.sceneLensInv = evLensInv;
+        g.sceneCamera = evCamera;
+        g.sceneCameraInv = evCameraInv;
+        g.sceneHasCamera = true;
+        ++gWorldStats.eventPlaced;
+    } else {
+        ++gWorldStats.eventCameraSpace;
+    }
+    for (size_t i = 0; i < projs.size(); ++i) {
+        g.inSceneShown[i] = projs[i] == projs[most];
+        if (!g.inSceneShown[i]) continue;
+        g.toCameraShown[i] = MulD(ToDouble(projs[i]), g.sceneLensInv);
+        g.toWorldShown[i] = MulD(g.toCameraShown[i], g.sceneCameraInv);
+    }
+    g.eventScene = true;
+}
+
+// Which polygons of the shown list are HUD pieces drawn in 3D: fixed in front of the game's
+// camera, they lie at the same place in camera space from frame to frame while the camera turns
+// (the world's polygons move across its view then). A polygon seen exactly so once stays a HUD
+// piece while it keeps that place, the camera still or not; one that changes (a counter's digit)
+// is one too when it has a HUD piece's texture right where one was. Never what is near Roxas or
+// the cursor's target (a camera turning round them, a soft lock, keeps them in place too), nor
+// solid polygons: HUD art is see-through.
+std::unordered_set<uint32_t> gCharacterObjs;  // the last capture's character models (TagPlayerModels)
+
+void ClassifyHud(const std::vector<WorldPoly> &polys) {
+    g.hudShown.assign(polys.size(), 0);
+    // Cutscenes have no 3D HUD, and their camera tracks a face as closely as a HUD piece keeps
+    // its place (Roxas's hair went to the HUD).
+    if (!g.sceneHasCamera || g.eventScene || SwapEventScene()) {
+        g.prevKeys.clear();
+        g.hudKeys.clear();
+        g.hudPlaces.clear();
+        return;
+    }
+    // The camera turned: a camera that only travels (following Roxas) keeps what moves with it
+    // in place too, such as the sky around the level, which is no HUD piece.
+    bool moved = false;
+    for (int r = 0; r < 3 && !moved; ++r)
+        for (int c = 0; c < 3 && !moved; ++c) moved = std::fabs(g.sceneCamera[r * 4 + c] - g.prevCamera[r * 4 + c]) > 2e-3;
+    g.prevCamera = g.sceneCamera;
+    // The world points HUD pieces keep away from.
+    std::vector<std::array<double, 3>> away;
+    float player[3];
+    if (SwapPlayerPosition(player)) away.push_back({player[0], player[1] + 0.8, player[2]});
+    if (g.lockOnShown)
+        away.push_back({g.lockOnShownAt[0], g.lockOnShownAt[1], g.lockOnShownAt[2]});
+    struct Seen {
+        size_t index;
+        uint64_t key;
+        bool same;   // at the same place in camera space as in the last frame
+        bool clear;  // away from Roxas and the target
+        double c[3];  // middle, camera space
+    };
+    std::vector<Seen> seen;
+    seen.reserve(polys.size());
+    size_t sameCount = 0;
+    for (size_t k = 0; k < polys.size(); ++k) {
+        const WorldPoly &w = polys[k];
+        if (w.proj >= g.inSceneShown.size() || !g.inSceneShown[w.proj]) continue;
+        // A character standing still (an NPC's see-through hair) keeps its place too: never HUD.
+        if (w.obj && gCharacterObjs.count(w.obj)) continue;
+        const Mat4d &m = g.toCameraShown[w.proj], &mw = g.toWorldShown[w.proj];
+        uint64_t key = Fnv(&w.texParam, 4, Fnv(&w.palBase, 4, Fnv(&w.attr, 4)));
+        Seen s{k, 0, false, true, {0, 0, 0}};
+        double world[3] = {0, 0, 0};
+        for (int i = 0; i < w.n; ++i) {
+            const double x = w.v[i].px / 4096.0, y = w.v[i].py / 4096.0, z = w.v[i].pz / 4096.0;
+            double cam[3];
+            for (int j = 0; j < 3; ++j) {
+                cam[j] = x * m[j] + y * m[4 + j] + z * m[8 + j] + m[12 + j];
+                s.c[j] += cam[j] / w.n;
+                world[j] += (x * mw[j] + y * mw[4 + j] + z * mw[8 + j] + mw[12 + j]) / w.n;
+            }
+            const int32_t q[3] = {static_cast<int32_t>(std::lround(cam[0] * 256)), static_cast<int32_t>(std::lround(cam[1] * 256)),
+                                  static_cast<int32_t>(std::lround(cam[2] * 256))};
+            key = Fnv(q, sizeof q, key);
+        }
+        for (const auto &a : away) {
+            const double dx = world[0] - a[0], dy = world[1] - a[1], dz = world[2] - a[2];
+            if (dx * dx + dy * dy + dz * dz < 2.0 * 2.0) s.clear = false;
+        }
+        // HUD art is see-through (alpha, or a palette whose colour 0 is transparent): a solid
+        // polygon (a table's edge as you pass it) is the scene.
+        const uint32_t format = (w.texParam >> 26) & 7, alpha = (w.attr >> 16) & 31;
+        if (!(format != 0 && (format == 1 || format == 6 || alpha < 31 || ((w.texParam >> 29) & 1)))) s.clear = false;
+        s.key = key;
+        s.same = g.prevKeys.count(key) != 0;
+        sameCount += s.same;
+        seen.push_back(s);
+    }
+    // The camera turned for real only when most of the scene moved across its view: a slight turn
+    // leaves far polygons in place to the rounding, and those are not HUD pieces.
+    const bool sceneMoved = moved && sameCount * 10 < seen.size() * 3;
+    std::unordered_set<uint64_t> keys, hud;
+    std::vector<Gx::HudPlace> places;
+    keys.reserve(seen.size());
+    for (const Seen &s : seen) {
+        keys.insert(s.key);
+        if (!s.clear) continue;
+        const WorldPoly &w = polys[s.index];
+        bool isHud = s.same && (sceneMoved || g.hudKeys.count(s.key));
+        if (!isHud && !s.same) {
+            for (const Gx::HudPlace &p : g.hudPlaces) {
+                const double dx = p.c[0] - s.c[0], dy = p.c[1] - s.c[1], dz = p.c[2] - s.c[2];
+                if (p.texParam == w.texParam && p.palBase == w.palBase && dx * dx + dy * dy + dz * dz < 0.25 * 0.25) {
+                    isHud = true;
+                    break;
+                }
+            }
+        }
+        if (!isHud) {
+            // A texture seen as a HUD piece before, at a HUD piece's depth: one again, with the
+            // camera still too (the heart counter coming up after a kill while you stood still
+            // went into the world, in the middle of the area).
+            const uint64_t tex = (uint64_t(w.palBase) << 32) | w.texParam;
+            if (auto it = g.hudTextures.find(tex); it != g.hudTextures.end())
+                isHud = std::fabs(it->second - s.c[2]) < 0.1 * std::fabs(it->second) + 0.02;
+        }
+        if (isHud) {
+            g.hudShown[s.index] = 1;
+            hud.insert(s.key);
+            places.push_back({w.texParam, w.palBase, {s.c[0], s.c[1], s.c[2]}});
+        }
+    }
+    // A HUD is a small part of the picture: more than that is the scene itself, mistaken.
+    if (places.size() * 4 > seen.size()) {
+        std::fill(g.hudShown.begin(), g.hudShown.end(), 0);
+        hud.clear();
+        places.clear();
+    }
+    for (const Gx::HudPlace &p : places) g.hudTextures[(uint64_t(p.palBase) << 32) | p.texParam] = p.c[2];
+    g.prevKeys.swap(keys);
+    g.hudKeys.swap(hud);
+    g.hudPlaces.swap(places);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -277,9 +575,12 @@ void EmitPolygon(const Vertex *verts, int n) {
     if (((attr >> 4) & 3) == 3) return;  // shadow volumes: not drawn yet
     if (g.projRecorded != g.projSerial || g.projList.empty()) {
         g.projList.push_back(g.proj);
+        g.glbList.push_back(ReadGlb());
         g.projRecorded = g.projSerial;
     }
+    int32_t worldIndex = -1;
     if (g.worldList.size() < 2 * kMaxPolygons && n <= 4) {
+        worldIndex = static_cast<int32_t>(g.worldList.size());
         WorldPoly w;
         std::copy(verts, verts + n, w.v);
         w.n = n;
@@ -287,6 +588,9 @@ void EmitPolygon(const Vertex *verts, int n) {
         w.texParam = g.texParam;
         w.palBase = g.palBase;
         w.proj = static_cast<uint16_t>(g.projList.size() - 1);
+        w.obj = g.obj;
+        w.joint = static_cast<uint32_t>(Fnv(g.pos.data(), sizeof(int32_t) * 16));
+        for (int k = 0; k < 3; ++k) w.pivot[k] = static_cast<float>(g.pos[12 + k]);
         g.worldList.push_back(w);
     }
     if (g.list.size() >= kMaxPolygons) return;
@@ -330,6 +634,7 @@ void EmitPolygon(const Vertex *verts, int n) {
     p.texParam = g.texParam;
     p.palBase = g.palBase;
     p.proj = static_cast<uint16_t>(g.projList.size() - 1);
+    p.world = worldIndex;
     uint32_t alpha = (attr >> 16) & 31;
     uint32_t format = (g.texParam >> 26) & 7;
     p.translucent = (alpha > 0 && alpha < 31) || format == 1 || format == 6;
@@ -361,6 +666,9 @@ void SubmitVertex() {
     v.px = static_cast<float>((x * pm[0] + y * pm[4] + z * pm[8] + 0x1000ll * pm[12]) >> 12);
     v.py = static_cast<float>((x * pm[1] + y * pm[5] + z * pm[9] + 0x1000ll * pm[13]) >> 12);
     v.pz = static_cast<float>((x * pm[2] + y * pm[6] + z * pm[10] + 0x1000ll * pm[14]) >> 12);
+    v.lx = static_cast<float>(x) / 4096.0f;
+    v.ly = static_cast<float>(y) / 4096.0f;
+    v.lz = static_cast<float>(z) / 4096.0f;
 
     Vertex *st = g.strip;
     st[g.stripCount++] = v;
@@ -440,7 +748,15 @@ void Lighting() {
     g.cb = static_cast<uint8_t>(std::min(c[2], 31));
 }
 
+bool BoxInView(const uint32_t *p);
 bool BoxVisible(const uint32_t *p) {
+    const bool inView = BoxInView(p);
+    if (inView) ++gWorldStats.boxesInView;
+    else ++gWorldStats.boxesOutOfView;
+    return inView || gDrawAll;
+}
+
+bool BoxInView(const uint32_t *p) {
     UpdateClip();
     int64_t x = static_cast<int16_t>(p[0]), y = static_cast<int16_t>(p[0] >> 16);
     int64_t z = static_cast<int16_t>(p[1]), w = static_cast<int16_t>(p[1] >> 16);
@@ -673,25 +989,76 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.stripOdd = false;
         break;
     case 0x41: break;
-    case 0x50:
+    case 0x50: {
+        std::lock_guard<std::mutex> lock(gShownMu);
         g.shown.swap(g.list);
         g.list.clear();
+        {
+            // A scene with 3D on both screens draws them in turn, a frame each, swapping which
+            // screen engine A shows (POWCNT1 bit 15) every frame (Agrabah, Aladdin and Abu's
+            // scene): the world is the busier of the two, the other (a picture for the other
+            // screen) is not taken for it, else the view flickers between them.
+            const bool aOnTop = IoReg16(0x304) & 0x8000;
+            g.swapRun = aOnTop != g.lastAOnTop ? g.swapRun + 1 : 0;
+            g.lastAOnTop = aOnTop;
+            // Once found, it holds through a missed turn or two (the game slowed, a frame drawn
+            // twice to the same screen): dropping out let the other screen's frames, black, in
+            // for a few frames each time (Agrabah: a black flicker before and after the static).
+            if (g.swapRun >= 3) g.alternatingHold = kAlternatingHoldSwaps;
+            else if (g.alternatingHold > 0 && g.swapRun == 0) --g.alternatingHold;
+            const float n = static_cast<float>(g.worldList.size());
+            g.phasePolys[aOnTop] += (n - g.phasePolys[aOnTop]) * 0.3f;
+            const bool alternating = g.alternatingHold > 0;
+            // One of the two pictures is kept for the world, the busier, and stays kept until the
+            // other is clearly busier (a fifth more): with both about as busy, each was let
+            // through in turn and the view flipped between the two scenes.
+            if (!alternating) {
+                g.keptPhase = -1;
+            } else if (g.keptPhase < 0) {
+                g.keptPhase = g.phasePolys[1] >= g.phasePolys[0] ? 1 : 0;
+            } else if (g.phasePolys[!g.keptPhase] > 1.2f * g.phasePolys[g.keptPhase] + 8.0f) {
+                g.keptPhase = !g.keptPhase;
+            }
+            if (alternating && static_cast<int>(aOnTop) != g.keptPhase) {
+                g.worldList.clear();
+                g.projList.clear();
+                g.glbList.clear();
+                g.lockOnPending = false;
+                g.projRecorded = 0;
+                for (int a = 0; a < 2; ++a) g.handList[a] = false;
+                g.vertexCount = 0;
+                ++gWorldStats.otherScreenFrames;
+                g.lastSwapOther = true;
+                break;
+            }
+        }
+        g.lastSwapOther = false;
         g.worldShown.swap(g.worldList);
         g.worldList.clear();
         g.projShown.swap(g.projList);
         g.projList.clear();
-        g.projRecorded = 0;
-        {
-            Mat4d lensInv, cameraInv, lens, camera;
-            const bool known = ReadLensAndCamera(&lensInv, &cameraInv, &lens, &camera);
-            g.inSceneShown.assign(g.projShown.size(), 0);
-            for (size_t i = 0; known && i < g.projShown.size(); ++i)
-                g.inSceneShown[i] = InScene(g.projShown[i], lensInv, cameraInv, nullptr);
+        g.glbShown.swap(g.glbList);
+        g.glbList.clear();
+        for (int a = 0; a < 2; ++a) {
+            std::copy(g.handPivotList[a], g.handPivotList[a] + 3, g.handPivotShown[a]);
+            g.handShown[a] = g.handList[a];
+            g.handList[a] = false;
         }
+        g.lockOnShown = g.lockOnPending;
+        std::copy(g.lockOnPendingAt, g.lockOnPendingAt + 3, g.lockOnShownAt);
+        g.lockOnShownKind = g.lockOnPendingKind;
+        g.lockOnShownLocked = g.lockOnPendingLocked;
+        g.lockOnPending = false;
+        g.projRecorded = 0;
+        SceneOf(g.projShown, g.worldShown);
+        NoteFrameSwapped();  // the player, for the HUD pieces and the viewer
+        ClassifyHud(g.worldShown);
         g.vertexCount = 0;
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
+        g.shownVp = {g.vpX1, g.vpY1, g.vpX2, g.vpY2};
         break;
+    }
     case 0x60:
         g.vpX1 = static_cast<int>(p[0] & 0xff);
         g.vpY1 = static_cast<int>((p[0] >> 8) & 0xff);
@@ -1050,9 +1417,10 @@ void DrawTriangle(Frame &f, const RenderParams &rp, const Polygon &p, const Scre
 ScreenVertex ToScreen(const Vertex &v, bool wbuffer, int scale) {
     ScreenVertex o;
     const float w = v.w != 0 ? v.w : 1.0f;
-    const float vpW = static_cast<float>(g.vpX2 - g.vpX1 + 1), vpH = static_cast<float>(g.vpY2 - g.vpY1 + 1);
-    o.x = (v.x / w + 1.0f) * vpW * 0.5f + g.vpX1;
-    const float yUp = (v.y / w + 1.0f) * vpH * 0.5f + g.vpY1;
+    const auto &vp = g.shownVp;
+    const float vpW = static_cast<float>(vp[2] - vp[0] + 1), vpH = static_cast<float>(vp[3] - vp[1] + 1);
+    o.x = (v.x / w + 1.0f) * vpW * 0.5f + vp[0];
+    const float yUp = (v.y / w + 1.0f) * vpH * 0.5f + vp[1];
     o.y = 192.0f - yUp;
     o.x *= scale;
     o.y *= scale;
@@ -1066,10 +1434,45 @@ ScreenVertex ToScreen(const Vertex &v, bool wbuffer, int scale) {
     return o;
 }
 
+// A wireframe polygon (alpha 0): only its edges, opaque, one DS pixel wide (`scale` pixels in a
+// larger picture). The game outlines furniture and the like this way.
+void DrawEdges(Frame &f, const RenderParams &rp, const Polygon &p, const ScreenVertex *sv, int rowMin, int rowMax) {
+    Polygon opaque = p;
+    opaque.attr |= 31u << 16;
+    const int dot = std::max(1, rp.scale);
+    for (int e = 0; e < p.n; ++e) {
+        const ScreenVertex &a = sv[e], &b = sv[(e + 1) % p.n];
+        const int steps = std::max(1, static_cast<int>(std::ceil(std::max(std::fabs(b.x - a.x), std::fabs(b.y - a.y)) / dot)));
+        for (int k = 0; k <= steps; ++k) {
+            const float t = static_cast<float>(k) / steps;
+            const float invW = a.invW + (b.invW - a.invW) * t;
+            if (invW <= 0) continue;
+            const float wv = 1.0f / invW;
+            const float depthF = rp.wbuffer ? wv : a.depth + (b.depth - a.depth) * t;
+            const uint32_t depth = static_cast<uint32_t>(std::clamp(depthF, 0.0f, 16777215.0f));
+            const int cx = static_cast<int>(std::floor(a.x + (b.x - a.x) * t)) / dot * dot;
+            const int cy = static_cast<int>(std::floor(a.y + (b.y - a.y) * t)) / dot * dot;
+            const int r = std::clamp(static_cast<int>((a.r + (b.r - a.r) * t) * wv), 0, 63);
+            const int gg = std::clamp(static_cast<int>((a.g + (b.g - a.g) * t) * wv), 0, 63);
+            const int bb = std::clamp(static_cast<int>((a.b + (b.b - a.b) * t) * wv), 0, 63);
+            const float s = (a.s + (b.s - a.s) * t) * wv, tt = (a.t + (b.t - a.t) * t) * wv;
+            for (int y = std::max(cy, rowMin); y < cy + dot && y <= rowMax && y < f.h; ++y) {
+                for (int x = std::max(cx, 0); x < cx + dot && x < f.w; ++x) {
+                    const size_t i = static_cast<size_t>(y) * f.w + x;
+                    if (depth <= f.depth[i]) DrawPixel(f, rp, opaque, static_cast<int>(i), depth, r, gg, bb, s, tt);
+                }
+            }
+        }
+    }
+}
+
 void DrawPolygon(Frame &f, const RenderParams &rp, const Polygon &p, int rowMin, int rowMax) {
-    if (((p.attr >> 16) & 31) == 0) return;  // wireframe: edges only, not drawn yet
     ScreenVertex sv[kMaxPolyVerts];
     for (int i = 0; i < p.n; ++i) sv[i] = ToScreen(p.v[i], rp.wbuffer, rp.scale);
+    if (((p.attr >> 16) & 31) == 0) {
+        DrawEdges(f, rp, p, sv, rowMin, rowMax);
+        return;
+    }
     for (int i = 1; i + 1 < p.n; ++i) DrawTriangle(f, rp, p, sv[0], sv[i], sv[i + 1], rowMin, rowMax);
 }
 
@@ -1159,6 +1562,7 @@ void GxVBlank() {
 }
 
 void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
+    std::lock_guard<std::mutex> lock(gShownMu);
     static Frame f;
     static TexMem mem;
     mem.tex.resize(kTexVramSize);
@@ -1197,7 +1601,8 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
     std::vector<const Polygon *> opaque;
     std::vector<Sorted> translucent;
     for (const Polygon &p : g.shown) {
-        if (hudOnly && p.proj < g.inSceneShown.size() && g.inSceneShown[p.proj]) continue;
+        const bool hudPiece = p.world >= 0 && static_cast<size_t>(p.world) < g.hudShown.size() && g.hudShown[p.world];
+        if (hudOnly && p.proj < g.inSceneShown.size() && g.inSceneShown[p.proj] && !hudPiece) continue;
         if (!p.translucent) {
             opaque.push_back(&p);
             continue;
@@ -1237,22 +1642,553 @@ void GxRender(uint16_t *color, uint8_t *alpha, int scale, bool hudOnly) {
 }
 
 GxWorldStats gWorldStats;
+std::atomic<bool> gDrawAll{false};
+
+// Markers over things in the field (the lock-on sight over an enemy) are drawn flat on the
+// screen, with a projection of their own, so the capture leaves them in the DS picture. Each run
+// of such polygons near the middle of the screen goes into the world instead: on the game
+// camera's line through its middle, a little in front of the first thing that line meets, at the
+// size it had on the screen, as a sprite. Runs at the screen's edges (HUD pieces) stay out.
+template <typename TextureOf>
+void PlaceMarkers(PlatformWorld *out, const std::vector<const WorldPoly *> &pieces, TextureOf &texture) {
+    const double *li = g.sceneLensInv.data(), *ci = g.sceneCameraInv.data();
+    // A screen point (NDC) to the camera-space point on its line at the near (-1) or far (1) plane.
+    auto unproject = [&](double nx, double ny, double nz, double *cam) {
+        const double v[4] = {nx, ny, nz, 1};
+        double r[4];
+        for (int c = 0; c < 4; ++c) r[c] = v[0] * li[c] + v[1] * li[4 + c] + v[2] * li[8 + c] + v[3] * li[12 + c];
+        for (int k = 0; k < 3; ++k) cam[k] = r[k] / r[3];
+    };
+    auto toWorld = [&](const double *c, double *w) {
+        for (int k = 0; k < 3; ++k) w[k] = c[0] * ci[k] + c[1] * ci[4 + k] + c[2] * ci[8 + k] + ci[12 + k];
+    };
+    // The nearest captured triangle on a world-space segment, as a fraction of it (2 when none).
+    const size_t sceneTriangles = out->triangleFlags.size();
+    auto firstHit = [&](const double *a, const double *b) {
+        double best = 2;
+        const double d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+        for (size_t t = 0; t < sceneTriangles; ++t) {
+            if (out->triangleFlags[t] & (kWorldLine | kWorldBillboard)) continue;
+            const PlatformWorldVertex &p0 = out->vertices[t * 3], &p1 = out->vertices[t * 3 + 1], &p2 = out->vertices[t * 3 + 2];
+            const double e1[3] = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z}, e2[3] = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+            const double h[3] = {d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]};
+            const double det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
+            if (std::fabs(det) < 1e-12) continue;
+            const double s[3] = {a[0] - p0.x, a[1] - p0.y, a[2] - p0.z};
+            const double u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) / det;
+            if (u < 0 || u > 1) continue;
+            const double q[3] = {s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]};
+            const double v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+            if (v < 0 || u + v > 1) continue;
+            const double f = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+            if (f > 0 && f < best) best = f;
+        }
+        return best;
+    };
+    for (size_t first = 0; first < pieces.size();) {
+        size_t end = first + 1;
+        while (end < pieces.size() && pieces[end]->proj == pieces[first]->proj) ++end;
+        // The run's extent on the screen (NDC).
+        double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        bool ok = true;
+        for (size_t i = first; i < end && ok; ++i)
+            for (int k = 0; k < pieces[i]->n; ++k) {
+                const Vertex &v = pieces[i]->v[k];
+                if (!(v.w > 1e-6f)) { ok = false; break; }
+                x0 = std::min<double>(x0, v.x / v.w); x1 = std::max<double>(x1, v.x / v.w);
+                y0 = std::min<double>(y0, v.y / v.w); y1 = std::max<double>(y1, v.y / v.w);
+            }
+        const double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        // Near the middle (not the HUD's corners and bottom strip), and marker-sized.
+        ok = ok && std::fabs(cx) < 0.8 && cy > -0.55 && cy < 0.85 && x1 - x0 < 0.5 && y1 - y0 < 0.6;
+        double camNear[3], camFar[3], wNear[3], wFar[3];
+        double hit = 2;
+        if (ok) {
+            unproject(cx, cy, -1, camNear);
+            unproject(cx, cy, 1, camFar);
+            toWorld(camNear, wNear);
+            toWorld(camFar, wFar);
+            hit = firstHit(wNear, wFar);
+        }
+        if (hit > 1) {
+            first = end;
+            continue;
+        }
+        // A little in front of what it marks (half a unit, about the depth of a Heartless), never
+        // nearer than the near plane.
+        double zHit = camNear[2] + (camFar[2] - camNear[2]) * hit;
+        const double z = std::min(zHit + 0.5, camNear[2] - 1e-3);
+        auto onPlane = [&](double nx, double ny, double *cam) {
+            double a[3], b[3];
+            unproject(nx, ny, -1, a);
+            unproject(nx, ny, 1, b);
+            const double f = (z - a[2]) / (b[2] - a[2]);
+            for (int k = 0; k < 3; ++k) cam[k] = a[k] + (b[k] - a[k]) * f;
+        };
+        double centre[3], centreWorld[3];
+        onPlane(cx, cy, centre);
+        toWorld(centre, centreWorld);
+        if (out->billboard.empty()) out->billboard.assign(out->vertices.size() * kWorldBillboardFloats, 0.0f);
+        out->billboard.resize(out->vertices.size() * kWorldBillboardFloats, 0.0f);
+        for (size_t i = first; i < end; ++i) {
+            const WorldPoly &w = *pieces[i];
+            const uint32_t alpha = (w.attr >> 16) & 31;
+            if (alpha == 0) continue;
+            const int32_t tex = texture(w.texParam, w.palBase);
+            const uint32_t format = (w.texParam >> 26) & 7;
+            uint8_t flags = kWorldFront | kWorldBack | kWorldBillboard;  // a marker shows from either side
+            if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+            if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
+            if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+            PlatformWorldVertex pv[4];
+            double off[4][2];
+            for (int k = 0; k < w.n; ++k) {
+                const Vertex &v = w.v[k];
+                double cam[3], wp[3];
+                onPlane(v.x / v.w, v.y / v.w, cam);
+                toWorld(cam, wp);
+                pv[k].x = static_cast<float>(wp[0]);
+                pv[k].y = static_cast<float>(wp[1]);
+                pv[k].z = static_cast<float>(wp[2]);
+                off[k][0] = cam[0] - centre[0];
+                off[k][1] = cam[1] - centre[1];
+                if (tex >= 0) {
+                    pv[k].u = v.s / out->textures[tex].width;
+                    pv[k].v = v.t / out->textures[tex].height;
+                } else {
+                    pv[k].u = pv[k].v = 0;
+                }
+                auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
+                pv[k].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((alpha * 255 / 31) << 24);
+            }
+            for (int k = 1; k + 1 < w.n; ++k) {
+                for (int j : {0, k, k + 1}) {
+                    out->vertices.push_back(pv[j]);
+                    out->billboard.insert(out->billboard.end(),
+                                          {static_cast<float>(centreWorld[0]), static_cast<float>(centreWorld[1]),
+                                           static_cast<float>(centreWorld[2]), static_cast<float>(off[j][0]),
+                                           static_cast<float>(off[j][1]), 1.0f});
+                }
+                out->triangleTexture.push_back(tex);
+                out->triangleFlags.push_back(flags);
+            }
+        }
+        out->polygonsLeftOut -= static_cast<uint32_t>(end - first);
+        ++gWorldStats.markers;
+        first = end;
+    }
+}
+
+void GxModelBegin(uint32_t obj) { g.obj = obj; }
+
+bool GxLastSwapOtherScreen() { return g.lastSwapOther; }
+
+bool GxAlternatingScreens() { return g.alternatingHold > 0; }
+std::atomic<bool> gCapturedCards{false};
+
+void GxNoteLockOn(uint32_t position, int kind, bool locked) {
+    if (!position || position + 12 > GuestMemSize()) return;
+    // The game's thread alone writes the pending sight (and moves it to the shown one at the swap).
+    for (int k = 0; k < 3; ++k) g.lockOnPendingAt[k] = static_cast<int32_t>(Read32(position + 4 * k)) / 4096.0f;
+    g.lockOnPendingKind = kind;
+    g.lockOnPendingLocked = locked;
+    g.lockOnPending = true;
+    ++gWorldStats.lockOns;
+}
+
+// Roxas's own models among the render objects drawn (NNS_G3dDraw): those whose polygons all lie
+// right where he stands. The one with the most polygons is his; the others (his Keyblade) are
+// attached to him, by their number of polygons. Tags each worldShown polygon (WorldPoly::model).
+std::mutex gJointTableMu;
+std::vector<std::string> gJointTable;  // the latest table of his model's joints, taken by the heartbeat
+
+std::vector<std::string> TakePlayerJointTable() {
+    std::lock_guard<std::mutex> lock(gJointTableMu);
+    std::vector<std::string> t;
+    t.swap(gJointTable);
+    return t;
+}
+
+
+void TagPlayerModels(const float *player, const std::vector<Mat4d> &toWorld, const std::vector<bool> &inScene) {
+    for (WorldPoly &w : g.worldShown) w.model = 0;
+    GxWorldStats &st = gWorldStats;
+    st.objectsDrawn = 0;
+    st.playerObj = 0;
+    st.playerPolygons = 0;
+    for (int i = 0; i < kWorldAttachedMax; ++i) {
+        st.attachedObj[i] = 0;
+        st.attachedPolygons[i] = 0;
+        st.attachedLength[i] = 0;
+    }
+    struct Box {
+        double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
+        double localFar = 0;  // farthest vertex from its model's origin
+        uint32_t polygons = 0;
+        uint32_t translucent = 0;  // of them see-through (a swing's trail, an effect)
+    };
+    std::unordered_map<uint32_t, Box> boxes;
+    gCharacterObjs.clear();
+    for (const WorldPoly &w : g.worldShown) {
+        if (!w.obj) continue;
+        Box &b = boxes[w.obj];
+        if (w.proj >= inScene.size() || !inScene[w.proj]) {
+            b.polygons = 0x80000000u;  // drawn for the HUD: none of his
+            continue;
+        }
+        const Mat4d &m = toWorld[w.proj];
+        for (int i = 0; i < w.n; ++i) {
+            const Vertex &v = w.v[i];
+            const double x = v.px / 4096.0, y = v.py / 4096.0, z = v.pz / 4096.0;
+            const double p[3] = {x * m[0] + y * m[4] + z * m[8] + m[12], x * m[1] + y * m[5] + z * m[9] + m[13],
+                                 x * m[2] + y * m[6] + z * m[10] + m[14]};
+            for (int k = 0; k < 3; ++k) {
+                b.lo[k] = std::min(b.lo[k], p[k]);
+                b.hi[k] = std::max(b.hi[k], p[k]);
+            }
+            b.localFar = std::max(b.localFar, std::sqrt(double(v.lx) * v.lx + double(v.ly) * v.ly + double(v.lz) * v.lz));
+        }
+        ++b.polygons;
+        const uint32_t alpha = (w.attr >> 16) & 31, format = (w.texParam >> 26) & 7;
+        if ((alpha > 0 && alpha < 31) || format == 1 || format == 6) ++b.translucent;
+    }
+    st.objectsDrawn = static_cast<uint32_t>(boxes.size());
+    // Characters (models of some polygons, a few units across): their see-through decals (eyes,
+    // mouths) lie flat to the game's camera now and then, but are no sprites.
+    for (const auto &[obj, b] : boxes)
+        if (b.polygons >= 30 && !(b.polygons & 0x80000000u) &&
+            std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) < 4.0)
+            gCharacterObjs.insert(obj);
+    st.objectsMin = std::min(st.objectsMin, st.objectsDrawn);
+    st.objectsMax = std::max(st.objectsMax, st.objectsDrawn);
+    if (!player) return;
+    // On him: within a body's reach of his feet, and no larger than him with his Keyblade raised.
+    // His own stands over his feet, a body tall; someone standing next to him does not.
+    std::vector<std::pair<uint32_t, const Box *>> his;
+    for (const auto &[obj, b] : boxes) {
+        if (b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
+        // A small model (his Keyblade mid-swing reaches an arm and a blade from him, past his feet's
+        // height) may lie further out than his body.
+        const bool small = b.polygons < 60 && std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) < 2.0;
+        const double reach = small ? 2.4 : 1.3, below = small ? 1.0 : 0.4;
+        const bool on = b.lo[0] > player[0] - reach && b.hi[0] < player[0] + reach && b.lo[2] > player[2] - reach &&
+                        b.hi[2] < player[2] + reach && b.lo[1] > player[1] - below && b.hi[1] < player[1] + 3.0;
+        if (on) his.push_back({obj, &b});
+    }
+    auto overFeet = [&](const Box &b) {
+        return b.lo[0] < player[0] + 0.3 && b.hi[0] > player[0] - 0.3 && b.lo[2] < player[2] + 0.3 &&
+               b.hi[2] > player[2] - 0.3 && b.hi[1] - b.lo[1] > 0.8;
+    };
+    std::sort(his.begin(), his.end(), [&](const auto &a, const auto &b) {
+        const bool fa = overFeet(*a.second), fb = overFeet(*b.second);
+        if (fa != fb) return fa;
+        return a.second->polygons > b.second->polygons;
+    });
+    if (his.empty() || !overFeet(*his[0].second)) return;
+    std::unordered_map<uint32_t, uint8_t> tag;
+    tag[his[0].first] = kWorldModelPlayer;
+    st.playerObj = his[0].first;
+    st.playerPolygons = his[0].second->polygons;
+    {
+        // For his arms: world to the space his joints' matrices are in (this frame's camera).
+        Mat4d inv{};
+        bool found = false;
+        for (const WorldPoly &w : g.worldShown)
+            if (w.obj == st.playerObj && w.proj < toWorld.size() && inScene[w.proj]) {
+                found = Invert(toWorld[w.proj], &inv);
+                break;
+            }
+        std::lock_guard<std::mutex> lock(gArm.mu);
+        gArm.obj = st.playerObj;
+        gArm.hasXform = found;
+        if (found) gArm.worldToPos = inv;
+    }
+    // Attached: solid models drawn on him. His Keyblade is one of 5 polygons kept inside his own
+    // actor (at +3888), turning with his hand; the see-through ones there and around him are the
+    // trails and flashes of his swings.
+    const uint32_t actor = SwapPlayerActor();
+    {
+        // Into the boot log the moment the models around him change (his Keyblade comes out only
+        // while he attacks, between heartbeats): each with its polygons, see-through ones, size,
+        // farthest vertex from its origin, and whether it counts as on him.
+        std::string seen, key;
+        for (const auto &[obj, b] : boxes) {
+            if (obj == st.playerObj || b.polygons == 0 || (b.polygons & 0x80000000u)) continue;
+            const double cx = (b.lo[0] + b.hi[0]) / 2 - player[0], cz = (b.lo[2] + b.hi[2]) / 2 - player[2];
+            if (cx * cx + cz * cz > 2.5 * 2.5) continue;
+            const bool inActor = actor && obj >= actor && obj < actor + 0x4000;
+            bool on = false;
+            for (const auto &h : his) on |= h.first == obj;
+            char item[200];
+            std::snprintf(item, sizeof item, " | 0x%08x%s: %u polygons (%u see-through), %.2f x %.2f x %.2f, %.2f from origin%s",
+                          obj, inActor ? " in his actor" : "", b.polygons, b.translucent, b.hi[0] - b.lo[0],
+                          b.hi[1] - b.lo[1], b.hi[2] - b.lo[2], b.localFar, on ? ", on him" : ", near");
+            seen += item;
+            key += std::to_string(obj) + ":" + std::to_string(b.polygons) + (on ? "+" : "-") + " ";
+        }
+        static std::string lastKey;
+        static auto lastLog = std::chrono::steady_clock::time_point();
+        const auto now = std::chrono::steady_clock::now();
+        if (key != lastKey && now - lastLog > std::chrono::milliseconds(250)) {
+            lastKey = key;
+            lastLog = now;
+            if (seen.size() > 440) seen.resize(440);
+            Log("models: around Roxas (%u polygons)%s", st.playerPolygons, seen.empty() ? " | none" : seen.c_str());
+        }
+    }
+    // His swings' trails and flashes: the small see-through models on him (first person leaves them
+    // out: the Keyblade you hold is yours).
+    for (size_t i = 1; i < his.size(); ++i)
+        if (his[i].second->polygons < 60 && his[i].second->translucent * 2 > his[i].second->polygons)
+            tag[his[i].first] = kWorldModelEffect;
+    // Only the solid model kept inside his own actor is his Keyblade: models merely near him were
+    // taken for it too (an enemy right in front of him, 618 triangles; HUD pieces), drawn in your
+    // hand and hidden from the world.
+    his.erase(std::remove_if(his.begin() + 1, his.end(),
+                             [actor](const auto &h) {
+                                 const bool inActor = actor && h.first >= actor && h.first < actor + 0x4000;
+                                 return !inActor || h.second->polygons < 4 || h.second->translucent * 2 > h.second->polygons ||
+                                        h.second->localFar < 0.5;
+                             }),
+              his.end());
+    // Of those, only the longest is his (his Keyblade): pickups dropped around him (hearts, munny,
+    // orbs) are not.
+    if (his.size() > 2) {
+        std::sort(his.begin() + 1, his.end(), [](const auto &a, const auto &b) { return a.second->localFar > b.second->localFar; });
+        his.resize(2);
+    }
+    for (size_t i = 1; i < his.size() && i <= static_cast<size_t>(kWorldAttachedMax); ++i) {
+        tag[his[i].first] = static_cast<uint8_t>(kWorldModelAttached + i - 1);
+        st.attachedObj[i - 1] = his[i].first;
+        st.attachedPolygons[i - 1] = his[i].second->polygons;
+        st.attachedLength[i - 1] = static_cast<float>(his[i].second->localFar);
+    }
+    for (WorldPoly &w : g.worldShown)
+        if (w.obj)
+            if (auto it = tag.find(w.obj); it != tag.end()) w.model = it->second;
+    // The other characters (a saved place leaves them out: those following him were in it).
+    // And what they hold: small solid models touching one of them (Axel's chakrams, a guard's
+    // spear), not his.
+    std::unordered_set<uint32_t> gear;
+    for (const auto &[obj, b] : boxes) {
+        if (obj == st.playerObj || tag.count(obj) || gCharacterObjs.count(obj) || b.polygons == 0 ||
+            (b.polygons & 0x80000000u) || b.polygons >= 60 || b.translucent * 2 > b.polygons)
+            continue;
+        if (std::max({b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]}) > 2.5) continue;
+        for (uint32_t c : gCharacterObjs) {
+            if (c == st.playerObj) continue;
+            const auto it = boxes.find(c);
+            if (it == boxes.end()) continue;
+            const Box &cb = it->second;
+            constexpr double kTouch = 0.3;
+            bool touching = true;
+            for (int k = 0; k < 3; ++k)
+                touching &= b.lo[k] < cb.hi[k] + kTouch && b.hi[k] > cb.lo[k] - kTouch;
+            if (touching) {
+                gear.insert(obj);
+                break;
+            }
+        }
+    }
+    for (WorldPoly &w : g.worldShown)
+        if (w.model == 0 && w.obj && w.obj != st.playerObj && (gCharacterObjs.count(w.obj) || gear.count(w.obj)))
+            w.model = kWorldModelCharacter;
+    // His hands: the polygons drawn from his hand joints (for your hands in first person).
+    {
+        uint32_t count[2] = {0, 0};
+        for (WorldPoly &w : g.worldShown) {
+            if (w.obj != st.playerObj) continue;
+            for (int a = 0; a < 2; ++a)
+                if (g.handShown[a] && w.pivot[0] == g.handPivotShown[a][0] && w.pivot[1] == g.handPivotShown[a][1] &&
+                    w.pivot[2] == g.handPivotShown[a][2]) {
+                    w.model = static_cast<uint8_t>(kWorldModelHand + a);
+                    ++count[a];
+                    break;
+                }
+        }
+        static uint32_t logged[2] = {~0u, ~0u};
+        if (count[0] != logged[0] || count[1] != logged[1]) {
+            logged[0] = count[0];
+            logged[1] = count[1];
+            Log("hands: his left hand %u polygons, right %u", count[0], count[1]);
+        }
+    }
+    // His Keyblade inside his own model: one joint's polygons (one position matrix), long and
+    // thin, about his height in length. With none attached, it is taken as the Keyblade.
+    std::unordered_map<uint32_t, std::vector<std::array<double, 3>>> joints;
+    std::unordered_map<uint32_t, uint32_t> jointPolygons;
+    for (const WorldPoly &w : g.worldShown) {
+        if (w.obj != st.playerObj || w.proj >= inScene.size() || !inScene[w.proj]) continue;
+        const Mat4d &m = toWorld[w.proj];
+        auto &pts = joints[w.joint];
+        ++jointPolygons[w.joint];
+        for (int i = 0; i < w.n; ++i) {
+            const Vertex &v = w.v[i];
+            const double x = v.px / 4096.0, y = v.py / 4096.0, z = v.pz / 4096.0;
+            pts.push_back({x * m[0] + y * m[4] + z * m[8] + m[12], x * m[1] + y * m[5] + z * m[9] + m[13],
+                           x * m[2] + y * m[6] + z * m[10] + m[14]});
+        }
+    }
+    st.playerJoints = static_cast<uint32_t>(joints.size());
+    // For his arms following yours (next): each joint's polygons, where they are in his model's own
+    // space (the vertices as given: a bind pose, or each joint's own space) and around his feet
+    // now, and their size. Into the boot log at most every half minute.
+    {
+        static auto last = std::chrono::steady_clock::time_point();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last > std::chrono::seconds(30)) {
+            last = now;
+            std::unordered_map<uint32_t, std::array<double, 9>> local;  // sum xyz, min xyz, max xyz
+            std::unordered_map<uint32_t, uint32_t> count;
+            for (const WorldPoly &w : g.worldShown) {
+                if (w.obj != st.playerObj) continue;
+                auto it = local.find(w.joint);
+                if (it == local.end()) it = local.emplace(w.joint, std::array<double, 9>{0, 0, 0, 1e9, 1e9, 1e9, -1e9, -1e9, -1e9}).first;
+                auto &a = it->second;
+                for (int i = 0; i < w.n; ++i) {
+                    const double p[3] = {w.v[i].lx, w.v[i].ly, w.v[i].lz};
+                    for (int k = 0; k < 3; ++k) {
+                        a[k] += p[k];
+                        a[3 + k] = std::min(a[3 + k], p[k]);
+                        a[6 + k] = std::max(a[6 + k], p[k]);
+                    }
+                    ++count[w.joint];
+                }
+            }
+            std::unordered_map<uint32_t, std::array<double, 3>> pivots;  // each joint's pivot, around his feet
+            for (const WorldPoly &w : g.worldShown) {
+                if (w.obj != st.playerObj || pivots.count(w.joint) || w.proj >= toWorld.size()) continue;
+                const Mat4d &m = toWorld[w.proj];
+                const double x = w.pivot[0] / 4096.0, y = w.pivot[1] / 4096.0, z = w.pivot[2] / 4096.0;
+                pivots[w.joint] = {x * m[0] + y * m[4] + z * m[8] + m[12] - player[0],
+                                   x * m[1] + y * m[5] + z * m[9] + m[13] - player[1],
+                                   x * m[2] + y * m[6] + z * m[10] + m[14] - player[2]};
+            }
+            std::vector<std::string> table;
+            int index = 0;
+            for (const auto &[joint, pts] : joints) {
+                double c[3] = {0, 0, 0};
+                for (const auto &p : pts)
+                    for (int k = 0; k < 3; ++k) c[k] += p[k] / pts.size();
+                const auto &a = local[joint];
+                const auto &pv = pivots[joint];
+                const double n = std::max<uint32_t>(count[joint], 1);
+                char line[256];
+                std::snprintf(line, sizeof line,
+                              "    joint %2d: %3u polygons, own space at %+.2f %+.2f %+.2f size %.2f %.2f %.2f; "
+                              "now at %+.2f %+.2f %+.2f, pivot %+.2f %+.2f %+.2f from his feet",
+                              index++, jointPolygons[joint], a[0] / n, a[1] / n, a[2] / n, a[6] - a[3], a[7] - a[4],
+                              a[8] - a[5], c[0] - player[0], c[1] - player[1], c[2] - player[2], pv[0], pv[1], pv[2]);
+                table.push_back(line);
+            }
+            std::lock_guard<std::mutex> lock(gJointTableMu);
+            gJointTable = table;
+        }
+    }
+    st.keyJointPolygons = 0;
+    st.keyJointLength = 0;
+    uint32_t keyJoint = 0;
+    double bestLength = 0;
+    for (const auto &[joint, pts] : joints) {
+        if (jointPolygons[joint] < 12) continue;
+        // Its length: the two points farthest apart (from the first, then from that one); its
+        // width: the farthest any point lies off the line between them.
+        auto far = [&](const std::array<double, 3> &from) {
+            const std::array<double, 3> *best = &from;
+            double d = -1;
+            for (const auto &p : pts) {
+                const double e = (p[0] - from[0]) * (p[0] - from[0]) + (p[1] - from[1]) * (p[1] - from[1]) +
+                                 (p[2] - from[2]) * (p[2] - from[2]);
+                if (e > d) { d = e; best = &p; }
+            }
+            return *best;
+        };
+        const auto a = far(pts[0]), b = far(a);
+        const double ab[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+        const double length = std::sqrt(ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]);
+        if (length < 0.6 || length > 2.5) continue;
+        double width = 0;
+        for (const auto &p : pts) {
+            const double ap[3] = {p[0] - a[0], p[1] - a[1], p[2] - a[2]};
+            const double c[3] = {ap[1] * ab[2] - ap[2] * ab[1], ap[2] * ab[0] - ap[0] * ab[2], ap[0] * ab[1] - ap[1] * ab[0]};
+            width = std::max(width, std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]) / length);
+        }
+        if (width > 0.3 * length || length <= bestLength) continue;
+        bestLength = length;
+        keyJoint = joint;
+    }
+    // (Not used: one of his own joints taken for the Keyblade when none was in his actor caught
+    // other long thin parts of him. His Keyblade is the model in his actor.)
+    if (false && keyJoint && !st.attachedObj[0]) {
+        st.keyJointPolygons = jointPolygons[keyJoint];
+        st.keyJointLength = static_cast<float>(bestLength);
+        for (WorldPoly &w : g.worldShown)
+            if (w.obj == st.playerObj && w.joint == keyJoint) w.model = kWorldModelAttached;
+    }
+}
+
+// Sprites on characters: how many captures in a row each (model, texture) has faced the camera.
+constexpr int kCharSpriteFrames = 30;
+std::unordered_map<uint64_t, int> gCharSpriteRuns;
+std::unordered_map<uint64_t, uint8_t> gCharSpritesNow;
+struct CharSpriteTurn {
+    double first[3] = {0, 0, 0};  // its normal when first seen facing the camera
+    bool has = false, turned = false;
+};
+std::unordered_map<uint64_t, CharSpriteTurn> gCharSpriteTurns;
+
+constexpr int kStaticRunToShow = 6;  // captures of static before its card shows
 
 void GxCaptureWorld(PlatformWorld *out) {
+    std::lock_guard<std::mutex> lock(gShownMu);
+    gCharSpritesNow.clear();
+    std::unordered_map<int32_t, bool> blackCards;  // per texture: an all-black captured picture
+    // Static must hold a few captures before its card shows (the cards before and after it, dark
+    // and still, flickered in for a frame); with none this capture, it goes at once.
+    static int sStaticRun = 0;
+    bool staticSeen = false;
+    struct RunsUpdate {
+        ~RunsUpdate() {
+            std::unordered_map<uint64_t, int> next;
+            for (const auto &[k, v] : gCharSpritesNow) {
+                const int run = gCharSpriteRuns.count(k) ? gCharSpriteRuns[k] : 0;
+                // Facing the camera this frame, one more; once established, kept while drawn.
+                if (v == 1) next[k] = std::min(run + 1, 1 << 20);
+                else if (run >= kCharSpriteFrames || (run >= 1 && gCharSpriteTurns.count(k) && gCharSpriteTurns[k].turned))
+                    next[k] = run;
+            }
+            gCharSpriteRuns.swap(next);
+            // A run that broke starts its turn afresh.
+            for (auto t = gCharSpriteTurns.begin(); t != gCharSpriteTurns.end();)
+                t = gCharSpriteRuns.count(t->first) ? std::next(t) : gCharSpriteTurns.erase(t);
+        }
+    } runsUpdate;
+    out->lockOn = g.lockOnShown;
+    std::copy(g.lockOnShownAt, g.lockOnShownAt + 3, out->lockOnAt);
+    out->lockOnKind = g.lockOnShownKind;
+    out->lockOnLocked = g.lockOnShownLocked;
     out->vertices.clear();
     out->triangleTexture.clear();
     out->triangleFlags.clear();
     out->textures.clear();
+    out->triangleModel.clear();
+    out->local.clear();
     out->hasCamera = false;
+    out->worldSpace = false;
+    out->eventScene = false;
+    out->capturedPicture = false;
+    out->alternatingScreens = g.alternatingHold > 0;
     out->polygonsLeftOut = 0;
     if (g.worldShown.empty()) return;
-    Mat4d lensD, cameraD, lensInv, cameraInv;
-    if (!ReadLensAndCamera(&lensInv, &cameraInv, &lensD, &cameraD)) return;
-    std::vector<Mat4d> toWorld(g.projShown.size());
-    std::vector<bool> inScene(g.projShown.size(), false);
-    for (size_t i = 0; i < g.projShown.size(); ++i) inScene[i] = InScene(g.projShown[i], lensInv, cameraInv, &toWorld[i]);
+    if (!g.sceneKnown) return;
+    const Mat4d &lensD = g.sceneLens, &cameraD = g.sceneCamera, &cameraInv = g.sceneCameraInv;
+    const std::vector<Mat4d> &toWorld = g.toWorldShown;
+    std::vector<bool> inScene(g.inSceneShown.begin(), g.inSceneShown.end());
 
     out->hasCamera = true;
+    out->worldSpace = g.sceneHasCamera;
+    out->manualSort = g.shownManualSort;
+    out->eventScene = g.eventScene;
     for (int i = 0; i < 16; ++i) {
         out->lens[i] = static_cast<float>(lensD[i]);
         out->view[i] = static_cast<float>(cameraD[i]);
@@ -1323,23 +2259,103 @@ void GxCaptureWorld(PlatformWorld *out) {
         return index;
     };
 
+    out->billboard.clear();
+    // Sprites, two kinds. Facing the camera: runs of polygons with one texture whose every vertex
+    // lies at one depth in front of the game's camera (munny, orbs, effects). Upright: see-through
+    // polygons standing straight up, turned square to the camera about the vertical (trees). Each
+    // sprite has a frame in the world (an origin, its right and up) and its vertices' places in it;
+    // the centre is the middle of its extent.
+    struct Sprite {
+        int mode = 0;  // 0 none, 1 facing the camera, 2 upright
+        size_t firstVertex = 0;
+        int32_t tex = -2;
+        uint16_t proj = 0;
+        double key[4] = {};  // facing: depth; upright: the plane's normal (x, z) and offset
+        double origin[3] = {}, right[3] = {}, up[3] = {};
+        double x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+        std::vector<std::array<double, 2>> across;  // per vertex: along right, along up
+    } sprite;
+    auto endSprite = [&]() {
+        if (sprite.mode == 0) return;
+        if (out->billboard.empty()) out->billboard.assign(out->vertices.size() * kWorldBillboardFloats, 0.0f);
+        out->billboard.resize(out->vertices.size() * kWorldBillboardFloats, 0.0f);
+        const double cx = (sprite.x0 + sprite.x1) / 2, cy = (sprite.y0 + sprite.y1) / 2;
+        double wc[3];
+        for (int k = 0; k < 3; ++k) wc[k] = sprite.origin[k] + sprite.right[k] * cx + sprite.up[k] * cy;
+        for (size_t i = 0; i < sprite.across.size(); ++i) {
+            float *b = &out->billboard[(sprite.firstVertex + i) * kWorldBillboardFloats];
+            b[0] = static_cast<float>(wc[0]);
+            b[1] = static_cast<float>(wc[1]);
+            b[2] = static_cast<float>(wc[2]);
+            b[3] = static_cast<float>(sprite.across[i][0] - cx);
+            b[4] = static_cast<float>(sprite.across[i][1] - cy);
+            b[5] = static_cast<float>(sprite.mode);
+        }
+        for (size_t v = sprite.firstVertex; v < out->vertices.size(); v += 3) out->triangleFlags[v / 3] |= kWorldBillboard;
+        sprite.mode = 0;
+        sprite.across.clear();
+    };
+    float player[3] = {0, 0, 0};
+    const bool hasPlayer = SwapPlayerPosition(player);
+    TagPlayerModels(hasPlayer ? player : nullptr, toWorld, inScene);
+    std::vector<const WorldPoly *> flatPieces;  // drawn with another projection, in screen order
     for (const WorldPoly &w : g.worldShown) {
+        const size_t index = static_cast<size_t>(&w - g.worldShown.data());
+        if (index < g.hudShown.size() && g.hudShown[index]) {
+            ++out->polygonsLeftOut;  // a HUD piece in front of the game's camera: on the HUD
+            ++gWorldStats.hudPieces;
+            continue;
+        }
         if (w.proj >= inScene.size() || !inScene[w.proj]) {
             ++out->polygonsLeftOut;
+            flatPieces.push_back(&w);
             continue;
         }
         const uint32_t alpha = (w.attr >> 16) & 31;
-        if (alpha == 0) continue;  // wireframe
+        const bool wire = alpha == 0;  // wireframe: its edges, opaque
         const Mat4d &m = toWorld[w.proj];
         const int32_t tex = texture(w.texParam, w.palBase);
         const uint32_t format = (w.texParam >> 26) & 7;
         uint8_t flags = 0;
         if (w.attr & 0x80) flags |= kWorldFront;
         if (w.attr & 0x40) flags |= kWorldBack;
-        if (alpha < 31 || (tex >= 0 && (format == 1 || format == 6))) flags |= kWorldTranslucent;
+        if (!wire && (alpha < 31 || (tex >= 0 && (format == 1 || format == 6)))) flags |= kWorldTranslucent;
         if (alpha == 31 && (flags & kWorldTranslucent)) flags |= kWorldTexAlpha;
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
+        bool staticCard = false;
+        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) {
+            out->capturedPicture = true;
+            // A captured picture (the DS's own screen, shown on a card) shows only while it is
+            // static (neighbouring texels far apart on average, as no drawn picture is): Agrabah's
+            // two-screen cutscene keeps one before you, dark but for the static part, and it hid
+            // the scene behind it. Shown, it is drawn nearly opaque (the game's is faint in VR).
+            auto known = blackCards.find(tex);
+            if (known == blackCards.end()) {
+                const PlatformWorldTexture &t = out->textures[tex];
+                uint64_t diff = 0, n = 0;
+                for (int y = 0; y < t.height; y += 3)
+                    for (int x = 0; x + 1 < t.width; x += 3) {
+                        const uint32_t a = t.rgba[static_cast<size_t>(y) * t.width + x], b = t.rgba[static_cast<size_t>(y) * t.width + x + 1];
+                        for (int k = 0; k < 24; k += 8) diff += std::abs(int((a >> k) & 255) - int((b >> k) & 255));
+                        ++n;
+                    }
+                known = blackCards.emplace(tex, !(n > 0 && diff > 36 * n)).first;
+            }
+            if (known->second) continue;
+            staticSeen = true;
+            if (!gCapturedCards.load()) continue;
+            if (sStaticRun < kStaticRunToShow) continue;
+            staticCard = true;
+        }
+        // Thin see-through pieces (cloth, leaves, banners: alpha, or a palette whose colour 0 is
+        // transparent) show both sides: the DS draws one, the side its camera sees, and from
+        // where you stand you may see the other (a stall's awning from under it went).
+        if (!wire && tex >= 0 && ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1)))
+            flags |= kWorldFront | kWorldBack;
+        // An event scene's set is built for its camera, one side to each wall; standing in it you
+        // may see a wall from the other side (Axel's mission: a wall gone in the cutscene).
+        if (!wire && g.eventScene) flags |= kWorldFront | kWorldBack;
         PlatformWorldVertex pv[4];
         for (int i = 0; i < w.n; ++i) {
             const Vertex &v = w.v[i];
@@ -1348,13 +2364,265 @@ void GxCaptureWorld(PlatformWorld *out) {
             pv[i].y = static_cast<float>(x * m[1] + y * m[5] + z * m[9] + m[13]);
             pv[i].z = static_cast<float>(x * m[2] + y * m[6] + z * m[10] + m[14]);
             if (tex >= 0) {
-                pv[i].u = v.s / out->textures[tex].width;
+                pv[i].u = v.s / out->textures[tex].width;  // (inset below when it does not tile)
                 pv[i].v = v.t / out->textures[tex].height;
             } else {
                 pv[i].u = pv[i].v = 0;
             }
             auto ch = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 63.0f) * 255 / 63); };
-            pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((alpha * 255 / 31) << 24);
+            pv[i].color = ch(v.r) | (ch(v.g) << 8) | (ch(v.b) << 16) | ((wire ? 255u : alpha * 255 / 31) << 24);
+        }
+        if (staticCard)
+            for (int i = 0; i < w.n; ++i) {
+                const uint32_t a = std::max<uint32_t>(pv[i].color >> 24, 0xe0);
+                pv[i].color = (pv[i].color & 0xffffffu) | (a << 24);
+            }
+        if (tex >= 0) {
+            // A polygon that shows its texture once (not tiled) samples it no closer than half a
+            // texel to its edges: smoothed, the edge took the colour of the far side (a texture
+            // wraps) and drew it as a thin line along the polygon (above the tips of Roxas's hair).
+            bool once = true;
+            for (int i = 0; i < w.n && once; ++i)
+                once = pv[i].u >= -1e-4f && pv[i].u <= 1.0001f && pv[i].v >= -1e-4f && pv[i].v <= 1.0001f;
+            if (once) {
+                const float hu = 0.5f / out->textures[tex].width, hv = 0.5f / out->textures[tex].height;
+                for (int i = 0; i < w.n; ++i) {
+                    pv[i].u = std::clamp(pv[i].u, hu, 1.0f - hu);
+                    pv[i].v = std::clamp(pv[i].v, hv, 1.0f - hv);
+                }
+            }
+        }
+        // Sprites have see-through textures (alpha, or a palette whose colour 0 is transparent):
+        // a face's or a table's solid polygons that happen to lie square to the camera for a frame
+        // are none. Nor is anything on Roxas.
+        bool spriteLike = g.sceneHasCamera && !wire && tex >= 0 &&
+                          ((flags & kWorldTranslucent) || ((w.texParam >> 29) & 1));
+        // On a character (a face's decals flickered, flat to the camera now and then; a Moogle's
+        // pom-pom faces it always): one only once it has kept facing the camera a while.
+        const bool onCharacter = w.obj && gCharacterObjs.count(w.obj);
+        const uint64_t charKey = Fnv(&w.obj, 4, Fnv(&w.texParam, 4, Fnv(&w.palBase, 4)));
+        if (spriteLike && gWorldStats.playerObj) {
+            // Roxas's own models are known (TagPlayerModels): none of theirs, and everything else
+            // may be, however near him (sprites near you in first person kept facing the game's
+            // camera, behind him).
+            spriteLike = w.model == 0;
+        } else if (spriteLike && hasPlayer) {
+            double cx = 0, cy = 0, cz = 0;
+            for (int i = 0; i < w.n; ++i) {
+                cx += pv[i].x / w.n;
+                cy += pv[i].y / w.n;
+                cz += pv[i].z / w.n;
+            }
+            const double dx = cx - player[0], dy = cy - (player[1] + 0.8), dz = cz - player[2];
+            spriteLike = dx * dx + dz * dz > 1.5 * 1.5 || dy < -1.5 || dy > 1.8;
+        }
+        // A sprite facing the camera: flat across its view (camera space z alike), sprite-sized.
+        double cs[4][3];
+        int mode = 0;
+        double key[4] = {}, origin[3] = {}, right[3] = {}, up[3] = {};
+        double along[4][2];
+        const double *ci = cameraInv.data();
+        bool flat = spriteLike;
+        for (int i = 0; flat && i < w.n; ++i) {
+            const double *c = cameraD.data();
+            const double x = pv[i].x, y = pv[i].y, z = pv[i].z;
+            cs[i][0] = x * c[0] + y * c[4] + z * c[8] + c[12];
+            cs[i][1] = x * c[1] + y * c[5] + z * c[9] + c[13];
+            cs[i][2] = x * c[2] + y * c[6] + z * c[10] + c[14];
+            flat = cs[i][2] < 0 && std::fabs(cs[i][2] - cs[0][2]) < 0.004 + 0.001 * std::fabs(cs[0][2]);
+        }
+        if (flat) {
+            // Facing sprites are small; a wall the camera happens to face square on is not one.
+            double x0 = cs[0][0], x1 = x0, y0 = cs[0][1], y1 = y0;
+            for (int i = 1; i < w.n; ++i) {
+                x0 = std::min(x0, cs[i][0]); x1 = std::max(x1, cs[i][0]);
+                y0 = std::min(y0, cs[i][1]); y1 = std::max(y1, cs[i][1]);
+            }
+            // They may be large (a tree's cut-out): no wall is see-through. Far off, larger still
+            // (the sun low over the hills, Day 23's sunset): left flat, facing the game's camera,
+            // it showed edge-on to where you stand, a thin streak.
+            const double depth = std::fabs(cs[0][2]);
+            const double most = std::max(8.0, 0.3 * depth);
+            flat = x1 - x0 > 0.01 && y1 - y0 > 0.01 && x1 - x0 < most && y1 - y0 < most * 1.5;
+            // A large one standing straight up (a tree) is an upright sprite rather (below): it
+            // stays upright when you look down at it.
+            if (flat && depth < 40.0 && !(x1 - x0 < 1.2 && y1 - y0 < 1.2)) {
+                const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
+                const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
+                const double n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+                const double len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                if (len > 1e-9 && std::fabs(n[1] / len) < 0.02) flat = false;
+            }
+        }
+        if (flat) {
+            mode = 1;
+            key[0] = cs[0][2];
+            for (int k = 0; k < 3; ++k) {
+                origin[k] = cs[0][2] * ci[8 + k] + ci[12 + k];  // on the camera's axis at that depth
+                right[k] = ci[k];
+                up[k] = ci[4 + k];
+            }
+            for (int i = 0; i < w.n; ++i) {
+                along[i][0] = cs[i][0];
+                along[i][1] = cs[i][1];
+            }
+        } else if (spriteLike) {
+            // An upright sprite: a see-through polygon (alpha, or a palette whose colour 0 is
+            // transparent: TEXIMAGE_PARAM bit 29) standing straight up, square to the camera about
+            // the vertical (its normal along the way to the camera, or the way it looks), to the
+            // precision of the game's own turning (a couple of degrees).
+            const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
+            const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
+            double n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+            const double len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            double centre[3] = {0, 0, 0};
+            for (int i = 0; i < w.n; ++i) {
+                centre[0] += pv[i].x / w.n;
+                centre[1] += pv[i].y / w.n;
+                centre[2] += pv[i].z / w.n;
+            }
+            auto flatUnit = [](double x, double z, double *ox, double *oz) {
+                const double l = std::sqrt(x * x + z * z);
+                if (l < 1e-9) return false;
+                *ox = x / l;
+                *oz = z / l;
+                return true;
+            };
+            double nx, nz, tx, tz, fx, fz;
+            if (len > 1e-9 && std::fabs(n[1] / len) < 0.02 && flatUnit(n[0], n[2], &nx, &nz) &&
+                flatUnit(ci[12] - centre[0], ci[14] - centre[2], &tx, &tz) && flatUnit(-ci[8], -ci[10], &fx, &fz)) {
+                const double toCamera = nx * tx + nz * tz, looking = -(nx * fx + nz * fz);
+                const double square = std::cos(2.0 * 3.14159265358979 / 180);
+                if (std::fabs(toCamera) > square || std::fabs(looking) > square) {
+                    const double s = (std::fabs(toCamera) > square ? toCamera : looking) < 0 ? -1 : 1;
+                    nx *= s;
+                    nz *= s;
+                    // Right: up x normal.
+                    right[0] = nz; right[1] = 0; right[2] = -nx;
+                    up[0] = 0; up[1] = 1; up[2] = 0;
+                    origin[0] = pv[0].x; origin[1] = 0; origin[2] = pv[0].z;
+                    double a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9;
+                    for (int i = 0; i < w.n; ++i) {
+                        along[i][0] = (pv[i].x - origin[0]) * right[0] + (pv[i].z - origin[2]) * right[2];
+                        along[i][1] = pv[i].y;
+                        a0 = std::min(a0, along[i][0]); a1 = std::max(a1, along[i][0]);
+                        b0 = std::min(b0, along[i][1]); b1 = std::max(b1, along[i][1]);
+                    }
+                    if (a1 - a0 > 0.05 && a1 - a0 < 6 && b1 - b0 > 0.05 && b1 - b0 < 12) {
+                        mode = 2;
+                        key[0] = nx;
+                        key[1] = nz;
+                        key[2] = nx * pv[0].x + nz * pv[0].z;
+                    }
+                }
+            }
+        }
+        // Any sprite: one only once it has turned with the game's camera (a window or a plate on a
+        // wall the camera looks at square on never does). On a character, also a while facing it.
+        if (spriteLike) {
+            auto &now = gCharSpritesNow[charKey];
+            now = (now == 0 ? 1 : now) & (mode != 0 ? 1 : 2);  // 1 all facing, 2 or 0 not all
+            // It must have turned with the camera while facing it (a billboard does; hair facing a
+            // camera kept behind Roxas does not): its world normal moved 15 degrees from the first.
+            if (mode != 0) {
+                const double e1[3] = {pv[1].x - pv[0].x, pv[1].y - pv[0].y, pv[1].z - pv[0].z};
+                const double e2[3] = {pv[2].x - pv[0].x, pv[2].y - pv[0].y, pv[2].z - pv[0].z};
+                double nn[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+                const double l = std::sqrt(nn[0] * nn[0] + nn[1] * nn[1] + nn[2] * nn[2]);
+                if (l > 1e-9) {
+                    CharSpriteTurn &t = gCharSpriteTurns[charKey];
+                    for (double &c : nn) c /= l;
+                    if (!t.has) {
+                        std::copy(nn, nn + 3, t.first);
+                        t.has = true;
+                    } else if (std::fabs(nn[0] * t.first[0] + nn[1] * t.first[1] + nn[2] * t.first[2]) < 0.966) {
+                        t.turned = true;
+                    }
+                }
+            }
+            auto it = gCharSpriteRuns.find(charKey);
+            auto turn = gCharSpriteTurns.find(charKey);
+            const bool established = it != gCharSpriteRuns.end() && it->second >= (onCharacter ? kCharSpriteFrames : 1) &&
+                                     turn != gCharSpriteTurns.end() && turn->second.turned;
+            if (!established) {
+                mode = 0;
+            } else if (mode == 0 && onCharacter) {
+                // Up close it is no longer flat across the game's view (a Moogle's pom-pom near
+                // your face): still the sprite it was, facing you.
+                const double *c = cameraD.data();
+                mode = 1;
+                for (int i = 0; i < w.n; ++i) {
+                    const double x = pv[i].x, y = pv[i].y, z = pv[i].z;
+                    cs[i][0] = x * c[0] + y * c[4] + z * c[8] + c[12];
+                    cs[i][1] = x * c[1] + y * c[5] + z * c[9] + c[13];
+                    cs[i][2] = x * c[2] + y * c[6] + z * c[10] + c[14];
+                    if (cs[i][2] >= 0) mode = 0;  // behind the camera
+                }
+                if (mode == 1) {
+                    double z = 0;
+                    for (int i = 0; i < w.n; ++i) z += cs[i][2] / w.n;
+                    key[0] = z;
+                    for (int k = 0; k < 3; ++k) {
+                        origin[k] = z * ci[8 + k] + ci[12 + k];
+                        right[k] = ci[k];
+                        up[k] = ci[4 + k];
+                    }
+                    for (int i = 0; i < w.n; ++i) {
+                        along[i][0] = cs[i][0];
+                        along[i][1] = cs[i][1];
+                    }
+                }
+            }
+        }
+        flat = mode != 0;
+        if (flat) {
+            double x0 = along[0][0], x1 = x0, y0 = along[0][1], y1 = y0;
+            for (int i = 1; i < w.n; ++i) {
+                x0 = std::min(x0, along[i][0]); x1 = std::max(x1, along[i][0]);
+                y0 = std::min(y0, along[i][1]); y1 = std::max(y1, along[i][1]);
+            }
+            const double tol = mode == 1 ? 0.004 + 0.001 * std::fabs(key[0]) : 0.01;
+            const bool same = sprite.mode == mode && sprite.tex == tex && sprite.proj == w.proj &&
+                              (mode == 1 ? std::fabs(sprite.key[0] - key[0]) < tol
+                                         : std::fabs(sprite.key[0] - key[0]) < 1e-3 &&
+                                               std::fabs(sprite.key[1] - key[1]) < 1e-3 &&
+                                               std::fabs(sprite.key[2] - key[2]) < tol);
+            if (!same) {
+                endSprite();
+                sprite.mode = mode;
+                sprite.tex = tex;
+                sprite.proj = w.proj;
+                std::copy(key, key + 4, sprite.key);
+                std::copy(origin, origin + 3, sprite.origin);
+                std::copy(right, right + 3, sprite.right);
+                std::copy(up, up + 3, sprite.up);
+                sprite.firstVertex = out->vertices.size();
+                sprite.x0 = x0; sprite.x1 = x1; sprite.y0 = y0; sprite.y1 = y1;
+            } else {
+                // Places in the run's own frame (an upright run shares its plane, so its origin).
+                if (mode == 2)
+                    for (int i = 0; i < w.n; ++i)
+                        along[i][0] = (pv[i].x - sprite.origin[0]) * sprite.right[0] + (pv[i].z - sprite.origin[2]) * sprite.right[2];
+                if (mode == 2) {
+                    x0 = x1 = along[0][0];
+                    for (int i = 1; i < w.n; ++i) { x0 = std::min(x0, along[i][0]); x1 = std::max(x1, along[i][0]); }
+                }
+                sprite.x0 = std::min(sprite.x0, x0); sprite.x1 = std::max(sprite.x1, x1);
+                sprite.y0 = std::min(sprite.y0, y0); sprite.y1 = std::max(sprite.y1, y1);
+            }
+            for (int i = 1; i + 1 < w.n; ++i)
+                for (int k : {0, i, i + 1}) sprite.across.push_back({along[k][0], along[k][1]});
+        }
+        if (!flat) endSprite();
+        if (wire) {
+            for (int i = 0; i < w.n; ++i) {
+                out->vertices.push_back(pv[i]);
+                out->vertices.push_back(pv[(i + 1) % w.n]);
+                out->vertices.push_back(pv[(i + 1) % w.n]);
+                out->triangleTexture.push_back(tex);
+                out->triangleFlags.push_back(static_cast<uint8_t>(kWorldLine | kWorldFront | kWorldBack));
+            }
+            continue;
         }
         for (int i = 1; i + 1 < w.n; ++i) {
             out->vertices.push_back(pv[0]);
@@ -1362,12 +2630,37 @@ void GxCaptureWorld(PlatformWorld *out) {
             out->vertices.push_back(pv[i + 1]);
             out->triangleTexture.push_back(tex);
             out->triangleFlags.push_back(flags);
+            if (w.model) {
+                // Roxas's: which of his models, and where in its own space (for his Keyblade in
+                // your hand). The rest stay zero.
+                out->triangleModel.resize(out->triangleFlags.size(), 0);
+                out->triangleModel.back() = w.model;
+                out->local.resize(out->vertices.size() * 3, 0.0f);
+                for (int k = 0; k < 3; ++k) {
+                    const Vertex &v = w.v[k == 0 ? 0 : i + k - 1];
+                    float *l = &out->local[(out->vertices.size() - 3 + k) * 3];
+                    l[0] = v.lx;
+                    l[1] = v.ly;
+                    l[2] = v.lz;
+                }
+            }
         }
     }
-    out->viewport[0] = g.vpX1;
-    out->viewport[1] = g.vpY1;
-    out->viewport[2] = g.vpX2;
-    out->viewport[3] = g.vpY2;
+    endSprite();
+    if (!out->triangleModel.empty()) {
+        out->triangleModel.resize(out->triangleFlags.size(), 0);
+        out->local.resize(out->vertices.size() * 3, 0.0f);
+    }
+    if (g.sceneHasCamera && !flatPieces.empty()) PlaceMarkers(out, flatPieces, texture);
+    if (!out->billboard.empty()) out->billboard.resize(out->vertices.size() * kWorldBillboardFloats, 0.0f);
+    // BG0's horizontal scroll moves the whole 3D layer on the screen (render2d.cpp, Bg0Scroll3d):
+    // the world is drawn that much the other way.
+    int scroll = IoReg16(0x10) & 511;
+    if (scroll >= 256) scroll -= 512;
+    out->viewport[0] = g.shownVp[0] - scroll;
+    out->viewport[1] = g.shownVp[1];
+    out->viewport[2] = g.shownVp[2] - scroll;
+    out->viewport[3] = g.shownVp[3];
     // Fades: engine A's BLDY brightness when the 3D layer (BG0) is its first target, then its
     // master brightness.
     const uint16_t bldcnt = IoReg16(0x50), master = IoReg16(0x6c);
@@ -1379,7 +2672,213 @@ void GxCaptureWorld(PlatformWorld *out) {
     gWorldStats.triangles = static_cast<uint32_t>(out->triangleTexture.size());
     gWorldStats.textures = static_cast<uint32_t>(out->textures.size());
     gWorldStats.leftOut = out->polygonsLeftOut;
+    sStaticRun = staticSeen ? std::min(sStaticRun + 1, 1000) : 0;
     ++gWorldStats.captures;
+}
+
+void GxSetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid) {
+    std::lock_guard<std::mutex> lock(gArm.mu);
+    gArm.on = on;
+    gArm.valid[0] = leftValid;
+    gArm.valid[1] = rightValid;
+    for (int k = 0; k < 3; ++k) {
+        gArm.world[0][k] = left[k];
+        gArm.world[1][k] = right[k];
+    }
+}
+
+namespace {
+// Each arm's joints as the game poses them, frame after frame (the guest thread only): the
+// forearm's pivot in the upper arm's own space and the hand's in the forearm's, and this
+// frame's upper arm and forearm after they were turned.
+struct ArmChain {
+    uint32_t namesOf = 0;
+    int upper[2] = {-1, -1}, fore[2] = {-1, -1}, hand[2] = {-1, -1};
+    bool hasOffFore[2] = {}, hasOffHand[2] = {};
+    double offFore[2][3] = {}, offHand[2][3] = {};
+    double rot[2][2][9] = {}, trans[2][2][3] = {};  // [arm][0 upper, 1 forearm]
+    bool seen[2][2] = {};
+};
+ArmChain gChain;
+
+void RotOf(const Mtx &m, double r[9], double t[3]) {
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) r[i * 3 + j] = m[i * 4 + j] / 4096.0;
+        t[i] = m[12 + i] / 4096.0;
+    }
+}
+
+// p * inverse(r), row vectors (r may hold a scale).
+bool ToLocal(const double r[9], const double p[3], double out[3]) {
+    const double det = r[0] * (r[4] * r[8] - r[5] * r[7]) - r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+    if (std::fabs(det) < 1e-12) return false;
+    double inv[9] = {(r[4] * r[8] - r[5] * r[7]) / det, (r[2] * r[7] - r[1] * r[8]) / det, (r[1] * r[5] - r[2] * r[4]) / det,
+                     (r[5] * r[6] - r[3] * r[8]) / det, (r[0] * r[8] - r[2] * r[6]) / det, (r[2] * r[3] - r[0] * r[5]) / det,
+                     (r[3] * r[7] - r[4] * r[6]) / det, (r[1] * r[6] - r[0] * r[7]) / det, (r[0] * r[4] - r[1] * r[3]) / det};
+    for (int j = 0; j < 3; ++j) out[j] = p[0] * inv[j] + p[1] * inv[3 + j] + p[2] * inv[6 + j];
+    return true;
+}
+
+void ToSpace(const double r[9], const double t[3], const double l[3], double out[3]) {
+    for (int j = 0; j < 3; ++j) out[j] = l[0] * r[j] + l[1] * r[3 + j] + l[2] * r[6 + j] + t[j];
+}
+
+double Len(const double v[3]) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+
+// The rotation (row vectors: v * R) that turns direction u onto direction v.
+bool TurnOnto(const double u0[3], const double v0[3], double R[9]) {
+    const double lu = Len(u0), lv = Len(v0);
+    if (lu < 1e-9 || lv < 1e-9) return false;
+    const double u[3] = {u0[0] / lu, u0[1] / lu, u0[2] / lu}, v[3] = {v0[0] / lv, v0[1] / lv, v0[2] / lv};
+    double a[3] = {u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]};
+    const double s = Len(a), c = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    if (s < 1e-9) {
+        if (c > 0) {
+            for (int i = 0; i < 9; ++i) R[i] = i % 4 == 0 ? 1.0 : 0.0;
+            return true;
+        }
+        return false;  // straight back: no single way round
+    }
+    for (double &x : a) x /= s;
+    // Rodrigues (column vectors), then transposed for row vectors.
+    const double t = 1 - c;
+    const double C[9] = {c + a[0] * a[0] * t, a[0] * a[1] * t - a[2] * s, a[0] * a[2] * t + a[1] * s,
+                         a[1] * a[0] * t + a[2] * s, c + a[1] * a[1] * t, a[1] * a[2] * t - a[0] * s,
+                         a[2] * a[0] * t - a[1] * s, a[2] * a[1] * t + a[0] * s, c + a[2] * a[2] * t};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) R[i * 3 + j] = C[j * 3 + i];
+    return true;
+}
+
+// The current position and vector matrices' rows turned by R (the joint's pivot stays).
+void TurnCurrent(const double R[9]) {
+    for (Mtx *m : {&g.pos, &g.vec}) {
+        for (int i = 0; i < 3; ++i) {
+            const double row[3] = {(*m)[i * 4] / 4096.0, (*m)[i * 4 + 1] / 4096.0, (*m)[i * 4 + 2] / 4096.0};
+            for (int j = 0; j < 3; ++j)
+                (*m)[i * 4 + j] = static_cast<int32_t>(std::lround(
+                    (row[0] * R[j] + row[1] * R[3 + j] + row[2] * R[6 + j]) * 4096.0));
+        }
+    }
+    g.clipDirty = true;
+}
+}  // namespace
+
+void GxJoint(uint32_t obj, uint32_t node) {
+    double target[2][3];
+    bool valid[2];
+    Mat4d worldToPos;
+    {
+        std::lock_guard<std::mutex> lock(gArm.mu);
+        if (!obj || obj != gArm.obj) return;
+        valid[0] = gArm.on && gArm.hasXform && gArm.valid[0];
+        valid[1] = gArm.on && gArm.hasXform && gArm.valid[1];
+        worldToPos = gArm.worldToPos;
+        for (int a = 0; a < 2; ++a)
+            for (int k = 0; k < 3; ++k) target[a][k] = gArm.world[a][k];
+    }
+    ArmChain &c = gChain;
+    if (c.namesOf != obj) {
+        // His skeleton's arm joints, by name (a 3ds Max biped: Bip01_R_UpperArm ...).
+        c = ArmChain();
+        c.namesOf = obj;
+        static const char *const kNames[2][3] = {{"Bip01_L_UpperArm", "Bip01_L_Forearm", "Bip01_L_Hand"},
+                                                 {"Bip01_R_UpperArm", "Bip01_R_Forearm", "Bip01_R_Hand"}};
+        for (int a = 0; a < 2; ++a) {
+            c.upper[a] = ModelJointIndex(obj, kNames[a][0]);
+            c.fore[a] = ModelJointIndex(obj, kNames[a][1]);
+            c.hand[a] = ModelJointIndex(obj, kNames[a][2]);
+        }
+    }
+    const int n = static_cast<int>(node);
+    for (int a = 0; a < 2; ++a) {
+        if (n != c.upper[a] && n != c.fore[a] && n != c.hand[a]) continue;
+        double r[9], t[3];
+        RotOf(g.pos, r, t);
+        // Your hand, in the space his joints' matrices are in.
+        double p[3];
+        for (int j = 0; j < 3; ++j)
+            p[j] = target[a][0] * worldToPos[j] + target[a][1] * worldToPos[4 + j] + target[a][2] * worldToPos[8 + j] +
+                   worldToPos[12 + j];
+        const bool solve = valid[a] && c.hasOffFore[a] && c.hasOffHand[a];
+        if (n == c.upper[a]) {
+            if (solve) {
+                // Two bones from the shoulder S: the elbow E' on the side the game's own pose bends
+                // it, the upper arm turned so its elbow goes there.
+                double e[3];
+                ToSpace(r, t, c.offFore[a], e);
+                const double se[3] = {e[0] - t[0], e[1] - t[1], e[2] - t[2]};
+                const double la = Len(se);
+                // The forearm's length (its own scale taken as the upper arm's).
+                const double zero[3] = {0, 0, 0};
+                double lb3[3];
+                ToSpace(r, zero, c.offHand[a], lb3);
+                const double lb = Len(lb3);
+                double sp[3] = {p[0] - t[0], p[1] - t[1], p[2] - t[2]};
+                double d = Len(sp);
+                if (la > 1e-6 && lb > 1e-6 && d > 1e-6) {
+                    const double nrm[3] = {sp[0] / d, sp[1] / d, sp[2] / d};
+                    d = std::clamp(d, std::fabs(la - lb) + 1e-4, (la + lb) * 0.999);
+                    const double x = (la * la - lb * lb + d * d) / (2 * d);
+                    const double h = std::sqrt(std::max(0.0, la * la - x * x));
+                    const double along = se[0] * nrm[0] + se[1] * nrm[1] + se[2] * nrm[2];
+                    double pole[3] = {se[0] - nrm[0] * along, se[1] - nrm[1] * along, se[2] - nrm[2] * along};
+                    double lp = Len(pole);
+                    if (lp < 1e-6) {
+                        // Straight along the target: bend it down.
+                        const double down[3] = {0, -1, 0};
+                        const double dd = down[1] * nrm[1];
+                        for (int k = 0; k < 3; ++k) pole[k] = down[k] - nrm[k] * dd;
+                        lp = Len(pole);
+                    }
+                    if (lp > 1e-6) {
+                        const double want[3] = {nrm[0] * x + pole[0] / lp * h, nrm[1] * x + pole[1] / lp * h,
+                                                nrm[2] * x + pole[2] / lp * h};
+                        double R[9];
+                        if (TurnOnto(se, want, R)) {
+                            TurnCurrent(R);
+                            RotOf(g.pos, r, t);
+                        }
+                    }
+                }
+            }
+            std::copy(r, r + 9, c.rot[a][0]);
+            std::copy(t, t + 3, c.trans[a][0]);
+            c.seen[a][0] = true;
+        } else if (n == c.fore[a]) {
+            // Where the game put the forearm under the upper arm: its pivot in the upper arm's
+            // own space (the same frame after frame, however the arm is turned).
+            if (c.seen[a][0]) {
+                const double d[3] = {t[0] - c.trans[a][0][0], t[1] - c.trans[a][0][1], t[2] - c.trans[a][0][2]};
+                c.hasOffFore[a] = ToLocal(c.rot[a][0], d, c.offFore[a]);
+            }
+            if (solve) {
+                // The forearm turned so the wrist points at your hand.
+                double w[3];
+                ToSpace(r, t, c.offHand[a], w);
+                const double ew[3] = {w[0] - t[0], w[1] - t[1], w[2] - t[2]};
+                const double ep[3] = {p[0] - t[0], p[1] - t[1], p[2] - t[2]};
+                double R[9];
+                if (TurnOnto(ew, ep, R)) {
+                    TurnCurrent(R);
+                    RotOf(g.pos, r, t);
+                }
+            }
+            std::copy(r, r + 9, c.rot[a][1]);
+            std::copy(t, t + 3, c.trans[a][1]);
+            c.seen[a][1] = true;
+            c.seen[a][0] = false;
+        } else if (n == c.hand[a]) {
+            // Where his hand's polygons are drawn from (WorldPoly::pivot), to take them for yours.
+            for (int k = 0; k < 3; ++k) g.handPivotList[a][k] = static_cast<float>(g.pos[12 + k]);
+            g.handList[a] = true;
+            if (c.seen[a][1]) {
+                const double d[3] = {t[0] - c.trans[a][1][0], t[1] - c.trans[a][1][1], t[2] - c.trans[a][1][2]};
+                c.hasOffHand[a] = ToLocal(c.rot[a][1], d, c.offHand[a]);
+            }
+            c.seen[a][1] = false;
+        }
+    }
 }
 
 }  // namespace khvr::hle

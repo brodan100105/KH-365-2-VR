@@ -23,7 +23,11 @@ enum class SettingType { Bool, Float, Int, Enum };
 enum class SettingId : int {
     // View
     ViewMode,
+    ViewStandInWorld,
+    ViewSmoothMotion,
+    ViewDrawAll,
     CutsceneView,
+    CutsceneWorldScale,
     ModeSwitchButton,
     // Screen (the giant screen used for cutscenes, menus and "Giant screen" mode)
     ScreenDistance,
@@ -44,19 +48,33 @@ enum class SettingId : int {
     TpMoveRelativeTo,
     TpWallFade,
     // First person
+    FpWorldScale,
     FpEyeHeight,
     FpMatchCharacterHeight,
     FpMoveRelativeTo,
     FpRoomScale,
     FpShowBody,
+    FpHeadCut,
     FpWeaponHand,
     FpDualWield,
     FpGripAngle,
     FpKeybladeLength,
+    FpKeybladeGrip,
+    FpKeybladeTurn,
+    FpHandSize,
+    FpHandTurn,
+    FpHandTilt,
+    FpHandSwing,
+    FpHandRight,
+    FpHandUp,
+    FpHandForward,
+    FpArmsFollow,
     // Combat (first person motion controls)
     CombatMotion,
     CombatPhysicalHits,
     CombatSwingSpeed,
+    CombatArmSpeed,
+    CombatArmDistance,
     CombatSwingCooldown,
     CombatAimAssist,
     CombatGuardGesture,
@@ -64,7 +82,9 @@ enum class SettingId : int {
     CombatJumpGesture,
     CombatDodge,
     CombatHaptics,
+    CombatReach,
     // Controls (which DS button each gesture presses)
+    CtrlFirstPersonButtons,
     CtrlAttackButton,
     CtrlGuardButton,
     CtrlDodgeButton,
@@ -72,16 +92,21 @@ enum class SettingId : int {
     CtrlJumpButton,
     CtrlLockOnButton,
     // Comfort
+    ComfortProfile,
     ComfortTurn,
     ComfortSnapAngle,
     ComfortSmoothSpeed,
+    ComfortVignetteOn,
     ComfortVignette,
+    ComfortVignetteSize,
     ComfortBlink,
     ComfortBlinkMs,
     ComfortSeated,
     ComfortSeatedHeight,
     // Picture
     PicRefreshRate,
+    PicParallelCapture,
+    PicInBetweenFrames,
     PicResolutionScale,
     PicMsaa,
     PicTextureFilter,
@@ -93,6 +118,15 @@ enum class SettingId : int {
     // HUD
     HudTopScreen,
     HudDistance,
+    HudHeight,
+    HudFillView,
+    HudFillAngle,
+    HudOffsetX,
+    HudOffsetY,
+    HudScaleX,
+    HudScaleY,
+    HudFollowAngle,
+    HudFollowDelay,
     HudScale,
     HudTouchInput,
     // Hand screen (the DS touch screen held in or worn on a hand)
@@ -117,6 +151,12 @@ enum class SettingId : int {
     // Game
     GameLanguage,
     GameInvertTurn,
+    GameAnalogMove,
+    GameUsePlace,
+    CutsceneFloatingScreen,
+    GameSavePlace,
+    GamePlaceScale,
+    GamePlaceHeight,
     GameUnitsPerMeter,
     GameShowFps,
 
@@ -128,11 +168,17 @@ enum class ViewMode : int { ThirdPerson = 0, FirstPerson = 1, GiantScreen = 2 };
 enum class CutsceneView : int { GiantScreen = 0, SameAsGameplay = 1 };
 enum class FollowMode : int { Smooth = 0, Locked = 1, Teleport = 2 };
 enum class MoveRelativeTo : int { Head = 0, LeftController = 1, View = 2 };
-enum class BodyDisplay : int { Hidden = 0, HandsAndWeapon = 1, FullBody = 2 };
+enum class BodyDisplay : int { Hidden = 0, HandsAndWeapon = 1, FullBody = 2, WithoutHead = 3 };
 enum class Hand : int { Left = 0, Right = 1 };
 enum class MagicGesture : int { Button = 0, PointAndTrigger = 1 };
 enum class DodgeMode : int { Off = 0, StickFlick = 1, Button = 2 };
 enum class TurnMode : int { Snap = 0, Smooth = 1, Off = 2 };
+// First person's buttons: the same as every other view, or the first person profile (the
+// weapon-hand trigger L, the off-hand trigger casts, the off-hand grip locks on).
+enum class FirstPersonButtons : int { Same = 0, Profile = 1 };
+// Low: vignette at full strength and snap turning; Medium: snap turning; High: smooth turning.
+// Custom is anything else the options below it were set to.
+enum class ComfortProfile : int { Custom = 0, Low = 1, Medium = 2, High = 3 };
 enum class TopScreenPlacement : int { Floating = 0, HeadLocked = 1, Hidden = 2 };
 enum class BottomScreenPlacement : int { InHand = 0, Floating = 1, Hidden = 2, OnWrist = 3 };
 enum class GamePicture : int { Ds = 0, Sharp = 1, Depth = 2 };
@@ -194,6 +240,10 @@ public:
     unsigned revision() const { return revision_; }
 
 private:
+    float Store(SettingId id, float value);
+    void ApplyComfortProfile();
+    void MatchComfortProfile();
+
     float values_[static_cast<int>(SettingId::Count)];
     unsigned revision_ = 0;
 };

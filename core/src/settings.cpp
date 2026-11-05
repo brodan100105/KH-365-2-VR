@@ -35,9 +35,24 @@ std::vector<SettingDef> BuildDefs() {
                   {"third_person", "first_person", "giant_screen"},
                   {"Panoramic (3rd person)", "First person", "Giant screen"},
                   "Panoramic: stand around Roxas in 6DoF. First person: you are the character."));
+    d.push_back(B(S::ViewStandInWorld, "View", "stand_in_world", "Stand in the world (experimental)", false,
+                  "In gameplay, the game's 3D around you instead of on the giant screen, in the view mode "
+                  "above. For now you see what the game's own camera sees; menus and event scenes stay "
+                  "on the giant screen."));
+    d.push_back(B(S::ViewSmoothMotion, "View", "smooth_motion", "Smooth camera motion", true,
+                  "Standing in the world, the view follows Roxas smoothly between the game's frames "
+                  "instead of in its steps, which shake most when he changes direction."));
+    d.push_back(B(S::ViewDrawAll, "View", "draw_all", "Draw what the game's camera does not see", true,
+                  "Standing in the world, the game draws enemies around you even where its own camera "
+                  "does not look (it skips those outside its view for the DS). Costs some speed."));
     d.push_back(E(S::CutsceneView, "View", "cutscene_view", "Cutscenes", 0,
                   {"giant_screen", "same_as_gameplay"}, {"Giant screen", "Same as gameplay"},
-                  "Watch in-engine cutscenes on the giant screen, or from where you stand."));
+                  "Watch in-engine cutscenes on the giant screen, or standing in the scene like gameplay "
+                  "(with Stand in the world; scenes whose camera cannot be placed stay on the giant screen)."));
+    d.push_back(F(S::CutsceneWorldScale, "View", "cutscene_world_scale", "Cutscene world scale", 1.75f, 0.5f,
+                  4.0f, 0.05f, "x",
+                  "How big in-engine cutscenes are around you when you stand in them: larger fills the "
+                  "space more (1 is the game's own scale)."));
     d.push_back(B(S::ModeSwitchButton, "View", "mode_switch_button", "Quick mode switch", true,
                   "Hold the right thumbstick click to swap panoramic and first person."));
     // ---- Screen ----
@@ -68,7 +83,9 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::TpDistance, "Camera", "distance", "Distance behind", 3.0f, 0.0f, 10.0f,
                   0.25f, "m", "How far in front of you the character stands."));
     d.push_back(F(S::TpHeight, "Camera", "height", "Viewpoint height", 1.0f, -1.0f, 6.0f, 0.25f,
-                  "m", "How far your floor sits above the character's floor."));
+                  "m", "How far your eyes sit above a standing person's (1.6 m) over the character's floor, "
+                  "measured from your head when you recenter (right stick click), however tall you "
+                  "are or wherever you stand."));
     d.push_back(E(S::TpFollow, "Camera", "follow", "Follow", 0, {"smooth", "locked", "teleport"},
                   {"Smooth", "Locked", "Teleport when far"},
                   "How the view follows the character. Teleport is the most comfortable."));
@@ -82,20 +99,31 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(B(S::TpWallFade, "Camera", "wall_fade", "Fade walls", true,
                   "Fade geometry between you and the character."));
     // ---- First person ----
-    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 1.5f,
-                  1.0f, 2.2f, 0.05f, "m", "Eye height of the character you play."));
+    d.push_back(F(S::FpWorldScale, "First person", "world_scale", "World scale", 1.85f, 0.5f, 4.0f, 0.05f, "x",
+                  "How big the world looks around you in first person: above 1 larger, below 1 smaller "
+                  "(on top of Match character height)."));
+    d.push_back(F(S::FpEyeHeight, "First person", "eye_height", "Character eye height", 2.5f,
+                  1.0f, 2.5f, 0.05f, "m", "Eye height of the character you play."));
     d.push_back(B(S::FpMatchCharacterHeight, "First person", "match_height",
                   "Match character height", true,
                   "Scale the world so your real eye height matches the character's."));
-    d.push_back(E(S::FpMoveRelativeTo, "First person", "move_relative_to", "Stick direction", 1,
+    d.push_back(E(S::FpMoveRelativeTo, "First person", "move_relative_to", "Stick direction", 0,
                   {"head", "left_controller", "view"}, {"Head", "Left controller", "View"},
                   "What 'forward' on the movement stick means."));
     d.push_back(B(S::FpRoomScale, "First person", "room_scale", "Room-scale walking", true,
                   "Walking in your room moves the character. Walls push you back."));
-    d.push_back(E(S::FpShowBody, "First person", "show_body", "Show body", 1,
-                  {"hidden", "hands_and_weapon", "full_body"},
-                  {"Hidden", "Hands and Keyblade", "Full body"},
-                  "Which parts of the character model are drawn in first person."));
+    // A new key: Body without head became the default, so an old file's choice is not used.
+    d.push_back(E(S::FpShowBody, "First person", "body2", "Show body", 0,
+                  {"hidden", "hands_and_weapon", "full_body", "without_head"},
+                  {"Hidden", "Hands and Keyblade", "Full body", "Body without head"},
+                  "Which parts of the character model are drawn in first person. Body without head: "
+                  "the game's Roxas and his Keyblade as the game draws them, without his head and hair "
+                  "in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade "
+                  "leave the game's own Roxas out (the VR hands and Keyblade stay)."));
+    // A new key: the default came down (a piece of his chin stayed at the base of his neck).
+    d.push_back(F(S::FpHeadCut, "First person", "head_cut2", "Head cut height", 0.78f, 0.5f, 1.0f, 0.01f, "",
+                  "Body without head: the part of Roxas's height above which he is not drawn (his head "
+                  "and hair). Lower it if hair still shows; raise it if his shoulders go."));
     d.push_back(E(S::FpWeaponHand, "First person", "weapon_hand", "Keyblade hand", 1,
                   {"left", "right"}, {"Left", "Right"}, "The hand that holds the Keyblade."));
     d.push_back(B(S::FpDualWield, "First person", "dual_wield", "Dual wield", false,
@@ -104,6 +132,31 @@ std::vector<SettingDef> BuildDefs() {
                   5.0f, "deg", "Tilts the Keyblade in your hand."));
     d.push_back(F(S::FpKeybladeLength, "First person", "keyblade_length", "Keyblade length",
                   1.0f, 0.5f, 1.5f, 0.05f, "x", "Visual and hit length of the Keyblade."));
+    d.push_back(F(S::FpKeybladeGrip, "First person", "keyblade_grip", "Keyblade height", 0.0f, -0.3f, 0.3f, 0.01f, "m",
+                  "Moves the Keyblade up or down in your hand, along its blade (down if it sits above "
+                  "your hand). The change shows at once while the panel is open."));
+    d.push_back(F(S::FpKeybladeTurn, "First person", "keyblade_turn", "Keyblade turn", 0.0f, -180.0f, 180.0f, 15.0f,
+                  "deg", "Turns the Keyblade about its blade in your hand (if its teeth face the wrong way). "
+                  "The change shows at once while the panel is open."));
+    d.push_back(F(S::FpHandSize, "First person", "hand_size", "Hand size", 0.9f, 0.5f, 1.5f, 0.05f, "x",
+                  "How big Roxas's hands are on your controllers."));
+    d.push_back(F(S::FpHandTurn, "First person", "hand_turn", "Hand turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",
+                  "Turns Roxas's hands about your wrists (if his palms face the wrong way). The change "
+                  "shows at once while the panel is open."));
+    d.push_back(F(S::FpHandTilt, "First person", "hand_tilt", "Hand tilt", -20.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Tips Roxas's hands forward (above 0) or back, about your knuckles' line."));
+    d.push_back(F(S::FpHandSwing, "First person", "hand_swing", "Hand swing", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Turns Roxas's hands inward (above 0) or outward, about the up-down line."));
+    d.push_back(F(S::FpHandRight, "First person", "hand_right", "Hand outward", 0.0f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands outward (above 0, away from each other) or inward."));
+    d.push_back(F(S::FpHandUp, "First person", "hand_up", "Hand height", -0.005f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands up or down on your controllers."));
+    d.push_back(F(S::FpHandForward, "First person", "hand_forward", "Hand forward", 0.03f, -0.1f, 0.1f, 0.005f, "m",
+                  "Moves Roxas's hands forward or back on your controllers."));
+    d.push_back(B(S::FpArmsFollow, "First person", "arms_follow2", "Arms follow your hands (experimental)", false,
+                  "With Show body: Body without head or Full body, Roxas's own arms reach for your "
+                  "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "
+                  "animation)."));
     // ---- Combat ----
     d.push_back(B(S::CombatMotion, "Combat", "motion_combat", "Motion combat", true,
                   "Swing the controller to attack (first person)."));
@@ -111,8 +164,15 @@ std::vector<SettingDef> BuildDefs() {
                   "Attacks only land where the Keyblade touches an enemy."));
     d.push_back(F(S::CombatSwingSpeed, "Combat", "swing_speed", "Swing threshold", 2.2f, 1.0f,
                   6.0f, 0.1f, "m/s", "Blade-tip speed a swing needs to count as an attack."));
-    d.push_back(F(S::CombatSwingCooldown, "Combat", "swing_cooldown", "Swing cooldown", 0.22f,
-                  0.05f, 0.8f, 0.01f, "s", "Minimum time between two swings."));
+    // The swing keys are new with each raise of their defaults, so older files' values do not hold them back.
+    d.push_back(F(S::CombatArmSpeed, "Combat", "arm_swing_speed3", "Arm swing speed", 1.1f, 0.0f, 4.0f, 0.1f, "m/s",
+                  "How fast your hand itself must move for a swing to attack, so the arm swings and not "
+                  "just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone."));
+    d.push_back(F(S::CombatArmDistance, "Combat", "swing_length3", "Swing length", 0.25f, 0.0f, 1.2f, 0.05f, "m",
+                  "How far your hand must travel in one fast motion before the swing attacks: longer "
+                  "asks for a full swing (the attack comes that much later in it). 0: at once."));
+    d.push_back(F(S::CombatSwingCooldown, "Combat", "swing_delay2", "Swing cooldown", 0.25f,
+                  0.05f, 1.5f, 0.01f, "s", "Minimum time between two swings."));
     d.push_back(F(S::CombatAimAssist, "Combat", "aim_assist", "Aim assist", 0.5f, 0.0f, 1.0f,
                   0.05f, "", "How strongly swings turn the character toward the nearest enemy."));
     d.push_back(B(S::CombatGuardGesture, "Combat", "guard_gesture", "Guard gesture", true,
@@ -127,8 +187,17 @@ std::vector<SettingDef> BuildDefs() {
                   "How dodge rolls are triggered."));
     d.push_back(F(S::CombatHaptics, "Combat", "haptics", "Haptics", 0.7f, 0.0f, 1.0f, 0.1f, "",
                   "Controller vibration on hits, blocks and swings."));
+    d.push_back(F(S::CombatReach, "Combat", "reach", "Keyblade reach", 0.3f, 0.0f, 1.0f, 0.05f, "m",
+                  "First person: how much further Roxas's Keyblade reaches enemies than in the game, so "
+                  "you need not stand right on top of them. 0: the game's own reach."));
     // ---- Controls ----
     // The defaults follow the game's Type A controls; change them here if you play Type B.
+    d.push_back(E(S::CtrlFirstPersonButtons, "Controls", "first_person_buttons", "First person buttons", 0,
+                  {"same", "first_person"}, {"Same as other views", "First person profile"},
+                  "Same as other views: every button presses what it does in third person (the triggers "
+                  "L and R); the gestures (swing, guard, dodge flick) add to them. First person profile: "
+                  "the weapon hand's trigger is L, the other hand's trigger casts (pointing at an enemy) "
+                  "and its grip locks on."));
     const std::vector<const char *> btnKeys{"a", "b", "x", "y", "l", "r", "none"};
     const std::vector<const char *> btnLabels{"A", "B", "X", "Y", "L", "R", "None"};
     d.push_back(E(S::CtrlAttackButton, "Controls", "attack", "Swing presses", 0, btnKeys, btnLabels,
@@ -142,16 +211,31 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::CtrlJumpButton, "Controls", "jump", "Physical jump presses", 1, btnKeys,
                   btnLabels, "DS button a physical jump presses."));
     d.push_back(E(S::CtrlLockOnButton, "Controls", "lock_on", "Grip presses", 5, btnKeys,
-                  btnLabels, "DS button the off-hand grip presses in first person (lock-on)."));
+                  btnLabels, "DS button the off-hand grip presses in first person (lock-on), with First person "
+                  "buttons: First person profile."));
     // ---- Comfort ----
+    d.push_back(E(S::ComfortProfile, "Comfort", "profile", "Comfort profile", 2,
+                  {"custom", "low", "medium", "high"}, {"Custom", "Low", "Medium", "High"},
+                  "Sets the options below for how much motion you are used to. Low: the vignette at "
+                  "full strength and snap turning. Medium: no vignette, snap turning. High: no "
+                  "vignette, smooth turning. Changing them yourself makes it Custom."));
     d.push_back(E(S::ComfortTurn, "Comfort", "turn", "Turning", 0, {"snap", "smooth", "off"},
                   {"Snap", "Smooth", "Off"}, "Right stick turning."));
     d.push_back(F(S::ComfortSnapAngle, "Comfort", "snap_angle", "Snap angle", 45.0f, 15.0f, 90.0f,
                   15.0f, "deg", "Angle of one snap turn."));
     d.push_back(F(S::ComfortSmoothSpeed, "Comfort", "smooth_speed", "Smooth turn speed", 120.0f,
                   30.0f, 360.0f, 10.0f, "deg/s", "Speed of smooth turning."));
-    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette", 0.4f, 0.0f, 1.0f, 0.05f,
-                  "", "Darkens the edges of the view while you move or turn artificially."));
+    d.push_back(B(S::ComfortVignetteOn, "Comfort", "vignette_on", "Vignette", false,
+                  "Standing in the world, darkens the edges of your view while the view moves or turns "
+                  "without you (the stick, following Roxas, a cutscene's camera), fading in and out "
+                  "smoothly. Never on the giant screen."));
+    d.push_back(F(S::ComfortVignette, "Comfort", "vignette", "Vignette strength", 0.6f, 0.1f, 3.0f, 0.05f,
+                  "", "How dark the vignette gets: 0.1 faint but still there, 1 full black at the edges; "
+                  "above 1 the full black reaches further in over its soft edge."));
+    // A new key: the size's scale changed (1 is the old 0.5), so an old file's value is not used.
+    d.push_back(F(S::ComfortVignetteSize, "Comfort", "vignette_area", "Vignette size", 1.0f, 0.1f, 2.0f,
+                  0.05f, "", "How much of your view the vignette covers at its fullest, from the edges "
+                  "in: one circle round both eyes. 2 leaves only a small clear circle."));
     d.push_back(B(S::ComfortBlink, "Comfort", "blink", "Blink on cuts", true,
                   "Briefly fade to black when the view jumps (camera cuts, snap turns)."));
     d.push_back(F(S::ComfortBlinkMs, "Comfort", "blink_ms", "Blink length", 150.0f, 50.0f, 500.0f,
@@ -161,9 +245,16 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::ComfortSeatedHeight, "Comfort", "seated_height", "Seated height boost",
                   0.45f, 0.0f, 1.0f, 0.05f, "m", "Height added in seated play."));
     // ---- Picture ----
-    d.push_back(E(S::PicRefreshRate, "Picture", "refresh_rate", "Refresh rate", 1,
+    d.push_back(E(S::PicRefreshRate, "Picture", "refresh_rate", "Refresh rate", 2,
                   {"72", "90", "120"}, {"72 Hz", "90 Hz", "120 Hz"},
-                  "Headset refresh rate. The game itself runs at its original frame rate."));
+                  "Headset refresh rate. The game runs at its own 60 frames a second; at 120 Hz each "
+                  "of its frames shows for exactly two, which keeps turning smooth."));
+    d.push_back(B(S::PicParallelCapture, "Picture", "draw_while_running", "Draw while the game runs", true,
+                  "Draw each frame's screens while the game runs the next one, as the DS does, so "
+                  "heavy scenes keep all their frames. Turn off if pictures ever flicker or tear."));
+    d.push_back(B(S::PicInBetweenFrames, "Picture", "in_between_frames", "In-between frames", true,
+                  "Standing in the world, moving things glide between the game's 60 frames a second "
+                  "at the headset's rate (they show a game frame later). Off: the game's own frames."));
     d.push_back(F(S::PicResolutionScale, "Picture", "resolution_scale", "Resolution scale", 1.0f,
                   0.5f, 1.5f, 0.05f, "x", "Per-eye render resolution relative to the headset's. Applies on restart."));
     d.push_back(E(S::PicMsaa, "Picture", "msaa", "Anti-aliasing", 2, {"off", "2x", "4x"},
@@ -191,8 +282,31 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(E(S::HudTopScreen, "HUD", "top_screen", "HUD (top screen)", 0,
                   {"floating", "head_locked", "hidden"}, {"Floating panel", "Head-locked", "Hidden"},
                   "Where the health bars and command panel are shown."));
-    d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 1.2f, 0.5f, 3.0f, 0.1f, "m",
+    d.push_back(F(S::HudDistance, "HUD", "distance", "Panel distance", 0.6f, 0.5f, 3.0f, 0.1f, "m",
                   "Distance of the floating panels."));
+    d.push_back(F(S::HudHeight, "HUD", "height", "Panel height", -0.5f, -1.0f, 0.4f, 0.05f, "m",
+                  "How far below your eyes (negative) or above them the HUD panel sits, so the health "
+                  "bar and commands stay out of the way. Menus are on the giant screen."));
+    d.push_back(B(S::HudFillView, "HUD", "fill_view", "Fill your view", true,
+                  "The HUD as large as your view, centred on it, so the health bar and commands sit at "
+                  "its edges as on the DS's screen. Off: a panel of Panel scale at Panel height."));
+    d.push_back(F(S::HudFillAngle, "HUD", "fill_angle", "View it fills", 90.0f, 30.0f, 110.0f, 5.0f, "deg",
+                  "How wide the HUD spans when it fills your view."));
+    d.push_back(F(S::HudOffsetX, "HUD", "offset_x", "Left / right", 0.0f, -40.0f, 40.0f, 1.0f, "deg",
+                  "Moves the HUD across your view: negative left, positive right."));
+    d.push_back(F(S::HudOffsetY, "HUD", "offset_y", "Up / down", -16.0f, -45.0f, 30.0f, 1.0f, "deg",
+                  "Moves the HUD up or down your view: negative down, so the portrait and commands sit "
+                  "below Roxas."));
+    d.push_back(F(S::HudScaleX, "HUD", "scale_x", "Width", 1.1f, 0.5f, 2.0f, 0.05f, "x",
+                  "Stretches the HUD across."));
+    d.push_back(F(S::HudScaleY, "HUD", "scale_y", "Height", 1.0f, 0.5f, 2.0f, 0.05f, "x",
+                  "Stretches the HUD up and down."));
+    d.push_back(F(S::HudFollowAngle, "HUD", "follow_angle", "Follow after turning", 45.0f, 5.0f, 60.0f, 5.0f,
+                  "deg", "How far you can look away from the floating HUD before it comes back in front "
+                  "of you."));
+    d.push_back(F(S::HudFollowDelay, "HUD", "follow_delay", "Follow delay", 0.0f, 0.0f, 10.0f, 0.5f, "s",
+                  "How long you look away before the HUD glides back in front of you, so glancing "
+                  "around does not move it."));
     d.push_back(F(S::HudScale, "HUD", "scale", "Panel scale", 1.0f, 0.5f, 2.0f, 0.1f, "x",
                   "Size of the floating HUD panels."));
     d.push_back(E(S::HudTouchInput, "HUD", "touch_input", "Touch input", 0,
@@ -256,6 +370,25 @@ std::vector<SettingDef> BuildDefs() {
                   "Game text language (EU release). Applies on the next launch."));
     d.push_back(B(S::GameInvertTurn, "Game", "invert_turn", "Invert turning", false,
                   "Swap the direction of right-stick turning."));
+    d.push_back(B(S::GameAnalogMove, "Game", "analog_move", "Move any direction", true,
+                  "Roxas walks and runs the exact way the thumbstick points instead of the DS "
+                  "D-pad's eight directions (in the field; menus keep the D-pad)."));
+    d.push_back(B(S::GameUsePlace, "Game", "use_place", "Saved place as the loading area", true,
+                  "Before the game starts (loading, and behind the title and its menus) you stand in the "
+                  "place saved with the option below, instead of the plain loading area."));
+    d.push_back(B(S::CutsceneFloatingScreen, "Game", "floating_screen", "Second screen floating in scenes", false,
+                  "Scenes that use both screens (Agrabah's static): off, the second screen shows on your "
+                  "wrist only; on, the game's own floating picture shows in the scene too."));
+    d.push_back(B(S::GameSavePlace, "Game", "save_place", "Save this place as the loading area", false,
+                  "Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it "
+                  "as the loading area; it turns itself off once saved. Saved on your headset from your "
+                  "own game, next to your save."));
+    d.push_back(F(S::GamePlaceScale, "Game", "place_scale2", "Saved place size", 1.0f, 0.5f, 3.0f, 0.05f, "x",
+                  "How big the saved place looks around you: 1 is its size in first person (as when you "
+                  "saved it), above 1 larger. The change shows at once."));
+    d.push_back(F(S::GamePlaceHeight, "Game", "place_height2", "Saved place floor", 0.0f, -3.0f, 1.0f, 0.05f, "m",
+                  "Moves the saved place's floor down (below 0) or up, so the giant screen stands above "
+                  "it. The change shows at once."));
     d.push_back(F(S::GameUnitsPerMeter, "Game", "units_per_meter", "World units per meter", 1.0f,
                   0.05f, 64.0f, 0.05f, "",
                   "Calibration: game world units in one real meter at life size."));
@@ -326,6 +459,47 @@ const std::vector<const char *> &SettingTabs() {
 Settings::Settings() { ResetAll(); }
 
 float Settings::Set(SettingId id, float value) {
+    const float before = Get(id);
+    value = Store(id, value);
+    if (value != before) {
+        if (id == SettingId::ComfortProfile) ApplyComfortProfile();
+        else if (id == SettingId::ComfortTurn || id == SettingId::ComfortVignetteOn) MatchComfortProfile();
+    }
+    return value;
+}
+
+void Settings::ApplyComfortProfile() {
+    switch (Enum<ComfortProfile>(SettingId::ComfortProfile)) {
+    case ComfortProfile::Custom: return;
+    case ComfortProfile::Low:
+        Store(SettingId::ComfortVignetteOn, 1.0f);
+        Store(SettingId::ComfortVignette, 1.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Snap));
+        return;
+    case ComfortProfile::Medium:
+        Store(SettingId::ComfortVignetteOn, 0.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Snap));
+        return;
+    case ComfortProfile::High:
+        Store(SettingId::ComfortVignetteOn, 0.0f);
+        Store(SettingId::ComfortTurn, static_cast<float>(TurnMode::Smooth));
+        return;
+    }
+}
+
+// The profile names what the turning and vignette options are set to.
+void Settings::MatchComfortProfile() {
+    const bool vignette = Bool(SettingId::ComfortVignetteOn);
+    ComfortProfile p = ComfortProfile::Custom;
+    switch (Enum<TurnMode>(SettingId::ComfortTurn)) {
+    case TurnMode::Snap: p = vignette ? ComfortProfile::Low : ComfortProfile::Medium; break;
+    case TurnMode::Smooth: p = vignette ? ComfortProfile::Custom : ComfortProfile::High; break;
+    case TurnMode::Off: break;
+    }
+    Store(SettingId::ComfortProfile, static_cast<float>(p));
+}
+
+float Settings::Store(SettingId id, float value) {
     const SettingDef &d = DefOf(id);
     if (std::isnan(value)) value = d.defaultValue;
     switch (d.type) {
@@ -398,6 +572,7 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
     std::istringstream in(text);
     std::string raw, section;
     int lineNo = 0;
+    bool comfortSeen = false, profileSeen = false;
     while (std::getline(in, raw)) {
         ++lineNo;
         std::string line = Trim(raw);
@@ -416,6 +591,8 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
         for (const SettingDef &d : SettingDefs())
             if (section == d.tab && key == d.key) def = &d;
         if (!def) { warn(lineNo, "unknown option [" + section + "] " + key); continue; }
+        comfortSeen |= std::strcmp(def->tab, "Comfort") == 0;
+        profileSeen |= def->id == SettingId::ComfortProfile;
 
         switch (def->type) {
         case SettingType::Bool:
@@ -442,6 +619,9 @@ void Settings::LoadIni(const std::string &text, std::vector<std::string> *warnin
         }
         }
     }
+    // Files from before the comfort profiles had the vignette on only because it was the default
+    // then; it is off by default now.
+    if (comfortSeen && !profileSeen) SetBool(SettingId::ComfortVignetteOn, false);
 }
 
 std::string Settings::SaveIni() const {

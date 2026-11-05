@@ -20,6 +20,14 @@ extern "C" unsigned short khvr_snd_calc_channel_volume(int dB);
 namespace khvr::hle {
 namespace {
 
+// The game's sequence data, read only within its memory: a track sent past it (by data this
+// player does not yet read as the DS does) ends instead of crashing the app (an Agrabah
+// cutscene, Axel and Roxas walking in: a native crash in SeqFrame).
+bool SeqIn(uint32_t a, uint32_t n) { return a < GuestMemSize() && n <= GuestMemSize() - a; }
+uint8_t SeqRead8(uint32_t a) { return SeqIn(a, 1) ? Read8(a) : 0; }
+uint16_t SeqRead16(uint32_t a) { return SeqIn(a, 2) ? Read16(a) : 0; }
+uint32_t SeqRead32(uint32_t a) { return SeqIn(a, 4) ? Read32(a) : 0; }
+
 constexpr int kPlayers = 16, kTracks = 32, kTracksPerPlayer = 16;
 constexpr int kDbMin = -723;
 constexpr int kEnvelopeMin = kDbMin * 128;        // -92544: silent
@@ -43,6 +51,9 @@ struct Track {
     // Allocated when the sequence was prepared (its 0xfe command) but not yet given its data by
     // the 0x93 that opens it: the game's track settings apply to it, but it does not play yet.
     bool opened = true;
+    // In note-wait mode a note with no length holds the track until it has finished (the SDK's
+    // noteFinishWait): a sound effect that ends right after its note keeps it sounding.
+    bool finishWait = false;
     int player = -1;
     uint32_t base = 0, pc = 0;
     int wait = 0;
@@ -121,18 +132,20 @@ int SinIdx(int i) { return static_cast<int>(std::lround(127.0 * std::sin((i & 12
 int16_t &Var(int player, int n) {
     uint32_t shared = SoundSharedWork();
     if (n < 16) {
-        if (shared) return *reinterpret_cast<int16_t *>(GuestMem() + shared + 0x20 + player * 0x24 + n * 2);
+        if (shared && SeqIn(shared + 0x20 + player * 0x24 + n * 2, 2))
+            return *reinterpret_cast<int16_t *>(GuestMem() + shared + 0x20 + player * 0x24 + n * 2);
         return gLocalVars[player][n];
     }
-    if (shared) return *reinterpret_cast<int16_t *>(GuestMem() + shared + 0x260 + (n - 16) * 2);
+    if (shared && SeqIn(shared + 0x260 + (n - 16) * 2, 2))
+        return *reinterpret_cast<int16_t *>(GuestMem() + shared + 0x260 + (n - 16) * 2);
     return gGlobalVars[(n - 16) & 15];
 }
 
 // ---------------------------------------------------------------------------------- instruments
 
 uint32_t WaveAddress(uint32_t arc, uint32_t index) {
-    if (!arc || index >= Read32(arc + 0x38)) return 0;
-    uint32_t off = Read32(arc + 0x3c + index * 4);
+    if (!arc || index >= SeqRead32(arc + 0x38)) return 0;
+    uint32_t off = SeqRead32(arc + 0x3c + index * 4);
     if (!off) return 0;
     return off < 0x02000000 ? arc + off : off;
 }
@@ -142,16 +155,16 @@ uint32_t WaveAddress(uint32_t arc, uint32_t index) {
 Instrument ReadInstrument(uint32_t bank, int type, uint32_t param) {
     Instrument in;
     in.type = type;
-    uint16_t w0 = Read16(param), w1 = Read16(param + 2);
-    in.originalKey = Read8(param + 4);
-    in.attack = Read8(param + 5);
-    in.decay = Read8(param + 6);
-    in.sustain = Read8(param + 7);
-    in.release = Read8(param + 8);
-    in.pan = Read8(param + 9);
+    uint16_t w0 = SeqRead16(param), w1 = SeqRead16(param + 2);
+    in.originalKey = SeqRead8(param + 4);
+    in.attack = SeqRead8(param + 5);
+    in.decay = SeqRead8(param + 6);
+    in.sustain = SeqRead8(param + 7);
+    in.release = SeqRead8(param + 8);
+    in.pan = SeqRead8(param + 9);
     switch (type) {
     case kInstPcm:
-        if (w1 < 4) in.wave = WaveAddress(Read32(bank + 0x18 + w1 * 8), w0);
+        if (w1 < 4) in.wave = WaveAddress(SeqRead32(bank + 0x18 + w1 * 8), w0);
         if (!in.wave) in.type = kInstNull;
         break;
     case kInstDirectPcm:
@@ -171,26 +184,26 @@ Instrument ReadInstrument(uint32_t bank, int type, uint32_t param) {
 
 Instrument FindInstrument(uint32_t bank, int prg, int key) {
     Instrument none;
-    if (!bank || prg < 0 || static_cast<uint32_t>(prg) >= Read32(bank + 0x38)) return none;
-    uint32_t entry = Read32(bank + 0x3c + prg * 4);
+    if (!bank || prg < 0 || static_cast<uint32_t>(prg) >= SeqRead32(bank + 0x38)) return none;
+    uint32_t entry = SeqRead32(bank + 0x3c + prg * 4);
     int type = entry & 0xff;
     uint32_t at = bank + (entry >> 8);
     if (type == kInstDrumSet) {
-        int lo = Read8(at), hi = Read8(at + 1);
+        int lo = SeqRead8(at), hi = SeqRead8(at + 1);
         if (key < lo || key > hi) return none;
         uint32_t e = at + 2 + (key - lo) * 12;
-        return ReadInstrument(bank, Read8(e), e + 2);
+        return ReadInstrument(bank, SeqRead8(e), e + 2);
     }
     if (type == kInstKeySplit) {
         int i = 0;
         for (; i < 8; ++i) {
-            int k = Read8(at + i);
+            int k = SeqRead8(at + i);
             if (k == 0) return none;
             if (key <= k) break;
         }
         if (i == 8) return none;
         uint32_t e = at + 8 + i * 12;
-        return ReadInstrument(bank, Read8(e), e + 2);
+        return ReadInstrument(bank, SeqRead8(e), e + 2);
     }
     return ReadInstrument(bank, type, at);
 }
@@ -316,12 +329,12 @@ void NoteOn(int ti, int key, int velocity, int length) {
     c.shift = 0;
     if (inst.type == kInstPcm || inst.type == kInstDirectPcm) {
         uint32_t w = inst.wave;
-        c.format = Read8(w) & 3;
+        c.format = SeqRead8(w) & 3;
         ++gStats.format[c.format < 3 ? c.format : 3];
-        c.repeat = Read8(w + 1) ? kLoop : kOneShot;
-        v.baseTimer = Read16(w + 4);
-        c.loopStart = Read16(w + 6);
-        c.loopLength = Read32(w + 8);
+        c.repeat = SeqRead8(w + 1) ? kLoop : kOneShot;
+        v.baseTimer = SeqRead16(w + 4);
+        c.loopStart = SeqRead16(w + 6);
+        c.loopLength = SeqRead32(w + 8);
         c.source = w + 12;
         c.timer = v.baseTimer;
     } else {
@@ -463,7 +476,7 @@ void StopPlayer(int pn) {
 uint32_t ReadVlv(Track &t) {
     uint32_t v = 0;
     for (int i = 0; i < 4; ++i) {
-        uint8_t b = Read8(t.pc++);
+        uint8_t b = SeqRead8(t.pc++);
         v = (v << 7) | (b & 0x7f);
         if (!(b & 0x80)) break;
     }
@@ -474,26 +487,26 @@ enum ArgType { kArgU8, kArgS16, kArgVlv, kArgRandom, kArgVariable };
 
 int ReadArg(Track &t, int player, ArgType type) {
     switch (type) {
-    case kArgU8: return Read8(t.pc++);
+    case kArgU8: return SeqRead8(t.pc++);
     case kArgS16: {
-        int v = static_cast<int16_t>(Read16(t.pc));
+        int v = static_cast<int16_t>(SeqRead16(t.pc));
         t.pc += 2;
         return v;
     }
     case kArgVlv: return static_cast<int>(ReadVlv(t));
     case kArgRandom: {
-        int lo = static_cast<int16_t>(Read16(t.pc)), hi = static_cast<int16_t>(Read16(t.pc + 2));
+        int lo = static_cast<int16_t>(SeqRead16(t.pc)), hi = static_cast<int16_t>(SeqRead16(t.pc + 2));
         t.pc += 4;
         if (hi < lo) std::swap(lo, hi);
         return lo + static_cast<int>(SoundRandom() % static_cast<uint32_t>(hi - lo + 1));
     }
-    case kArgVariable: return Var(player, Read8(t.pc++) & 31);
+    case kArgVariable: return Var(player, SeqRead8(t.pc++) & 31);
     }
     return 0;
 }
 
 uint32_t Read24(Track &t) {
-    uint32_t v = Read8(t.pc) | Read8(t.pc + 1) << 8 | Read8(t.pc + 2) << 16;
+    uint32_t v = SeqRead8(t.pc) | SeqRead8(t.pc + 1) << 8 | SeqRead8(t.pc + 2) << 16;
     t.pc += 3;
     return v;
 }
@@ -502,32 +515,47 @@ uint32_t Read24(Track &t) {
 bool StepTrack(int ti) {
     Track &t = gTrackPool[ti];
     if (!t.active) return false;
+    if (t.finishWait) {
+        for (const Voice &v : gVoice)
+            if (v.on && v.track == ti) return true;
+        t.finishWait = false;
+    }
     if (t.wait > 0 && --t.wait > 0) return true;
     for (int guard = 0; guard < 1024; ++guard) {
         if (t.wait > 0) return true;
-        uint8_t cmd = Read8(t.pc++);
+        if (!SeqIn(t.pc, 4)) {
+            LogOnce("seq-pc", "sound: a sequence track went outside the game's memory and was stopped");
+            return false;
+        }
+        uint8_t cmd = SeqRead8(t.pc++);
         bool run = true;
         ArgType special = kArgU8;
         bool hasSpecial = false;
         if (cmd == 0xa2) {
-            cmd = Read8(t.pc++);
+            cmd = SeqRead8(t.pc++);
             run = t.cmp;
         }
         if (cmd == 0xa0) {
-            cmd = Read8(t.pc++);
+            cmd = SeqRead8(t.pc++);
             special = kArgRandom;
             hasSpecial = true;
         } else if (cmd == 0xa1) {
-            cmd = Read8(t.pc++);
+            cmd = SeqRead8(t.pc++);
             special = kArgVariable;
             hasSpecial = true;
         }
         if (cmd < 0x80) {
-            int velocity = Read8(t.pc++);
+            int velocity = SeqRead8(t.pc++);
             int length = ReadArg(t, t.player, hasSpecial ? special : kArgVlv);
             if (run) {
                 NoteOn(ti, cmd + t.transpose, velocity, length);
-                if (t.noteWait) t.wait = length;
+                if (t.noteWait) {
+                    t.wait = length;
+                    if (length == 0) {
+                        t.finishWait = true;
+                        return true;
+                    }
+                }
             }
             continue;
         }
@@ -541,7 +569,7 @@ bool StepTrack(int ti) {
         }
         case 0x90: {
             if (cmd == 0x93) {
-                int n = Read8(t.pc++);
+                int n = SeqRead8(t.pc++);
                 uint32_t off = Read24(t);
                 if (!run) break;
                 Player &p = gPlayers[t.player];
@@ -567,7 +595,7 @@ bool StepTrack(int ti) {
             break;
         }
         case 0xb0: {
-            int n = Read8(t.pc++) & 31;
+            int n = SeqRead8(t.pc++) & 31;
             int arg = ReadArg(t, t.player, hasSpecial ? special : kArgS16);
             if (!run) break;
             int16_t &var = Var(t.player, n);
@@ -713,8 +741,8 @@ void StartPlayer(int pn, uint32_t base, uint32_t offset, uint32_t bank, bool sta
     // them) gets them now, so the settings the game sends between preparing and starting it
     // (track volume, the channels a track may use, muting) reach every track, not only the first.
     uint32_t pc = base + offset;
-    if (Read8(pc) == 0xfe) {
-        uint32_t mask = Read8(pc + 1) | static_cast<uint32_t>(Read8(pc + 2)) << 8;
+    if (SeqRead8(pc) == 0xfe) {
+        uint32_t mask = SeqRead8(pc + 1) | static_cast<uint32_t>(SeqRead8(pc + 2)) << 8;
         for (int i = 1; i < kTracksPerPlayer; ++i) {
             if (!(mask & (1u << i))) continue;
             int nt = NewTrack(pn, base, 0);

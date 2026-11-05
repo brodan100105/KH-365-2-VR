@@ -148,6 +148,12 @@ int RenderSnapshot(const char *path, const char *prefix) {
         for (uint32_t p : s.topFront) opaque += (p >> 24) == 255;
         std::printf("snapshot: in front of the 3D layer, %d of %d pixels are opaque\n", opaque, 256 * 192);
     }
+    {
+        int sprites = 0;
+        for (uint32_t p : s.topObj) sprites += (p >> 24) != 0;
+        WritePpm((std::string(prefix) + "_obj.ppm").c_str(), s.topObj);
+        std::printf("snapshot: %d top-screen pixels show sprites\n", sprites);
+    }
     std::printf("snapshot: rendered %s to %s_top.ppm and %s_bottom.ppm\n", path, prefix, prefix);
     return 0;
 }
@@ -201,6 +207,13 @@ int GxTest() {
     frame(0x001f0040, false);                // back faces only: the front-facing triangle goes
     khvr::Platform::Get().CaptureScreens(&s);
     bool culled = px(128, 100) == 0;
+    // Alpha 0: a wireframe triangle, its edges drawn (the bottom one along y 144) and its inside
+    // empty; the world capture has it as three edges.
+    frame(0x000000c0, false);
+    khvr::Platform::Get().CaptureScreens(&s);
+    const bool wire = px(128, 100) == 0 && (px(128, 143) == 0x0000ff || px(128, 144) == 0x0000ff) &&
+                      (px(128, 47) == 0x0000ff || px(128, 48) == 0x0000ff);
+    tri = tri && wire;
     frame(0x001f0080, true);
     khvr::Platform::Get().CaptureScreens(&s);
     bool tex = px(90, 96) == 0xffffff && px(166, 96) == 0x00ff00;
@@ -233,7 +246,7 @@ int GxTest() {
         double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / iters;
         std::printf("gx bench: %.2f ms a frame for 1500 quads\n", ms);
     }
-    std::printf("gx test: %s (triangle %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
+    std::printf("gx test: %s (triangle and wireframe %d, culling %d, texture and 3x picture %d; pixels %06x %06x)\n",
                 tri && culled && tex ? "ok" : "FAILED", tri, culled, tex, px(90, 96), px(166, 96));
     return tri && culled && tex ? 0 : 1;
 }
@@ -268,8 +281,8 @@ int WorldTest() {
         cmd(0x23, (fx(x) & 0xffff) | (fx(y) << 16));
         cmd(0x23, 0);
     };
-    auto quad = [&] {
-        cmd(0x29, 0x001f00c0);
+    auto quad = [&](uint32_t attr = 0x001f00c0) {
+        cmd(0x29, attr);
         cmd(0x2a, 7u << 26);
         cmd(0x20, 0x7fff);
         cmd(0x40, 1);
@@ -299,15 +312,20 @@ int WorldTest() {
         cmd(0x10, 2);
         cmd(0x15, 0);
         quad();
+        // The game sets up the next frame's camera (turned and moved) before it swaps: the capture
+        // keeps the camera the quads were drawn with.
+        const double next[12] = {0.8, 0, -0.6, 0, 1, 0, 0.6, 0, 0.8, 3, -2, -10};
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(next[i]));
         cmd(0x50, 0);
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
         static khvr::PlatformWorld w;
         khvr::Platform::Get().CaptureWorld(&w);
         auto near = [](double a, double b) { return std::fabs(a - b) < 0.02; };
         bool ok = w.vertices.size() == 6 && w.textures.size() == 1 && w.polygonsLeftOut == 1 && w.hasCamera;
         if (ok) {
             const khvr::PlatformWorldVertex &a = w.vertices[0], &c = w.vertices[2];
-            ok = near(a.x, 4) && near(a.y, -1) && near(a.z, 0) && near(c.x, 6) && near(c.y, 1) && near(c.u, 1) &&
-                 near(c.v, 1) && near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
+            ok = near(a.x, 4) && near(a.y, -1) && near(a.z, 0) && near(c.x, 6) && near(c.y, 1) && near(c.u, 1 - 0.5f / w.textures[0].width) &&
+                 near(c.v, 1 - 0.5f / w.textures[0].height) &&  // inset half a texel (not tiled) near(w.eye[0], 0) && near(w.eye[1], 2) && near(w.eye[2], 10) && near(w.target[2], 9) &&
                  near(w.fovY, 3.14159265 / 3) && near(w.nearZ, 1) && std::fabs(w.farZ - 100) < 0.5 &&
                  (w.textures[0].rgba[0] & 0xffffff) == 0xffffff && (w.textures[0].rgba[7] & 0xffffff) == 0x00ff00 &&
                  w.triangleFlags[0] == (khvr::kWorldFront | khvr::kWorldBack) && near(w.lens[5], cot) &&
@@ -351,9 +369,262 @@ int WorldTest() {
     const int mid = 96 * 256 + 128, corner = 4 * 256 + 4;
     bool split = s.split && (s.topFront[mid] >> 24) == 255 && (s.topFront[corner] >> 24) == 0 &&
                  s.topBack[corner] == 0xffff0000u;
-    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d)\n",
-                a && b && split ? "ok" : "FAILED", a && b, split);
-    return a && b && split ? 0 : 1;
+    // BG0's horizontal scroll moves the 3D layer: by -16 (0x1f0) the world lands 16 pixels right,
+    // and so does the HUD quad in the 2D picture.
+    bool scrolled = false;
+    {
+        static khvr::PlatformWorld w0, w1;
+        static khvr::PlatformScreens s1;
+        khvr::Platform::Get().CaptureWorld(&w0);
+        khvr::PlatformTestWrite(0x04000010, 0x1f0, 2);
+        khvr::Platform::Get().CaptureWorld(&w1);
+        khvr::Platform::Get().CaptureScreens(&s1);
+        khvr::PlatformTestWrite(0x04000010, 0, 2);
+        int firstFront = -1, firstFrontShifted = -1;
+        for (int x = 0; x < 256 && (firstFront < 0 || firstFrontShifted < 0); ++x) {
+            if (firstFront < 0 && (s.topFront[96 * 256 + x] >> 24) == 255) firstFront = x;
+            if (firstFrontShifted < 0 && (s1.topFront[96 * 256 + x] >> 24) == 255) firstFrontShifted = x;
+        }
+        scrolled = w1.viewport[0] == w0.viewport[0] + 16 && w1.viewport[2] == w0.viewport[2] + 16 && firstFront >= 0 &&
+                   firstFrontShifted == firstFront + 16;
+    }
+    // An event scene sets its projection without NNS_G3dGlb's lens: with that lens changed, the
+    // scene is still captured (in camera space, through its own projection), lands where the DS
+    // drew it, and the orthographic HUD quad still stays in the DS picture.
+    bool event = false;
+    {
+        // The lens the field left behind: another perspective (near 2, far 40).
+        double stale[16];
+        std::copy(lens, lens + 16, stale);
+        stale[10] = (2.0 + 40) / (2.0 - 40);
+        stale[14] = 2 * 2.0 * 40 / (2.0 - 40);
+        for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(stale[i]));
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        cmd(0x10, 2);
+        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        cmd(0x1c, fx(5)); cmd(0x1c, 0); cmd(0x1c, 0);
+        quad();
+        cmd(0x10, 0);
+        double ortho[16] = {0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, -0.1, 0, 0, 0, 0, 1};
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(ortho[i]));
+        cmd(0x10, 2);
+        cmd(0x15, 0);
+        quad();
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w;
+        khvr::Platform::Get().CaptureWorld(&w);
+        if (w.vertices.size() == 6 && w.polygonsLeftOut == 1 && w.hasCamera) {
+            auto clip = [](const float *m, const float *v, float *out) {
+                for (int r = 0; r < 4; ++r) out[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+            };
+            const khvr::PlatformWorldVertex &c0 = w.vertices[0];
+            float p[4] = {c0.x, c0.y, c0.z, 1}, viewSpace[4], c1[4];
+            clip(w.view, p, viewSpace);
+            clip(w.lens, viewSpace, c1);
+            const double ex = cot / (4.0 / 3.0) * 4 / 10, ey = cot * (-3) / 10;
+            // Placed in the world with the camera the event drives (NNS_G3dGlb's): the quad's
+            // corner where it is, (4, -1, 0).
+            event = std::fabs(c1[0] / c1[3] - ex) < 0.02 && std::fabs(c1[1] / c1[3] - ey) < 0.02 && w.worldSpace &&
+                    w.eventScene && std::fabs(c0.x - 4) < 0.02 && std::fabs(c0.y + 1) < 0.02 && std::fabs(c0.z) < 0.02;
+            std::printf("  event scene: corner (%.2f %.2f %.2f), world space %d\n", c0.x, c0.y, c0.z, w.worldSpace);
+        }
+        // The event folds its camera into its projection: the polygons come in world space.
+        {
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            for (int i = 0; i < 12; ++i) cmd(0x19, fx(cam[i]));
+            cmd(0x10, 2);
+            cmd(0x15, 0);
+            cmd(0x1c, fx(5)); cmd(0x1c, 0); cmd(0x1c, 0);
+            quad();
+            cmd(0x50, 0);
+            static khvr::PlatformWorld w;
+            khvr::Platform::Get().CaptureWorld(&w);
+            const bool folded = w.vertices.size() == 6 && w.worldSpace && std::fabs(w.vertices[0].x - 4) < 0.02 &&
+                                std::fabs(w.vertices[0].y + 1) < 0.02 && std::fabs(w.vertices[0].z) < 0.02;
+            std::printf("  event scene, camera in its projection: %zu vertices, corner (%.2f %.2f %.2f), world space %d\n",
+                        w.vertices.size(), w.vertices.empty() ? 0.0 : w.vertices[0].x,
+                        w.vertices.empty() ? 0.0 : w.vertices[0].y, w.vertices.empty() ? 0.0 : w.vertices[0].z,
+                        w.worldSpace);
+            event = event && folded;
+        }
+        for (int i = 0; i < 16; ++i) w32(glb + 0x08 + 4 * i, fx(lens[i]));
+    }
+    // A wireframe quad (alpha 0) is captured as its four edges.
+    bool wire = false;
+    {
+        cmd(0x10, 0);
+        for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+        cmd(0x10, 2);
+        for (int i = 0; i < 12; ++i) cmd(0x17, fx(cam[i]));
+        quad(0x000000c0);
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w;
+        khvr::Platform::Get().CaptureWorld(&w);
+        int lines = 0;
+        for (uint8_t f : w.triangleFlags) lines += (f & khvr::kWorldLine) != 0;
+        wire = lines == 4 && w.triangleFlags.size() == 4 && (w.vertices[0].color >> 24) == 255;
+    }
+    // Sprites: a small quad square to the camera is one (its centre and offsets kept), the same
+    // quad turned is not.
+    bool sprites = false;
+    {
+        // `look`: the camera turned this far about its own vertical (a sprite counts once it has
+        // turned with the camera).
+        auto small = [&](double turn, uint32_t attr = 0x001000c0, double look = 0) {  // see-through (alpha 16)
+            const double lc = std::cos(look), ls = std::sin(look);
+            double view[12];
+            for (int r = 0; r < 4; ++r) {
+                const double x = cam[r * 3], y = cam[r * 3 + 1], z = cam[r * 3 + 2];
+                view[r * 3] = x * lc + z * ls;
+                view[r * 3 + 1] = y;
+                view[r * 3 + 2] = -x * ls + z * lc;
+            }
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(view[i]));
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(view[i]));
+            cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);  // centred at (1, 2, 0)
+            const double c = std::cos(turn), s = std::sin(turn);
+            for (double k : {0.25}) {
+                cmd(0x1b, fx(k)); cmd(0x1b, fx(k)); cmd(0x1b, fx(k));
+            }
+            const double rot[9] = {c, 0, -s, 0, 1, 0, s, 0, c};
+            for (int i = 0; i < 9; ++i) cmd(0x1a, fx(rot[i]));
+            quad(attr);
+            cmd(0x50, 0);
+            static khvr::PlatformWorld w;
+            khvr::Platform::Get().CaptureWorld(&w);
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+            return w;
+        };
+        // Facing the camera, then facing it still as it turns: a sprite.
+        small(0);
+        khvr::PlatformWorld facing = small(-0.4, 0x001000c0, 0.4);
+        khvr::PlatformWorld turned = small(0.6);
+        // The same quad solid (a face, a table top square to the camera): no sprite.
+        const bool solidLeft = small(0, 0x001f00c0).billboard.empty();
+        bool flagged = facing.triangleFlags.size() == 2 && (facing.triangleFlags[0] & khvr::kWorldBillboard) &&
+                       (facing.triangleFlags[1] & khvr::kWorldBillboard) && facing.billboard.size() == 6 * khvr::kWorldBillboardFloats;
+        if (flagged) {
+            const float *b = &facing.billboard[0];  // the first corner: (-0.25, -0.25) from (1, 2, 0)
+            flagged = std::fabs(b[0] - 1) < 0.02 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.02 &&
+                      std::fabs(b[3] + 0.25) < 0.02 && std::fabs(b[4] + 0.25) < 0.02;
+        }
+        sprites = flagged && turned.triangleFlags.size() == 2 && !(turned.triangleFlags[0] & khvr::kWorldBillboard) &&
+                  turned.billboard.empty() && facing.billboard[5] == 1.0f && solidLeft;
+        // Upright: a see-through tree (alpha 16), 4 wide and 6 tall, standing square to the camera.
+        // (Again as the camera turns, square to it about the vertical.)
+        auto drawTree = [&](double look) {
+            const double lc = std::cos(look), ls = std::sin(look);
+            double view[12];
+            for (int r = 0; r < 4; ++r) {
+                const double x = cam[r * 3], y = cam[r * 3 + 1], z = cam[r * 3 + 2];
+                view[r * 3] = x * lc + z * ls;
+                view[r * 3 + 1] = y;
+                view[r * 3 + 2] = -x * ls + z * lc;
+            }
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(view[i]));
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(view[i]));
+            cmd(0x1c, fx(1)); cmd(0x1c, fx(2)); cmd(0x1c, 0);
+            const double c = std::cos(-look), sn = std::sin(-look);
+            const double rot[9] = {c, 0, -sn, 0, 1, 0, sn, 0, c};
+            for (int i = 0; i < 9; ++i) cmd(0x1a, fx(rot[i]));
+            cmd(0x1b, fx(2)); cmd(0x1b, fx(3)); cmd(0x1b, fx(1));
+            quad(0x001000c0);
+            cmd(0x50, 0);
+            static khvr::PlatformWorld tree;
+            khvr::Platform::Get().CaptureWorld(&tree);
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+            return tree;
+        };
+        drawTree(0);
+        const khvr::PlatformWorld tree = drawTree(0.4);
+        bool upright = tree.triangleFlags.size() == 2 && (tree.triangleFlags[0] & khvr::kWorldBillboard) &&
+                       tree.billboard.size() == 6 * khvr::kWorldBillboardFloats;
+        if (upright) {
+            const float *b = &tree.billboard[0];  // the first corner: (-2, -3) from (1, 2, 0)
+            upright = b[5] == 2.0f && std::fabs(b[0] - 1) < 0.05 && std::fabs(b[1] - 2) < 0.02 && std::fabs(b[2]) < 0.05 &&
+                      std::fabs(std::fabs(b[3]) - 2) < 0.05 && std::fabs(b[4] + 3) < 0.02;
+        }
+        std::printf("  sprites: facing %d, turned away %d, upright %d (%zu triangles, flags %d, %zu floats", flagged,
+                    !turned.billboard.size(), upright, tree.triangleFlags.size(),
+                    tree.triangleFlags.empty() ? -1 : tree.triangleFlags[0], tree.billboard.size());
+        for (size_t i = 0; i < tree.billboard.size() && i < 6; ++i) std::printf(" %.2f", tree.billboard[i]);
+        std::printf(")\n");
+        sprites = sprites && upright;
+    }
+    // The lock-on sight's target, reported while a frame is drawn, comes with that frame's
+    // capture (and not with the next one's when the game no longer reports it).
+    bool lockOn = false;
+    {
+        const uint32_t at = 0x02300000;
+        w32(at, fx(1.5)); w32(at + 4, fx(0.75)); w32(at + 8, fx(-2));
+        khvr::hle::GxNoteLockOn(at, 2, true);
+        quad();
+        cmd(0x50, 0);
+        static khvr::PlatformWorld w, after;
+        khvr::Platform::Get().CaptureWorld(&w);
+        quad();
+        cmd(0x50, 0);
+        khvr::Platform::Get().CaptureWorld(&after);
+        lockOn = w.lockOn && std::fabs(w.lockOnAt[0] - 1.5f) < 1e-3f && std::fabs(w.lockOnAt[1] - 0.75f) < 1e-3f &&
+                 std::fabs(w.lockOnAt[2] + 2) < 1e-3f && w.lockOnKind == 2 && w.lockOnLocked &&
+                 !after.lockOn;
+    }
+    // A HUD piece drawn in 3D in front of the camera: where the world moves across the view as the
+    // camera turns, it stays put; it is kept out of the world from then on.
+    bool hudPiece = false;
+    {
+        auto frame = [&](double turn, khvr::PlatformWorld *w, double glbTurn = -1) {
+            const double c = std::cos(turn), s = std::sin(turn);
+            const double turned[12] = {c, 0, -s, 0, 1, 0, s, 0, c, 0, -2, -10};
+            const double gc = std::cos(glbTurn < 0 ? turn : glbTurn), gs = std::sin(glbTurn < 0 ? turn : glbTurn);
+            const double glbCam[12] = {gc, 0, -gs, 0, 1, 0, gs, 0, gc, 0, -2, -10};
+            for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(glbCam[i]));
+            cmd(0x10, 0);
+            for (int i = 0; i < 16; ++i) cmd(0x16, fx(lens[i]));
+            cmd(0x10, 2);
+            for (int i = 0; i < 12; ++i) cmd(0x17, fx(turned[i]));
+            cmd(0x11, 0);  // MTX_PUSH the camera
+            for (int q = 0; q < 8; ++q) {  // the world: a row of quads
+                cmd(0x12, 1);  // MTX_POP: back to the camera
+                cmd(0x11, 0);  // MTX_PUSH
+                cmd(0x1c, fx(q - 4)); cmd(0x1c, 0); cmd(0x1c, 0);
+                quad();
+            }
+            cmd(0x15, 0);  // the HUD piece: in camera space, 5 in front
+            cmd(0x1c, fx(-0.5)); cmd(0x1c, fx(0.5)); cmd(0x1c, fx(-5));
+            cmd(0x1b, fx(0.25)); cmd(0x1b, fx(0.25)); cmd(0x1b, fx(1));
+            quad(0x001000c0);  // HUD art: see-through
+            cmd(0x50, 0);
+            khvr::Platform::Get().CaptureWorld(w);
+        };
+        static khvr::PlatformWorld w0, w1, w2, x0, x1;
+        // The game's camera variable changes while what it draws stays put (a slight turn rounded
+        // away, a menu over the field): nothing is taken for a HUD piece.
+        frame(0.3, &x0);
+        frame(0.3, &x1, 0.35);
+        frame(0.0, &w0);
+        frame(0.1, &w1);
+        frame(0.1, &w2);  // the camera still: it stays on the HUD
+        // Then the camera turns for real (0.3 to 0): the piece that kept its place is the HUD's.
+        hudPiece = x1.triangleFlags.size() == 18 && w0.triangleFlags.size() == 16 && w0.polygonsLeftOut == 1 &&
+                   w1.triangleFlags.size() == 16 && w2.triangleFlags.size() == 16;
+        std::printf("  HUD piece: %zu, %zu, %zu triangles in the world (%zu with the scene still)\n",
+                    w0.triangleFlags.size(), w1.triangleFlags.size(), w2.triangleFlags.size(), x1.triangleFlags.size());
+        for (int i = 0; i < 12; ++i) w32(glb + 0x4c + 4 * i, fx(cam[i]));
+    }
+    const bool all = a && b && split && scrolled && event && wire && sprites && lockOn && hudPiece;
+    std::printf("world test: %s (both camera placements %d, HUD and backdrop around the world %d, BG0 scroll %d, "
+                "event scene %d, wireframe %d, sprites %d, lock-on %d, HUD piece %d)\n",
+                all ? "ok" : "FAILED", a && b, split, scrolled, event, wire, sprites, lockOn, hudPiece);
+    return all ? 0 : 1;
 }
 
 // Draws a captured world (khvr_world_N.bin) the way Screen > Game in 3D does, on the CPU: the
@@ -742,7 +1013,7 @@ int SeqTest() {
     w32(bank3 + 0x3c, 1 | 0x40 << 8);
     const uint8_t inst3[10] = {0, 0, 0, 0, 60, 127, 127, 127, 127, 64};  // wave 0 of its archive
     for (int i = 0; i < 10; ++i) w8(bank3 + 0x40 + i, inst3[i]);
-    const uint8_t code3[] = {0x3c, 0x7f, 0x00, 0x80, 0x60, 0xff};  // key 60, length 0; wait 96; end
+    const uint8_t code3[] = {0x3c, 0x7f, 0x00, 0xff};  // key 60, length 0, then the end at once
     for (size_t i = 0; i < sizeof code3; ++i) w8(seq3 + static_cast<uint32_t>(i), code3[i]);
     auto cmd3 = [&](int n, uint32_t next, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
         uint32_t at = cmds3 + 0x18 * n;

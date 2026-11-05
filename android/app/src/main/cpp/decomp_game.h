@@ -7,6 +7,8 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -34,7 +36,38 @@ public:
     const WorldDrawList &world() const override { return world_; }
     const DsScreens &screens() const override { return screens_; }
     const TexturedWorld &texturedWorld() const override { return texturedWorld_; }
-    // Screen > Game in 3D: capture the game's 3D world each frame.
+    const TexturedWorld &heldWeapon() const override { return heldWeapon_; }
+    const TexturedWorld &hand(int side) const override { return hands_[side & 1]; }
+    // View > Stand in the world: report gameplay (the player in the field, no menu or event
+    // scene) so the app leaves the giant screen for the captured world around you.
+    void SetStandInWorld(bool on) { standInWorld_ = on; }
+    // A place for the loading area and the menu's backdrop (Game > Use this place as the
+    // loading area): the world captured where the player stands now, Roxas left out, saved next
+    // to the save (khvr_place.bin, with where he stood and faced in khvr_place.txt). Made from
+    // the user's own game as it runs; never part of the app.
+    bool SavePlace();
+    // Loads it: the world, where he stood (feet) and the way he faced (yaw, radians).
+    bool LoadPlace(TexturedWorld *world, Vec3 *feet, float *yaw);
+    // Picture > Draw while the game runs: the screens of a frame are drawn on a thread of their
+    // own while the game runs the next frame, as the DS does, instead of before it.
+    void SetParallelCapture(bool on) { parallel_ = on; }
+    // First person: the game's own Roxas (his model and what he holds, the polygons right around
+    // his feet) is left out of the captured world, or only his head and hair: what lies above
+    // `headCut` of his height.
+    enum class HidePlayer { None, All, Head };
+    void SetHidePlayer(HidePlayer what, float headCut) {
+        hidePlayer_ = what;
+        headCut_ = headCut;
+    }
+    // The game draws what lies outside its own camera's view too (Platform::SetDrawAll).
+    void SetDrawAll(bool on) { Platform::Get().SetDrawAll(on); }
+    // The headset draws the field's cursors at their targets; the game leaves its own out.
+    void SetOwnCursors(bool on) { Platform::Get().SetOwnCursors(on); }
+    // View > Cutscenes is Same as gameplay: in-engine cutscenes placed in the world count as
+    // gameplay for the view rigs.
+    void SetCutscenesInWorld(bool on) { cutscenesInWorld_ = on; }
+    // Screen > Game picture (Sharp, 3D depth) or standing in the world: capture the game's 3D
+    // world each frame.
     void SetWorldCapture(bool on) {
         worldCapture_ = on;
         Platform::Get().SetWorldCapture(on);
@@ -46,12 +79,17 @@ public:
     bool hasPicture() const { return hasPicture_; }
     // Picture > 3D resolution: 1 to 4 times the DS's.
     void Set3dScale(int scale) { Platform::Get().Set3dScale(scale); }
+    void SetCapturedCards(bool on) { Platform::Get().SetCapturedCards(on); }
     uint32_t gameFrames() const { return Platform::Get().frames(); }
     // A few lines for the in-headset status panel: booting, crashed, the latest log.
     std::vector<std::string> Status(size_t lines) const;
 
 private:
     void DriverLoop();
+    // Draws the screens (and the world, and reads the player) of the frame the game just
+    // finished, and hands them to the app.
+    void CaptureFrame(std::unique_ptr<PlatformScreens> &scratch, std::unique_ptr<PlatformWorld> &scratchWorld);
+    void CaptureLoop();
     void OpenAudio();
     void CloseAudio();
 
@@ -59,9 +97,43 @@ private:
     WorldDrawList world_;
     DsScreens screens_;
     TexturedWorld texturedWorld_;
+    TexturedWorld heldWeapon_;
+    double heldSeen_ = 0.0;  // steady-clock seconds the held Keyblade was last drawn by the game
+    // From a capture with Roxas's models: his Keyblade, in the hand's frame, into heldWeapon_.
+    void TakeHeldWeapon(const PlatformWorld &w);
+    // ... and his hands, into hands_.
+    TexturedWorld hands_[2];
+    // Room-scale steps already given to the game this game frame, and whether a frame was shown.
+    Vec3 stepSent_;
+    Vec3 stepAsked_;  // all room-scale steps given to the game (world space)
+    bool frameShown_ = false;
+    void TakeHands(const PlatformWorld &w);
+    // A cutscene's capture without its camera, within a second of one with it: kept out.
+    bool KeepPlacedScene();
+    double placedSceneAt_ = -1e9;  // steady-clock seconds a cutscene was last placed in the world
+    size_t placedTriangles_ = 0;   // and its triangles then
+    int fadeSeen_[2][3] = {};      // each screen's fade (0..16) in the last three captures
+    int fadeModeSeen_[2] = {0, 0};
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;
     uint32_t latestWorldRevision_ = 0, shownWorldRevision_ = 0;
+    PlatformPlayer latestPlayer_;  // read with each world capture (screensMu_)
+    std::atomic<bool> standInWorld_{false};
+    std::string dataDir_;  // the KHDaysVR folder (the save, the boot log, the saved place)
+    std::atomic<bool> cutscenesInWorld_{false};
+    bool eventAnchored_ = false;  // a cutscene without the player has its view's place
+    HidePlayer hidePlayer_ = HidePlayer::None;
+    float headCut_ = 0.8f;
+    float lastFeet_[3] = {};
+    bool hasLastFeet_ = false;
+    double movingUntil_ = 0.0;  // steady-clock seconds until which he counts as moving
+    // The drawing thread (Picture > Draw while the game runs) and its hand-off.
+    std::atomic<bool> parallel_{true};
+    std::thread capture_;
+    std::mutex captureMu_;
+    std::condition_variable captureCv_;
+    bool captureWanted_ = false, captureBusy_ = false, captureStop_ = false;
+    std::chrono::steady_clock::time_point started_;
 
     std::thread driver_;
     std::atomic<bool> stop_{false};

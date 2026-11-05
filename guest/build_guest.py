@@ -264,8 +264,19 @@ RE_VA_START_MACRO = re.compile(r"#define\s+va_start\(ap,\s*last\)\s*\(\(ap\)\s*=
 RE_VA_INLINE = re.compile(r"\(void \*\)\(\(\(unsigned int\)&(\w+)\s*&\s*~3u\)\s*\+\s*4\)")
 
 
+# Data the decomp names twice: a second name for a table at the same address that nothing
+# defines under that name. wasm-ld resolves an undefined data symbol to address 0 without a
+# word (--allow-undefined), so the second name is replaced by the defined one.
+DATA_RENAMES = {
+    "data_ov002_0207e9f4_default": "data_ov002_0207e9f4",
+    "data_ov002_0207ef80_offsets": "data_ov002_0207ef80",
+}
+RE_DATA_RENAME = re.compile(r"\b(%s)\b" % "|".join(DATA_RENAMES))
+
+
 def patch_source(rel, text, fx):
     """Returns the port's version of one decomp source."""
+    text = RE_DATA_RENAME.sub(lambda m: DATA_RENAMES[m.group(1)], text)
     t = RE_STATIC_LOCAL.sub(lambda m: ("extern" + m.group(1)) if m.group(2) in config_symbols() else m.group(0), text)
     t = RE_CLZ.sub(r"\1 = (\2) ? (unsigned int)__builtin_clz(\2) : 32u;", t)
     t = RE_REGPIN.sub("", t)
@@ -469,6 +480,9 @@ def generate_storage(out):
             ["OSi_IrqDma%d" % i for i in range(4)] + ["OS_IrqDummy"] * 10
     init = [(GLOBAL_BASE + 4 * i, ".int32\t%s" % f) for i, f in enumerate(table)]
     low = list(low_syms.items()) + [("khvr_dtcm", GLOBAL_BASE), ("khvr_shared", 0x027ff000)]
+    # The boot lock word at the end of the shared page (OS_InitLock), which no symbol list names.
+    if "data_027ffff0" not in low_syms:
+        low.append(("data_027ffff0", 0x027ffff0))
     asm.insert(0, "".join("\t.functype\t%s () -> ()\n" % f for f in sorted(set(table))) +
                emit_block("khvr_low", GLOBAL_BASE, LOW_END, low, init, section=".rodata.khvr_low"))
     gen = out / "gen"
@@ -512,11 +526,42 @@ def reorder_data_sections(asm):
     return "\n".join(head + [l for c in out for l in c])
 
 
+# Matching decompiled code leaves some locals unset on paths where the ROM used whatever a
+# register held. Mostly clang picks a value and the game plays as on the DS, but in these files it
+# reads the path as undefined behaviour and turns it into a trap (Ov025_MoveGridCursor's nDx / nDy
+# crashed the panel grid): their locals start at zero instead. Not every file: a zero where clang
+# had picked a value breaks other places (Ov025_InitSubsystemObject's budget, a divisor, froze
+# the camp menu in the Grey Area). The build fails on any new trap of this kind (check_traps).
+ZERO_INIT = {
+    "Ov002_ScriptMoveSlot", "Ov006_MissionBuildOptionRows", "Ov008_MissionMenuWaitReady",
+    "Ov008_MoveGridCursor", "Ov025_MoveGridCursor", "Ov213_EnterLeap", "Ov253_IdleTick",
+    "Ov253_SeekTick", "Ov273_EnterLeap", "Ov285_Chase_DecideAttack", "Ov286_Chase_DecideAttack",
+    # The mission results' reward list and its exit confirmation: with no direction held, clang
+    # took the unset direction as Up, so the list went down a moment and straight back up.
+    "Ov005_HandleDirectionalInput", "Ov005_UpdateConfirmation",
+}
+
+
+def check_traps(wasm2c_dir):
+    """Functions wasm2c made into a trap (clang's `unreachable` for undefined behaviour)."""
+    found = []
+    for c in sorted(wasm2c_dir.glob("khdays_*.c")):
+        current = None
+        for line in c.read_text().splitlines():
+            m = re.match(r"^\w+ w2c_khdays_(\w+?)(?:_0)?\(w2c_khdays\* instance.*\{$", line)
+            if m:
+                current = m.group(1)
+            elif line.strip() == "UNREACHABLE;" and current not in found:
+                found.append(current)
+    return found
+
+
 def compile_one(rel, path, objdir):
     obj = objdir / obj_name(rel)
     data = Path(path).read_bytes()
     reorder = is_data_file(rel) or b"__attribute__((aligned(" in data
-    key = hashlib.sha1(data + " ".join(CFLAGS).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
+    flags = CFLAGS + (["-ftrivial-auto-var-init=zero"] if Path(rel).stem in ZERO_INIT else [])
+    key = hashlib.sha1(data + " ".join(flags).encode() + (b" ds-order-2" if reorder else b"")).hexdigest()
     stamp = obj.with_suffix(".key")
     if obj.exists() and stamp.exists() and stamp.read_text() == key:
         return rel, True, ""
@@ -524,7 +569,7 @@ def compile_one(rel, path, objdir):
     if reorder:
         # Through assembly, so the data sections can be put in DS order (reorder_data_sections).
         asm = obj.with_suffix(".s")
-        r = run(["clang", *CFLAGS, *inc, "-S", str(path), "-o", str(asm)])
+        r = run(["clang", *flags, *inc, "-S", str(path), "-o", str(asm)])
         if r.returncode == 0:
             asm.write_text(reorder_data_sections(asm.read_text()))
             r2 = run(["clang", "--target=wasm32", "-c", str(asm), "-o", str(obj)])
@@ -532,7 +577,7 @@ def compile_one(rel, path, objdir):
             if r2.returncode == 0:
                 stamp.write_text(key)
                 return rel, True, ""
-    r = run(["clang", *CFLAGS, *inc, "-c", str(path), "-o", str(obj)])
+    r = run(["clang", *flags, *inc, "-c", str(path), "-o", str(obj)])
     if r.returncode == 0:
         stamp.write_text(key)
         return rel, True, ""
@@ -775,6 +820,10 @@ def main():
     sys.stdout.write(r.stdout)
     if r.returncode:
         sys.exit("postprocess: " + r.stderr)
+    traps = check_traps(out / "wasm2c")
+    if traps:
+        sys.exit("functions compiled to a trap (an unset local or other undefined behaviour; see "
+                 "ZERO_INIT): " + " ".join(traps))
     n, count = write_overlay_table(out, out / "wasm2c")
     print("overlay table: %d overlays, %d data ranges" % (n, count))
 

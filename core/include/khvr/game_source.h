@@ -38,12 +38,26 @@ struct WorldTexture {
 };
 enum TexturedTriangleFlags : uint8_t {
     kTriFront = 1, kTriBack = 2, kTriTranslucent = 4, kTriDecal = 8, kTriTexAlpha = 16, kTriDepthWrite = 32,
+    kTriLine = 64,  // a wireframe edge: vertices 0 to 1 (2 repeats 1)
+    kTriBillboard = 128,  // part of a sprite facing the game's camera (TexturedWorld::billboard)
 };
 struct TexturedWorld {
     std::vector<TexturedVertex> vertices;  // three per triangle
     std::vector<int32_t> triangleTexture;  // index into textures, -1 for none
     std::vector<uint8_t> triangleFlags;
     std::vector<WorldTexture> textures;
+    // Per vertex, when any triangle has kTriBillboard: its sprite's centre (x, y, z), the vertex's
+    // offset from it along the sprite's right and up, and its kind: 1 facing the camera (turned to
+    // face the viewer), 2 upright (turned about the vertical only). kBillboardFloats, or empty.
+    static constexpr int kBillboardFloats = 6;
+    std::vector<float> billboard;
+    // The field's cursor is on a target here (world): kind 1 or 3 an enemy, 2 a person to talk to
+    // or a thing to use; locked when locked on. The headset draws the cursor itself.
+    bool manualSort = false;  // the game orders its translucent triangles (else back to front)
+    bool lockOn = false;
+    Vec3 lockOnAt;
+    int lockOnKind = 0;
+    bool lockOnLocked = false;
     uint32_t revision = 0;  // bumped with every new frame of it
     // Where the DS drew it in its 256 x 192 (VIEWPORT x1, y1 bottom-left, x2, y2), and the fades
     // it applied to it: each mode 0 none, 1 towards white, 2 towards black, by factor / 16.
@@ -81,6 +95,21 @@ public:
     virtual const DsScreens &screens() const = 0;
     // The textured world, when the game source captures one (empty otherwise).
     virtual const TexturedWorld &texturedWorld() const {
+        static const TexturedWorld empty;
+        return empty;
+    }
+    // The game's own weapon (Roxas's Keyblade) as last seen, for your hand: in the hand's frame
+    // (WeaponFrame::ToHand: grip at the origin, the blade along -Z, one blade length a unit).
+    // Empty until the game has drawn it.
+    virtual const TexturedWorld &heldWeapon() const {
+        static const TexturedWorld empty;
+        return empty;
+    }
+    // Roxas's hands as last seen ([0] left, [1] right), for yours: in the hand's frame
+    // (HandFrame::ToHand: the middle at the origin, wrist to knuckles along +Y, one hand length a
+    // unit). Empty until the game has drawn them.
+    virtual const TexturedWorld &hand(int side) const {
+        (void)side;
         static const TexturedWorld empty;
         return empty;
     }

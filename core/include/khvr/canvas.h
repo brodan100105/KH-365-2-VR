@@ -45,4 +45,10 @@ private:
     std::vector<uint32_t> pixels_;
 };
 
+// Large text with smooth edges and a soft glow, transparent around it, for titles floating in the
+// air: the font drawn small and enlarged `scale` times with its edges rounded off (not blocky
+// pixels). `margin` pixels on every side leave the glow room. Returns w x h RGBA8 pixels.
+std::vector<uint32_t> PaintTitleText(const std::string &text, int scale, int margin, uint32_t color,
+                                     uint32_t glow, int *w, int *h);
+
 }  // namespace khvr

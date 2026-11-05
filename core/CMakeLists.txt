@@ -12,6 +12,7 @@ add_library(khvr_core STATIC
     src/canvas.cpp
     src/combat.cpp
     src/demo_game.cpp
+    src/held_weapon.cpp
     src/input_mapper.cpp
     src/settings.cpp
     src/settings_panel.cpp

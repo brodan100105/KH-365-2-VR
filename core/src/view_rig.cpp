@@ -11,6 +11,13 @@ namespace {
 constexpr float kTeleportMeters = 8.0f;
 // Teleport follow mode re-centers once the character is this far from the anchor.
 constexpr float kTeleportFollowMeters = 2.5f;
+// The third-person view follows the game camera's heading for up to this long after it is
+// placed, until that heading has held still for kSettledSeconds.
+constexpr float kSettleSeconds = 4.0f;
+// A cutscene's camera moving farther than this in one step is a cut.
+constexpr float kCutsceneCutMeters = 3.0f;
+constexpr float kCutsceneBlinkGap = 1.0f;  // seconds: a jump this soon after another is camera motion
+constexpr float kSettledSeconds = 0.5f;
 
 Vec3 Flat(const Vec3 &v) { return {v.x, 0.0f, v.z}; }
 
@@ -43,6 +50,13 @@ GameCamera HeadCamera(const Similarity &toWorld, const Pose &head, float lookDis
     return c;
 }
 
+// First person: how quickly the view glides after his attack lunges (time constant, s).
+constexpr float kLungeGlideSeconds = 0.25f;
+
+// A standing person's eye height (m): third person puts your eyes this plus Viewpoint height
+// above the character's floor at a recenter.
+constexpr float kStandingEyeHeight = 1.6f;
+
 float SeatedBoost(const Settings &s) {
     return s.Bool(SettingId::ComfortSeated) ? s.Get(SettingId::ComfortSeatedHeight) : 0.0f;
 }
@@ -70,12 +84,43 @@ float TurnController::Update(const Settings &s, float axis, float dt, bool *snap
     return 0.0f;
 }
 
+void MotionSmoother::Reset(const Vec3 &p) {
+    from_ = to_ = pos_ = p;
+    step_ = {};
+    elapsed_ = 0.0f;
+}
+
+Vec3 MotionSmoother::Update(const Vec3 &target, uint32_t gameFrame, float dt, const Vec3 &shown, bool predict) {
+    elapsed_ += dt;
+    if (gameFrame != frame_ || Length(target - to_) > 1e-6f) {
+        frame_ = gameFrame;
+        // Average the game's frame time, ignoring hitches (loads, pauses) longer than 0.1 s.
+        if (elapsed_ > 0.0f && elapsed_ < 0.1f) interval_ += (elapsed_ - interval_) * 0.2f;
+        from_ = pos_ + shown;
+        step_ = target - to_ - shown;
+        // A jump (a teleport, a load) is no speed.
+        if (Length(step_) > 1.0f) step_ = {};
+        to_ = target;
+        elapsed_ = 0.0f;
+    }
+    // This headset frame counts too: the one a game frame arrives in moves the view a share
+    // already (else it stood still then, a half game frame behind all along).
+    const float k = Clamp((elapsed_ + dt) / std::fmax(interval_, 1e-3f), 0.0f, 1.0f);
+    const Vec3 aim = predict ? to_ + step_ : to_;
+    pos_ = from_ + (aim - from_) * k;
+    return pos_;
+}
+
 float ThirdPersonScale(const Settings &s) {
     return s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::TpWorldScale);
 }
 
+float CutsceneScale(const Settings &s) {
+    return s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::CutsceneWorldScale);
+}
+
 float FirstPersonScale(const Settings &s, float realEyeHeight) {
-    float scale = s.Get(SettingId::GameUnitsPerMeter);
+    float scale = s.Get(SettingId::GameUnitsPerMeter) / s.Get(SettingId::FpWorldScale);
     if (s.Bool(SettingId::FpMatchCharacterHeight) && realEyeHeight > 0.5f)
         scale *= s.Get(SettingId::FpEyeHeight) / realEyeHeight;
     return scale;
@@ -89,20 +134,37 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
                                  const TrackingFrame &t) {
     RigOutput out;
     const float scale = ThirdPersonScale(s);
-    const Vec3 target = game.playerPos;
     const float headYaw = YawOf(t.head.orientation);
 
     bool reinit = !initialized_ || t.recenter;
-    if (initialized_ && Length(target - anchor_) > kTeleportMeters * scale) {
+    if (initialized_ && Length(game.playerPos - anchor_) > kTeleportMeters * scale) {
         reinit = true;
         out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     }
+    if (reinit) motion_.Reset(game.playerPos);
+    const Vec3 target = s.Bool(SettingId::ViewSmoothMotion)
+                            ? motion_.Update(game.playerPos, game.frameCounter, t.dt)
+                            : game.playerPos;
     if (reinit) {
         // Look the way the game camera looks, from where you are standing now.
         viewYaw_ = CameraYaw(game.camera) - headYaw;
+        placedHead_ = t.head.position;
+        placedHeadYaw_ = headYaw;
         anchor_ = target;
         initialized_ = true;
         if (t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
+        settleLeft_ = kSettleSeconds;
+        settleStill_ = 0.0f;
+        lastCameraYaw_ = CameraYaw(game.camera);
+    } else if (settleLeft_ > 0.0f) {
+        // Still settling: turn with the game camera's heading until it holds still (your own
+        // turning still adds to it).
+        const float cameraYaw = CameraYaw(game.camera);
+        const float swing = WrapAngle(cameraYaw - lastCameraYaw_);
+        settleStill_ = std::fabs(swing) < DegToRad(0.5f) ? settleStill_ + t.dt : 0.0f;
+        lastCameraYaw_ = cameraYaw;
+        viewYaw_ = WrapAngle(viewYaw_ + swing);
+        settleLeft_ = settleStill_ >= kSettledSeconds ? 0.0f : settleLeft_ - t.dt;
     }
 
     // Follow the character.
@@ -136,9 +198,13 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
     viewYaw_ = WrapAngle(viewYaw_ + turn);
     if (snapped) out.blinkStarted |= s.Bool(SettingId::ComfortBlink);
 
-    // The character stands `distance` in front of the tracking origin and `height` below it.
-    Vec3 placement{0.0f, -(s.Get(SettingId::TpHeight) + SeatedBoost(s)),
-                   -s.Get(SettingId::TpDistance)};
+    // The character stands `distance` in front of where your head was when the view was placed,
+    // the way it looked, with your eyes a standing person's eye height plus `height` above its
+    // floor: wherever you stood and however tall you are when you recenter.
+    const Vec3 ahead = Quat::Yaw(placedHeadYaw_).Rotate({0.0f, 0.0f, -s.Get(SettingId::TpDistance)});
+    Vec3 placement{placedHead_.x + ahead.x,
+                   placedHead_.y - (kStandingEyeHeight + s.Get(SettingId::TpHeight) + SeatedBoost(s)),
+                   placedHead_.z + ahead.z};
     out.trackingToWorld.scale = scale;
     out.trackingToWorld.rotation = Quat::Yaw(viewYaw_);
     out.trackingToWorld.translation = anchor_ - out.trackingToWorld.rotation.Rotate(placement * scale);
@@ -148,8 +214,7 @@ RigOutput ThirdPersonRig::Update(const Settings &s, const GameFrame &game,
     // Artificial motion of the view (following, smooth turning) drives the vignette.
     float followSpeed = t.dt > 0 ? Length(anchor_ - before) / scale / t.dt : 0.0f;  // m/s
     float turnSpeed = t.dt > 0 && !snapped ? std::fabs(turn) / t.dt : 0.0f;          // rad/s
-    out.vignette = s.Get(SettingId::ComfortVignette) *
-                   Clamp(followSpeed / 2.0f + turnSpeed / 1.5f, 0.0f, 1.0f);
+    out.vignette = Clamp(followSpeed / 2.0f + turnSpeed / 1.5f, 0.0f, 1.0f);
 
     out.requests.overrideCamera = true;
     out.requests.camera = HeadCamera(out.trackingToWorld, t.head, 10.0f * scale);
@@ -173,6 +238,8 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         out.blinkStarted = s.Bool(SettingId::ComfortBlink);
     }
     if (reinit) {
+        motion_.Reset(game.playerPos);
+        standing_ = game.playerPos;
         // Face the way the character faces, and measure your eye height once so that
         // crouching does not rescale the world.
         bodyYaw_ = game.playerYaw - headYaw;
@@ -181,6 +248,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
         center_ = headFloor;
         lastHeadFloor_ = headFloor;
         pendingStep_ = {};
+        lastStepTaken_ = game.roomStepTaken;
         lastGameFrame_ = game.frameCounter;
         initialized_ = true;
         if (t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
@@ -203,10 +271,36 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
 
     // The game applies a requested room-scale step on its next frame; until then, show it as
     // already applied so the view does not lag behind your head at the game's frame rate.
-    if (game.frameCounter != lastGameFrame_) {
+    Vec3 consumed;  // the room-scale steps the game has now applied, which the view already showed
+    if (game.roomStepsReported) {
+        // The game says which of them its position shows: the rest are shown on top of it.
+        consumed = game.roomStepTaken - lastStepTaken_;
+        lastStepTaken_ = game.roomStepTaken;
+        pendingStep_ = game.roomStepUnapplied;
+        lastGameFrame_ = game.frameCounter;
+    } else if (game.frameCounter != lastGameFrame_) {
+        consumed = pendingStep_;
         pendingStep_ = {};
         lastGameFrame_ = game.frameCounter;
     }
+    const Vec3 followed = s.Bool(SettingId::ViewSmoothMotion)
+                              ? motion_.Update(game.playerPos, game.frameCounter, t.dt, consumed,
+                                               Length(t.moveAxis) > 0.2f)
+                              : game.playerPos;
+    // Walking him with the stick or in your room, the view keeps right with him; otherwise (his
+    // attacks lunge him forward a step at a time) it glides after him, so a combo does not jerk
+    // you about. (Gliding while you walked in your room held you back behind your steps.)
+    if (Length(headFloor - lastHeadFloor_) > 1e-4f || Length(pendingStep_) > 1e-4f || Length(consumed) > 1e-4f)
+        steppedAgo_ = 0.0f;
+    else
+        steppedAgo_ += t.dt;
+    if (Length(t.moveAxis) > 0.2f || steppedAgo_ < 0.4f || !s.Bool(SettingId::ViewSmoothMotion)) {
+        standing_ = followed;
+    } else {
+        standing_ += consumed;
+        standing_ += (followed - standing_) * (1.0f - std::exp(-t.dt / kLungeGlideSeconds));
+    }
+    const Vec3 player = standing_;
 
     Vec3 bodyFloor;  // tracking-space floor point that sits on the character's feet
     if (s.Bool(SettingId::FpRoomScale) && game.inGameplay) {
@@ -223,7 +317,7 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
     }
     lastHeadFloor_ = headFloor;
 
-    Vec3 feet = game.playerPos + pendingStep_;
+    Vec3 feet = player + pendingStep_;
     feet.y -= boost * scale_;
     m.translation = feet - m.rotation.Rotate(bodyFloor * scale_);
 
@@ -237,7 +331,62 @@ RigOutput FirstPersonRig::Update(const Settings &s, const GameFrame &game, const
 
     float moving = Clamp(Length(t.moveAxis), 0.0f, 1.0f);
     float turnSpeed = t.dt > 0 && !snapped ? std::fabs(turn) / t.dt : 0.0f;
-    out.vignette = s.Get(SettingId::ComfortVignette) * Clamp(moving + turnSpeed / 1.5f, 0.0f, 1.0f);
+    out.vignette = Clamp(moving + turnSpeed / 1.5f, 0.0f, 1.0f);
+    return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cutscenes
+// ---------------------------------------------------------------------------------------------
+
+RigOutput CutsceneRig::Update(const Settings &s, const GameFrame &game, const TrackingFrame &t) {
+    RigOutput out;
+    const float scale = CutsceneScale(s);
+    const float headYaw = YawOf(t.head.orientation);
+    const Vec3 eye = game.camera.eye;
+    const float cameraYaw = CameraYaw(game.camera);
+
+    // A cut: the camera jumps (far, or turns sharply in one step). Place the view again there.
+    const bool cut = initialized_ && (Length(eye - eye_) > kCutsceneCutMeters * scale ||
+                                      std::fabs(WrapAngle(cameraYaw - cameraYaw_)) > DegToRad(30.0f));
+    sinceCut_ += t.dt;
+    // Jumps close after one another are a fast camera (a swoop, a quick pan), not cuts: the view
+    // follows them without a blink (each was a flash of black).
+    const bool quickCamera = cut && sinceCut_ < kCutsceneBlinkGap;
+    if (cut) sinceCut_ = 0.0f;
+    if (!initialized_ || t.recenter || cut) {
+        refHead_ = t.head.position;
+        yawOffset_ = -headYaw;  // where you look now is where the camera looks
+        eye_ = eye;
+        cameraYaw_ = cameraYaw;
+        initialized_ = true;
+        if ((cut && !quickCamera) || t.recenter) out.blinkStarted = s.Bool(SettingId::ComfortBlink);
+    } else {
+        // Follow the camera's moves and turns, smoothed out of the game's frame steps; that
+        // motion is artificial, so it drives the vignette.
+        const float k = 1.0f - std::exp(-8.0f * t.dt);
+        const Vec3 before = eye_;
+        const float yawBefore = cameraYaw_;
+        eye_ += (eye - eye_) * k;
+        cameraYaw_ = WrapAngle(cameraYaw_ + WrapAngle(cameraYaw - cameraYaw_) * k);
+        if (t.dt > 0) {
+            const float speed = Length(eye_ - before) / scale / t.dt;                       // m/s
+            const float turning = std::fabs(WrapAngle(cameraYaw_ - yawBefore)) / t.dt;      // rad/s
+            out.vignette = Clamp(speed / 2.0f + turning / 1.5f, 0.0f, 1.0f);
+        }
+    }
+
+    bool snapped = false;
+    yawOffset_ = WrapAngle(yawOffset_ + turn_.Update(s, t.turnAxis, t.dt, &snapped));
+    if (snapped) out.blinkStarted |= s.Bool(SettingId::ComfortBlink);
+
+    const float viewYaw = WrapAngle(cameraYaw_ + yawOffset_);
+    Similarity &m = out.trackingToWorld;
+    m.scale = scale;
+    m.rotation = Quat::Yaw(viewYaw);
+    // Your head at the reference place sees from the camera's eye.
+    m.translation = eye_ - m.rotation.Rotate(refHead_ * scale);
+    out.moveBasisYaw = viewYaw;
     return out;
 }
 

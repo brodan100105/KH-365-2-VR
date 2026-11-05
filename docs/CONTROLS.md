@@ -12,7 +12,8 @@ both controllers.
 | Left thumbstick | Move (analog; the D-pad when the game needs it) |
 | A / B | DS A / DS B |
 | X / Y | DS X / DS Y |
-| Left thumbstick click | SELECT |
+| Left thumbstick click, hold | Put the second screen (wrist, hand or floating touch screen) away, or bring it back |
+| Left thumbstick click, tap | SELECT on the giant screen and in menus (nothing standing in the world) |
 | Menu (left), tap | START |
 | Menu (left), hold | Open / close the VR settings panel |
 | Right thumbstick left/right | Turn (snap or smooth, **Comfort** tab) |

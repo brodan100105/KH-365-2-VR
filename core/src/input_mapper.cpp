@@ -9,7 +9,14 @@ namespace {
 constexpr float kStickDeadzone = 0.2f;
 constexpr float kHoldSeconds = 0.8f;   // menu / right stick long press
 constexpr float kGripPressed = 0.6f;
-constexpr float kTriggerPressed = 0.6f;
+// Triggers press at half way and let go only near the top, so a light or wavering pull (paging a
+// tutorial with L/R) neither misses nor flickers.
+constexpr float kTriggerPressed = 0.5f, kTriggerReleased = 0.3f;
+// Menus: a direction presses past kMenuPress and lets go below kMenuRelease, one axis at a time.
+constexpr float kMenuPress = 0.55f;
+constexpr float kMenuRelease = 0.35f;
+// Field: an octant holds until the stick is this far past its edge.
+constexpr float kOctantHysteresis = 8.0f * kPi / 180.0f;
 
 }  // namespace
 
@@ -59,15 +66,24 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     uint16_t held = 0;
 
     // ---- App actions: long presses never reach the game ----
-    if (c.menu) {
+    // The menu button counts only once it has been seen up: held through the app's start (the
+    // game's intro), it opened the settings panel unseen and the game took no buttons.
+    if (!c.menu && !menuArmed_) {
+        menuArmed_ = true;
+        menuWasDown_ = false;  // letting go of that first hold presses nothing
+    }
+    if (c.menu && menuArmed_) {
         menuHeld_ += dt;
         if (menuHeld_ >= kHoldSeconds && !settingsFired_) {
             actions_.openSettingsPanel = true;
             settingsFired_ = true;
         }
-    } else {
+    } else if (!c.menu) {
         // A short press of the menu button is START.
-        if (menuWasDown_ && !settingsFired_) AddPulse(kDsStart);
+        if (menuWasDown_ && !settingsFired_) {
+            AddPulse(kDsStart);
+            actions_.pressedStart = true;
+        }
         menuHeld_ = 0.0f;
         settingsFired_ = false;
     }
@@ -87,31 +103,54 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
     }
     rightStickWasDown_ = c.stickClick[1];
 
+    for (int h = 0; h < 2; ++h)
+        triggerDown_[h] = c.trigger[h] > (triggerDown_[h] ? kTriggerReleased : kTriggerPressed);
+
     // ---- Buttons ----
     if (c.a) held |= kDsA;
     if (c.b) held |= kDsB;
     if (c.x) held |= kDsX;
     if (c.y) held |= kDsY;
-    if (c.stickClick[0]) held |= kDsSelect;
-    const bool firstPerson = mode == ViewMode::FirstPerson;
+    // The left thumbstick's press: held half a second it puts the second screen away (the app);
+    // let go sooner, it is Select on the giant screen and in menus, and nothing standing in the
+    // world (there Select stopped Roxas moving).
+    if (c.stickClick[0]) {
+        leftStickHeld_ += dt;
+    } else {
+        if (leftStickHeld_ > 0.0f && leftStickHeld_ < 0.5f && (mode == ViewMode::GiantScreen || menuStick_))
+            AddPulse(kDsSelect);
+        leftStickHeld_ = 0.0f;
+    }
+    // In a menu or a tutorial's pages the triggers are L and R in every view (first person keeps
+    // one for magic otherwise, and the pages turn with L/R).
+    const bool firstPerson = mode == ViewMode::FirstPerson && !menuStick_ &&
+                             s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile;
     if (firstPerson) {
         // The weapon hand's grip holds the Keyblade; the off hand's grip is the lock-on button.
         // Triggers: the off hand casts (Combat > Magic); the weapon-hand trigger is L.
         int weapon = s.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
         if (c.grip[1 - weapon] > kGripPressed)
             held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlLockOnButton));
-        if (c.trigger[weapon] > kTriggerPressed) held |= kDsL;
+        if (triggerDown_[weapon]) held |= kDsL;
         if (s.Enum<MagicGesture>(SettingId::CombatMagicGesture) == MagicGesture::Button &&
-            c.trigger[1 - weapon] > kTriggerPressed)
+            triggerDown_[1 - weapon])
             held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlMagicButton));
     } else {
-        if (c.trigger[0] > kTriggerPressed) held |= kDsL;
-        if (c.trigger[1] > kTriggerPressed) held |= kDsR;
+        if (triggerDown_[0]) held |= kDsL;
+        if (triggerDown_[1]) held |= kDsR;
     }
 
     // ---- Gestures ----
     if (combat) {
-        if (combat->swingStarted) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlAttackButton)));
+        if (combat->swingStarted) {
+            attackBits_ = BindingBits(s.Enum<DsBinding>(SettingId::CtrlAttackButton));
+            if (attackFrames_ > 0) {
+                attackQueued_ = true;
+            } else {
+                attackFrames_ = kAttackWaitFrames;
+                attackPhase_ = 0;
+            }
+        }
         if (combat->guarding) held |= BindingBits(s.Enum<DsBinding>(SettingId::CtrlGuardButton));
         if (combat->castMagic) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlMagicButton)));
         if (combat->jump) AddPulse(BindingBits(s.Enum<DsBinding>(SettingId::CtrlJumpButton)));
@@ -132,11 +171,73 @@ void InputMapper::Update(const Settings &s, ViewMode mode, const ControllerState
         // Stick up is "forward" along moveBasisYaw.
         Vec3 local{mx / mag * scaled, 0.0f, -my / mag * scaled};
         analogMove_ = Quat::Yaw(moveBasisYaw).Rotate(local);
-        held |= DpadFromDirection(mx, my, moveBasisYaw - gameCameraYaw);
+        if (!menuStick_) {
+            held |= FieldDpad(mx, my, moveBasisYaw - gameCameraYaw);
+            const float a = WrapAngle(std::atan2(-mx, my) + moveBasisYaw - gameCameraYaw);
+            fieldHeading_ = static_cast<int>(std::lround((a < 0 ? a + 2.0f * kPi : a) * (65536.0f / (2.0f * kPi)))) & 0xffff;
+        } else {
+            fieldHeading_ = -1;
+        }
     } else {
+        fieldHeading_ = -1;
         analogMove_ = {};
+        octant_ = -1;
+    }
+    if (menuStick_) {
+        held |= MenuDpad(mx, my);
+        octant_ = -1;
+    } else {
+        menuDir_ = 0;
     }
     held_ = held;
+}
+
+uint16_t InputMapper::MenuDpad(float x, float y) {
+    // A menu moves its cursor on each new press, so a stick wandering between directions (or
+    // into a diagonal) skips items: hold one axis until the stick clearly leaves it.
+    const float mag = std::sqrt(x * x + y * y);
+    auto dominant = [&]() -> uint16_t {
+        if (std::fabs(x) > std::fabs(y)) return x > 0 ? kDsRight : kDsLeft;
+        return y > 0 ? kDsUp : kDsDown;
+    };
+    if (mag < kMenuRelease) {
+        menuDir_ = 0;
+    } else if (menuDir_ == 0) {
+        if (mag >= kMenuPress) menuDir_ = dominant();
+    } else {
+        const bool horizontal = menuDir_ & (kDsLeft | kDsRight);
+        const float along = horizontal ? std::fabs(x) : std::fabs(y);
+        const float across = horizontal ? std::fabs(y) : std::fabs(x);
+        const bool reversed = horizontal ? (x > 0) != (menuDir_ == kDsRight) : (y > 0) != (menuDir_ == kDsUp);
+        if (reversed || across > along * 1.5f) menuDir_ = mag >= kMenuPress ? dominant() : 0;
+    }
+    return menuDir_;
+}
+
+uint16_t InputMapper::FieldDpad(float x, float y, float relativeYaw) {
+    static const uint16_t kOctants[8] = {
+        kDsUp, kDsUp | kDsLeft, kDsLeft, kDsDown | kDsLeft,
+        kDsDown, kDsDown | kDsRight, kDsRight, kDsUp | kDsRight,
+    };
+    const float angle = WrapAngle(std::atan2(-x, y) + relativeYaw);
+    if (octant_ >= 0) {
+        // Stay in the octant while within its 45 degrees plus the margin on either side.
+        const float off = std::fabs(WrapAngle(angle - octant_ * (kPi / 4.0f)));
+        if (off <= kPi / 8.0f + kOctantHysteresis) return kOctants[octant_];
+    }
+    int octant = static_cast<int>(std::lround(angle / (kPi / 4.0f)));
+    octant_ = ((octant % 8) + 8) % 8;
+    return kOctants[octant_];
+}
+
+void InputMapper::NoteActionTaken() {
+    if (attackFrames_ == 0) return;
+    attackFrames_ = 0;
+    if (attackQueued_) {
+        attackQueued_ = false;
+        attackFrames_ = kAttackWaitFrames;
+        attackPhase_ = 2;  // released frames first: the press just taken may still be down
+    }
 }
 
 uint16_t InputMapper::SampleForGameFrame() {
@@ -150,6 +251,17 @@ uint16_t InputMapper::SampleForGameFrame() {
             bits &= static_cast<uint16_t>(~p.bits);
             p.releasing = false;
             p.bits = 0;
+        }
+    }
+    if (attackFrames_ > 0) {
+        // Pressed two frames (the game's logic runs every other one), released two (each press
+        // a new one to it).
+        if (attackPhase_ < 2) bits |= attackBits_;
+        else bits &= static_cast<uint16_t>(~attackBits_);
+        attackPhase_ = (attackPhase_ + 1) % 4;
+        if (--attackFrames_ == 0 && attackQueued_) {
+            attackQueued_ = false;
+            attackFrames_ = kAttackWaitFrames;
         }
     }
     if (dodgeFrames_ > 0) {

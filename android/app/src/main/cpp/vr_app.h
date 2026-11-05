@@ -45,6 +45,8 @@ private:
         Pose pose;      // tracking space
         float width = 0, height = 0;
     };
+    // Hand screen > Placement, or Hidden while you stand in a cutscene.
+    BottomScreenPlacement HandScreenPlacementNow() const;
     ViewMode EffectiveMode() const;
     void ApplyPlatformSettings();
     void UpdateTextures();
@@ -54,6 +56,11 @@ private:
                       float *px, float *py, float *dist);
     void RenderGiantScreenViews(const XrFrameInput &in);
     void RenderEye(const XrFrameInput &in, int eye);
+    // Roxas's hand on controller h at grip pose g (first person).
+    void DrawHand(int h, const Pose &g, const Mat4 &vpTracking);
+    // The saved place (Game > Saved place as the loading area) around you, its player's spot on
+    // your floor, facing where you first looked; false when there is none.
+    bool DrawPlace(const Mat4 &vpTracking);
     void DrawProps(const XrFrameInput &in, const Mat4 &vpTracking);
     // Handheld > Handheld DS: a small DS where the touch screen is, both screens on it, drawn at
     // `scale` of its size and `alpha` opacity (the grow and fade of the hand screen).
@@ -87,6 +94,9 @@ private:
     std::string notice_;  // why the demo arena runs instead of the game
     ThirdPersonRig thirdPerson_;
     FirstPersonRig firstPerson_;
+    CutsceneRig cutscene_;
+    bool inCutsceneView_ = false;  // the cutscene rig places the view
+    float vignette_ = 0.0f;        // the comfort vignette, eased (0..1 of the way in)
     CombatRecognizer combat_;
     InputMapper mapper_;
     SettingsPanel panel_;
@@ -99,7 +109,7 @@ private:
     bool recenterNext_ = false;
     float prevTrigger_[2] = {0, 0};
 
-    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_;
+    Texture topTex_, hudTex_, bottomTex_, panelTex_, statusTex_, loadingTex_, stationTex_, glowTex_, titleTex_;
     Texture frontTex_, backTex_;  // Screen > Game in 3D: the 2D in front of and behind the world
     // Screen > Game in 3D is on and the game gave a world to draw this frame.
     bool World3d() const;
@@ -124,6 +134,7 @@ private:
     WorldDrawList loadingArea_, loadingBeam_, loadingSparkles_;
     Vec3 loadingCenter_;
     Placement loadingPanel_;
+    Placement titlePanel_;  // the startup title, "KH: Days VR", floating over the loading line
     Canvas statusCanvas_{768, 288};
     double statusDrawn_ = -10.0;
     bool statusVisible_ = false;
@@ -135,7 +146,25 @@ private:
     Vec3 screenAnchor_;             // head position at the last recenter
     float screenYaw_ = 0.0f;
     float hudYaw_ = 0.0f;
+    float hudAwaySeconds_ = 0.0f;  // how long you have looked away from the floating HUD
+    bool hudGliding_ = false;      // the HUD is on its way back in front of you
     bool laserOnPanel_ = false, laserOnBottom_ = false;
+    bool panelPlaced_ = false;
+    // First person: the Keyblade held out (the grip held, or an attack lately) and since when.
+    Pose lastGrip_[2];  // each hand's last tracked grip pose, and when (HandScreen placement)
+    double lastGripAt_[2] = {0.0, 0.0};
+    bool keybladeShown_ = false;
+    uint32_t lastActionsTaken_ = 0;  // GameFrame::actionsTaken as last seen
+    std::vector<uint32_t> barScratch_;  // a 2D layer without letterbox rows (UpdateTextures)
+    TexturedWorld place_;          // the saved place, when loaded (DecompGame::LoadPlace)
+    Vec3 placeFeet_;
+    float placeYaw_ = 0.0f;
+    bool placeTried_ = false;  // the saved place has been looked for
+    bool secondScreenOn_ = true;    // the second screen shown (a long left-thumbstick press toggles)
+    float leftStickHeldFor_ = 0.0f;  // seconds the left thumbstick has been held down
+    bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
+    float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
+    double keybladeAppearedAt_ = 0.0;
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),

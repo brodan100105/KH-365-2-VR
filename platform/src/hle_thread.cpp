@@ -26,6 +26,7 @@
 
 #include "guest.h"
 #include "hle.h"
+#include "hle_gx.h"
 #include "platform_internal.h"
 
 extern "C" {
@@ -308,6 +309,38 @@ void w2c_env_khvr_host_reset(struct w2c_env *) {
 void w2c_env_khvr_host_print(struct w2c_env *, u32 text) { Log("guest: %s", ReadString(text).c_str()); }
 
 void w2c_env_khvr_host_watch(struct w2c_env *, u32 addr, u32 size) { WatchSet(addr, size, "asked by the guest"); }
+
+void w2c_env_khvr_host_lock_on(struct w2c_env *, u32 position, u32 kind, u32 locked) {
+    GxNoteLockOn(position, static_cast<int32_t>(kind), locked != 0);
+}
+
+u32 w2c_env_khvr_host_own_cursors(struct w2c_env *) { return gOwnCursors ? 1 : 0; }
+
+u32 w2c_env_khvr_host_draw_all(struct w2c_env *) { return gDrawAll ? 1 : 0; }
+
+u32 w2c_env_khvr_host_move_heading(struct w2c_env *, u32 actor) {
+    const int32_t h = gMoveHeading;
+    return h >= 0 && actor == SwapPlayerActor() ? static_cast<u32>(h) : 0xffffffffu;
+}
+
+u32 w2c_env_khvr_host_reach_bonus(struct w2c_env *, u32 actor) {
+    return actor && actor == SwapPlayerActor() ? static_cast<u32>(gReachBonus.load()) : 0u;
+}
+
+void w2c_env_khvr_host_room_step(struct w2c_env *, u32 actor, u32 xz) {
+    int32_t step[2] = {0, 0};
+    if (actor && actor == SwapPlayerActor()) TakePlayerStep(step);
+    if (xz && xz + 8 <= GuestMemSize()) {
+        Write32(xz, static_cast<uint32_t>(step[0]));
+        Write32(xz + 4, static_cast<uint32_t>(step[1]));
+    }
+}
+
+void w2c_env_khvr_host_joint(struct w2c_env *, u32 obj, u32 node) { GxJoint(obj, node); }
+
+void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }
+
+void w2c_env_khvr_host_model_end(struct w2c_env *) { GxModelBegin(0); }
 
 void w2c_env_khvr_host_trace(struct w2c_env *, u32 what, u32 a, u32 b) {
     if (ReadString(what) == "scene request") SnapshotOnSceneRequest(a);

@@ -16,7 +16,11 @@ hands, DS + giant screen) and the options changed most.
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
 | `mode` | View mode | `third_person`, `first_person`, `giant_screen` | `third_person` | Panoramic: stand around Roxas in 6DoF. First person: you are the character. |
-| `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or from where you stand. |
+| `stand_in_world` | Stand in the world (experimental) | `true` / `false` | `false` | In gameplay, the game's 3D around you instead of on the giant screen, in the view mode above. For now you see what the game's own camera sees; menus and event scenes stay on the giant screen. |
+| `smooth_motion` | Smooth camera motion | `true` / `false` | `true` | Standing in the world, the view follows Roxas smoothly between the game's frames instead of in its steps, which shake most when he changes direction. |
+| `draw_all` | Draw what the game's camera does not see | `true` / `false` | `true` | Standing in the world, the game draws enemies around you even where its own camera does not look (it skips those outside its view for the DS). Costs some speed. |
+| `cutscene_view` | Cutscenes | `giant_screen`, `same_as_gameplay` | `giant_screen` | Watch in-engine cutscenes on the giant screen, or standing in the scene like gameplay (with Stand in the world; scenes whose camera cannot be placed stay on the giant screen). |
+| `cutscene_world_scale` | Cutscene world scale | 0.5 to 4 x | `1.75` | How big in-engine cutscenes are around you when you stand in them: larger fills the space more (1 is the game's own scale). |
 | `mode_switch_button` | Quick mode switch | `true` / `false` | `true` | Hold the right thumbstick click to swap panoramic and first person. |
 
 ## Screen
@@ -38,7 +42,7 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `world_scale` | World scale | 0.02 to 1.5 x | `1` | 1 is life size; small values turn the level into a diorama. |
 | `distance` | Distance behind | 0 to 10 m | `3` | How far in front of you the character stands. |
-| `height` | Viewpoint height | -1 to 6 m | `1` | How far your floor sits above the character's floor. |
+| `height` | Viewpoint height | -1 to 6 m | `1` | How far your eyes sit above a standing person's (1.6 m) over the character's floor, measured from your head when you recenter (right stick click), however tall you are or wherever you stand. |
 | `follow` | Follow | `smooth`, `locked`, `teleport` | `smooth` | How the view follows the character. Teleport is the most comfortable. |
 | `follow_speed` | Follow speed | 0.5 to 10 | `3` | How quickly the view catches up in Smooth mode. |
 | `deadzone` | Follow dead zone | 0 to 4 m | `0.5` | The character can move this far before the view follows. |
@@ -49,15 +53,27 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `eye_height` | Character eye height | 1 to 2.2 m | `1.5` | Eye height of the character you play. |
+| `world_scale` | World scale | 0.5 to 4 x | `1.85` | How big the world looks around you in first person: above 1 larger, below 1 smaller (on top of Match character height). |
+| `eye_height` | Character eye height | 1 to 2.5 m | `2.5` | Eye height of the character you play. |
 | `match_height` | Match character height | `true` / `false` | `true` | Scale the world so your real eye height matches the character's. |
-| `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `left_controller` | What 'forward' on the movement stick means. |
+| `move_relative_to` | Stick direction | `head`, `left_controller`, `view` | `head` | What 'forward' on the movement stick means. |
 | `room_scale` | Room-scale walking | `true` / `false` | `true` | Walking in your room moves the character. Walls push you back. |
-| `show_body` | Show body | `hidden`, `hands_and_weapon`, `full_body` | `hands_and_weapon` | Which parts of the character model are drawn in first person. |
+| `body2` | Show body | `hidden`, `hands_and_weapon`, `full_body`, `without_head` | `hidden` | Which parts of the character model are drawn in first person. Body without head: the game's Roxas and his Keyblade as the game draws them, without his head and hair in front of your eyes (VR hands, no VR Keyblade). Hidden and Hands and Keyblade leave the game's own Roxas out (the VR hands and Keyblade stay). |
+| `head_cut2` | Head cut height | 0.5 to 1 | `0.78` | Body without head: the part of Roxas's height above which he is not drawn (his head and hair). Lower it if hair still shows; raise it if his shoulders go. |
 | `weapon_hand` | Keyblade hand | `left`, `right` | `right` | The hand that holds the Keyblade. |
 | `dual_wield` | Dual wield | `true` / `false` | `false` | Put a second Keyblade in the other hand when the character has one. |
 | `grip_angle` | Grip angle | -60 to 60 deg | `0` | Tilts the Keyblade in your hand. |
 | `keyblade_length` | Keyblade length | 0.5 to 1.5 x | `1` | Visual and hit length of the Keyblade. |
+| `keyblade_grip` | Keyblade height | -0.3 to 0.3 m | `0` | Moves the Keyblade up or down in your hand, along its blade (down if it sits above your hand). The change shows at once while the panel is open. |
+| `keyblade_turn` | Keyblade turn | -180 to 180 deg | `0` | Turns the Keyblade about its blade in your hand (if its teeth face the wrong way). The change shows at once while the panel is open. |
+| `hand_size` | Hand size | 0.5 to 1.5 x | `0.9` | How big Roxas's hands are on your controllers. |
+| `hand_turn` | Hand turn | -180 to 180 deg | `0` | Turns Roxas's hands about your wrists (if his palms face the wrong way). The change shows at once while the panel is open. |
+| `hand_tilt` | Hand tilt | -90 to 90 deg | `-20` | Tips Roxas's hands forward (above 0) or back, about your knuckles' line. |
+| `hand_swing` | Hand swing | -90 to 90 deg | `0` | Turns Roxas's hands inward (above 0) or outward, about the up-down line. |
+| `hand_right` | Hand outward | -0.1 to 0.1 m | `0` | Moves Roxas's hands outward (above 0, away from each other) or inward. |
+| `hand_up` | Hand height | -0.1 to 0.1 m | `-0.005` | Moves Roxas's hands up or down on your controllers. |
+| `hand_forward` | Hand forward | -0.1 to 0.1 m | `0.03` | Moves Roxas's hands forward or back on your controllers. |
+| `arms_follow2` | Arms follow your hands (experimental) | `true` / `false` | `false` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
 
 ## Combat
 
@@ -66,33 +82,40 @@ hands, DS + giant screen) and the options changed most.
 | `motion_combat` | Motion combat | `true` / `false` | `true` | Swing the controller to attack (first person). |
 | `physical_hits` | Physical hits only | `true` / `false` | `false` | Attacks only land where the Keyblade touches an enemy. |
 | `swing_speed` | Swing threshold | 1 to 6 m/s | `2.2` | Blade-tip speed a swing needs to count as an attack. |
-| `swing_cooldown` | Swing cooldown | 0.05 to 0.8 s | `0.22` | Minimum time between two swings. |
+| `arm_swing_speed3` | Arm swing speed | 0 to 4 m/s | `1.1` | How fast your hand itself must move for a swing to attack, so the arm swings and not just the wrist (a flick moves the tip fast but the hand little). 0: the tip alone. |
+| `swing_length3` | Swing length | 0 to 1.2 m | `0.25` | How far your hand must travel in one fast motion before the swing attacks: longer asks for a full swing (the attack comes that much later in it). 0: at once. |
+| `swing_delay2` | Swing cooldown | 0.05 to 1.5 s | `0.25` | Minimum time between two swings. |
 | `aim_assist` | Aim assist | 0 to 1 | `0.5` | How strongly swings turn the character toward the nearest enemy. |
 | `guard_gesture` | Guard gesture | `true` / `false` | `true` | Hold the Keyblade across your body to block. |
 | `magic_gesture` | Magic / commands | `button`, `point_and_trigger` | `point_and_trigger` | How the selected command is cast. |
 | `jump_gesture` | Physical jump | `true` / `false` | `false` | Jumping in your room makes the character jump. |
 | `dodge` | Dodge roll | `off`, `stick_flick`, `button` | `stick_flick` | How dodge rolls are triggered. |
 | `haptics` | Haptics | 0 to 1 | `0.7` | Controller vibration on hits, blocks and swings. |
+| `reach` | Keyblade reach | 0 to 1 m | `0.3` | First person: how much further Roxas's Keyblade reaches enemies than in the game, so you need not stand right on top of them. 0: the game's own reach. |
 
 ## Controls
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
+| `first_person_buttons` | First person buttons | `same`, `first_person` | `same` | Same as other views: every button presses what it does in third person (the triggers L and R); the gestures (swing, guard, dodge flick) add to them. First person profile: the weapon hand's trigger is L, the other hand's trigger casts (pointing at an enemy) and its grip locks on. |
 | `attack` | Swing presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `a` | DS button a Keyblade swing presses (the attack command). |
 | `guard` | Guard presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `y` | DS button held while you hold the guard pose (Block). |
 | `dodge` | Dodge presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `y` | DS button a dodge flick presses, with the flick direction held (Dodge Roll). |
 | `magic` | Cast presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `x` | DS button pointing and pulling the trigger presses (the selected command). |
 | `jump` | Physical jump presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `b` | DS button a physical jump presses. |
-| `lock_on` | Grip presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `r` | DS button the off-hand grip presses in first person (lock-on). |
+| `lock_on` | Grip presses | `a`, `b`, `x`, `y`, `l`, `r`, `none` | `r` | DS button the off-hand grip presses in first person (lock-on), with First person buttons: First person profile. |
 
 ## Comfort
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
+| `profile` | Comfort profile | `custom`, `low`, `medium`, `high` | `medium` | Sets the options below for how much motion you are used to. Low: the vignette at full strength and snap turning. Medium: no vignette, snap turning. High: no vignette, smooth turning. Changing them yourself makes it Custom. |
 | `turn` | Turning | `snap`, `smooth`, `off` | `snap` | Right stick turning. |
 | `snap_angle` | Snap angle | 15 to 90 deg | `45` | Angle of one snap turn. |
 | `smooth_speed` | Smooth turn speed | 30 to 360 deg/s | `120` | Speed of smooth turning. |
-| `vignette` | Vignette | 0 to 1 | `0.4` | Darkens the edges of the view while you move or turn artificially. |
+| `vignette_on` | Vignette | `true` / `false` | `false` | Standing in the world, darkens the edges of your view while the view moves or turns without you (the stick, following Roxas, a cutscene's camera), fading in and out smoothly. Never on the giant screen. |
+| `vignette` | Vignette strength | 0.1 to 3 | `0.6` | How dark the vignette gets: 0.1 faint but still there, 1 full black at the edges; above 1 the full black reaches further in over its soft edge. |
+| `vignette_area` | Vignette size | 0.1 to 2 | `1` | How much of your view the vignette covers at its fullest, from the edges in: one circle round both eyes. 2 leaves only a small clear circle. |
 | `blink` | Blink on cuts | `true` / `false` | `true` | Briefly fade to black when the view jumps (camera cuts, snap turns). |
 | `blink_ms` | Blink length | 50 to 500 ms | `150` | Duration of a blink. |
 | `seated` | Seated play | `true` / `false` | `false` | Adds height so you can play sitting down. |
@@ -102,7 +125,9 @@ hands, DS + giant screen) and the options changed most.
 
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
-| `refresh_rate` | Refresh rate | `72`, `90`, `120` | `90` | Headset refresh rate. The game itself runs at its original frame rate. |
+| `refresh_rate` | Refresh rate | `72`, `90`, `120` | `120` | Headset refresh rate. The game runs at its own 60 frames a second; at 120 Hz each of its frames shows for exactly two, which keeps turning smooth. |
+| `draw_while_running` | Draw while the game runs | `true` / `false` | `true` | Draw each frame's screens while the game runs the next one, as the DS does, so heavy scenes keep all their frames. Turn off if pictures ever flicker or tear. |
+| `in_between_frames` | In-between frames | `true` / `false` | `true` | Standing in the world, moving things glide between the game's 60 frames a second at the headset's rate (they show a game frame later). Off: the game's own frames. |
 | `resolution_scale` | Resolution scale | 0.5 to 1.5 x | `1` | Per-eye render resolution relative to the headset's. Applies on restart. |
 | `msaa` | Anti-aliasing | `off`, `2x`, `4x` | `4x` | Multisample anti-aliasing. Applies on restart. |
 | `texture_filter` | Texture filtering | `nearest`, `bilinear`, `sharp`, `smooth` | `sharp` | How the DS screens are enlarged: Sharp keeps pixels crisp with smooth edges; Smooth also rounds diagonal edges (Scale4x) instead of showing them as steps. |
@@ -117,7 +142,16 @@ hands, DS + giant screen) and the options changed most.
 | Key | Option | Values | Default | Description |
 |---|---|---|---|---|
 | `top_screen` | HUD (top screen) | `floating`, `head_locked`, `hidden` | `floating` | Where the health bars and command panel are shown. |
-| `distance` | Panel distance | 0.5 to 3 m | `1.2` | Distance of the floating panels. |
+| `distance` | Panel distance | 0.5 to 3 m | `0.6` | Distance of the floating panels. |
+| `height` | Panel height | -1 to 0.4 m | `-0.5` | How far below your eyes (negative) or above them the HUD panel sits, so the health bar and commands stay out of the way. Menus are on the giant screen. |
+| `fill_view` | Fill your view | `true` / `false` | `true` | The HUD as large as your view, centred on it, so the health bar and commands sit at its edges as on the DS's screen. Off: a panel of Panel scale at Panel height. |
+| `fill_angle` | View it fills | 30 to 110 deg | `90` | How wide the HUD spans when it fills your view. |
+| `offset_x` | Left / right | -40 to 40 deg | `0` | Moves the HUD across your view: negative left, positive right. |
+| `offset_y` | Up / down | -45 to 30 deg | `-16` | Moves the HUD up or down your view: negative down, so the portrait and commands sit below Roxas. |
+| `scale_x` | Width | 0.5 to 2 x | `1.1` | Stretches the HUD across. |
+| `scale_y` | Height | 0.5 to 2 x | `1` | Stretches the HUD up and down. |
+| `follow_angle` | Follow after turning | 5 to 60 deg | `45` | How far you can look away from the floating HUD before it comes back in front of you. |
+| `follow_delay` | Follow delay | 0 to 10 s | `0` | How long you look away before the HUD glides back in front of you, so glancing around does not move it. |
 | `scale` | Panel scale | 0.5 to 2 x | `1` | Size of the floating HUD panels. |
 | `touch_input` | Touch input | `laser`, `direct_touch` | `laser` | How you touch the bottom screen. |
 
@@ -155,5 +189,11 @@ hands, DS + giant screen) and the options changed most.
 |---|---|---|---|---|
 | `language` | Language | `english`, `french`, `german`, `italian`, `spanish` | `english` | Game text language (EU release). Applies on the next launch. |
 | `invert_turn` | Invert turning | `true` / `false` | `false` | Swap the direction of right-stick turning. |
+| `analog_move` | Move any direction | `true` / `false` | `true` | Roxas walks and runs the exact way the thumbstick points instead of the DS D-pad's eight directions (in the field; menus keep the D-pad). |
+| `use_place` | Saved place as the loading area | `true` / `false` | `true` | Before the game starts (loading, and behind the title and its menus) you stand in the place saved with the option below, instead of the plain loading area. |
+| `floating_screen` | Second screen floating in scenes | `true` / `false` | `false` | Scenes that use both screens (Agrabah's static): off, the second screen shows on your wrist only; on, the game's own floating picture shows in the scene too. |
+| `save_place` | Save this place as the loading area | `true` / `false` | `false` | Turn on while standing somewhere in the game (the hideout in Twilight Town) to save it as the loading area; it turns itself off once saved. Saved on your headset from your own game, next to your save. |
+| `place_scale2` | Saved place size | 0.5 to 3 x | `1` | How big the saved place looks around you: 1 is its size in first person (as when you saved it), above 1 larger. The change shows at once. |
+| `place_height2` | Saved place floor | -3 to 1 m | `0` | Moves the saved place's floor down (below 0) or up, so the giant screen stands above it. The change shows at once. |
 | `units_per_meter` | World units per meter | 0.05 to 64 | `1` | Calibration: game world units in one real meter at life size. |
 | `show_fps` | Show frame rate | `true` / `false` | `false` | Shows game and headset frame rates on the HUD. |

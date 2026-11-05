@@ -17,7 +17,8 @@ namespace khvr {
 namespace {
 
 constexpr float kStickDeadzone = 0.2f;
-constexpr float kNear = 0.05f, kFar = 500.0f;
+// Far enough for a level's sky at any world scale (it clipped in and out at 500).
+constexpr float kNear = 0.05f, kFar = 5000.0f;
 constexpr float kIpd = 0.064f;
 constexpr int kGiantViewW = 1024, kGiantViewH = 768;  // 4:3 like the DS top screen
 
@@ -200,6 +201,51 @@ std::vector<std::string> VrApp::StatusLines() const {
     return lines;
 }
 
+// The field's cursor around `centre` (game units, world space), across the view (`right`, `up`),
+// as the game draws them: on an enemy four arcs with a hook each, turning clockwise, yellow while
+// it is only targeted and blue once locked on; on a person to talk to or a thing to use, four
+// green corner marks, breathing in and out.
+static WorldDrawList FieldCursor(const Vec3 &centre, const Vec3 &right, const Vec3 &up, float time, int kind,
+                                 bool locked) {
+    WorldDrawList out;
+    const Vec3 lit = Normalize(Vec3{0.4f, 0.8f, 0.45f});  // the lit shader's light: full brightness
+    auto at = [&](float x, float y) { return centre + right * x + up * y; };
+    auto quad = [&](const Vec3 &a, const Vec3 &b, const Vec3 &c, const Vec3 &d, uint32_t ca, uint32_t cb) {
+        // Both windings, so it shows whichever way it ends up facing.
+        const Vec3 v[6] = {a, b, c, a, c, d};
+        const uint32_t col[6] = {ca, cb, cb, ca, cb, ca};
+        for (int i = 0; i < 6; ++i) out.triangles.push_back({v[i], lit, col[i]});
+        for (int i = 5; i >= 0; --i) out.triangles.push_back({v[i], lit, col[i]});
+    };
+    if (kind == 2) {
+        const uint32_t light = Rgba(150, 255, 180), deep = Rgba(40, 190, 100);
+        const float h = 0.3f + 0.03f * std::sin(time * 3.0f), len = 0.12f, w = 0.04f;
+        for (int i = 0; i < 4; ++i) {
+            const float sx = (i & 1) ? 1.0f : -1.0f, sy = (i & 2) ? 1.0f : -1.0f;
+            // An L at each corner: one stroke along x, one along y.
+            quad(at(sx * h, sy * h), at(sx * (h - len), sy * h), at(sx * (h - len), sy * (h - w)), at(sx * h, sy * (h - w)), light, deep);
+            quad(at(sx * h, sy * h), at(sx * h, sy * (h - len)), at(sx * (h - w), sy * (h - len)), at(sx * (h - w), sy * h), light, deep);
+        }
+        return out;
+    }
+    const uint32_t light = locked ? Rgba(170, 220, 255) : Rgba(255, 238, 120);
+    const uint32_t deep = locked ? Rgba(40, 110, 235) : Rgba(230, 165, 30);
+    const float r0 = 0.40f, r1 = 0.47f, spin = -time * 1.6f;  // clockwise as you look at it
+    auto ring = [&](float a, float r) { return at(r * std::cos(a), r * std::sin(a)); };
+    for (int i = 0; i < 4; ++i) {
+        const float a0 = spin + i * kPi / 2, a1 = a0 + DegToRad(62.0f);
+        const int steps = 8;
+        for (int k = 0; k < steps; ++k) {
+            const float b0 = a0 + (a1 - a0) * k / steps, b1 = a0 + (a1 - a0) * (k + 1) / steps;
+            quad(ring(b0, r1), ring(b1, r1), ring(b1, r0), ring(b0, r0), light, deep);
+        }
+        // The hook at the arc's leading end, pointing in.
+        const float a = a0;
+        quad(ring(a, r1 + 0.02f), ring(a + 0.12f, r1), ring(a + 0.04f, r0 - 0.10f), ring(a - 0.05f, r0 - 0.06f), light, deep);
+    }
+    return out;
+}
+
 bool VrApp::Loading() const {
 #ifdef KHVR_HAS_GAME
     if (waiting_) return true;
@@ -283,6 +329,14 @@ void VrApp::BuildLoadingArea(float floorY) {
         std::vector<uint32_t> glow = PaintGlow(64);
         glowTex_.Upload(64, 64, glow.data(), true, true);
     }
+    if (!titleTex_.id()) {
+        int w = 0, h = 0;
+        std::vector<uint32_t> title = PaintTitleText("KH: Days VR", 8, 24, Rgba(255, 255, 255),
+                                                     Rgba(150, 190, 255, 150), &w, &h);
+        titleTex_.Upload(w, h, title.data(), true, true);
+        titlePanel_.width = 1.6f;
+        titlePanel_.height = titlePanel_.width * h / w;
+    }
 }
 
 void VrApp::UpdateLoadingSparkles(double now) {
@@ -311,15 +365,13 @@ void VrApp::UpdateLoading(double now) {
     UpdateLoadingSparkles(now);
     if (now - loadingDrawn_ < 0.25) return;
     loadingDrawn_ = now;
+    // The text under the floating title, on nothing (no panel).
     Canvas &c = loadingCanvas_;
-    c.Clear(Rgba(16, 18, 34, 220));
-    c.StrokeRect(0, 0, c.width(), c.height(), Rgba(214, 178, 82), 3);
-    const char *title = "KINGDOM HEARTS 358/2 Days";
-    c.DrawText((c.width() - Canvas::TextWidth(title, 2)) / 2, 28, title, Rgba(236, 236, 244), 2);
+    c.Clear(0);
     if (waiting_) {
         // What the game is waiting for, wrapped to the panel.
         std::string rest = notice_;
-        int y = 80;
+        int y = 16;
         while (!rest.empty() && y + Canvas::LineHeight() <= c.height() - 8) {
             size_t cut = rest.size() <= 74 ? rest.size() : rest.rfind(' ', 74);
             if (cut == std::string::npos || cut == 0) cut = std::min<size_t>(74, rest.size());
@@ -333,12 +385,12 @@ void VrApp::UpdateLoading(double now) {
     }
     int dots = static_cast<int>(now * 3.0) % 4;
     std::string loading = "Loading" + std::string(static_cast<size_t>(dots), '.');
-    c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 92, loading, Rgba(214, 178, 82));
+    c.DrawText((c.width() - Canvas::TextWidth("Loading...")) / 2, 40, loading, Rgba(214, 178, 82));
 #ifdef KHVR_HAS_GAME
     if (decomp_) {
         char line[96];
         std::snprintf(line, sizeof line, "game frames: %u", decomp_->gameFrames());
-        c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 132, line, Rgba(150, 154, 180));
+        c.DrawText((c.width() - Canvas::TextWidth(line)) / 2, 80, line, Rgba(110, 114, 140));
     }
 #endif
     loadingTex_.Upload(c.width(), c.height(), c.data(), true);
@@ -359,6 +411,20 @@ void VrApp::UpdateStatus(double now) {
         y += Canvas::LineHeight() + 2;
     }
     statusTex_.Upload(c.width(), c.height(), c.data(), true);
+}
+
+BottomScreenPlacement VrApp::HandScreenPlacementNow() const {
+    // Standing in the world while the game's script runs (an NPC's text, a question, a
+    // cutscene), the wrist / hand screen goes: it would draw the eye from the scene. By the
+    // script's own state, not by how its camera looks (looking down at the screen for a while
+    // took the view for an event scene's, and the screen went).
+    // (A scene with 3D on both screens, Agrabah's static, keeps its second screen drawn all the
+    // way through, to the wrist screen's picture, though the screen is not shown: drawing it is
+    // what keeps the scene steady, platform.cpp CaptureScreens.)
+    if (lastMode_ != ViewMode::GiantScreen && game_->frame().inScript) return BottomScreenPlacement::Hidden;
+    // Put away with a long press of the left thumbstick (and brought back the same way).
+    if (!secondScreenOn_) return BottomScreenPlacement::Hidden;
+    return settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
 }
 
 ViewMode VrApp::EffectiveMode() const {
@@ -419,9 +485,26 @@ void VrApp::UpdateTextures() {
         } else {
             upload(topTex_, s.top);
         }
-        upload(hudTex_, s.topHud);
+        // Standing in the world, the 2D drawn over it goes without a cutscene's letterbox: rows
+        // all of opaque black from edge to edge (on the DS thin bars, in the headset across your
+        // view: Day 52's Tailbunker zoom flickered black).
+        auto noBars = [&](const std::vector<uint32_t> &px) -> const std::vector<uint32_t> & {
+            if (lastMode_ == ViewMode::GiantScreen || px.size() != static_cast<size_t>(DsScreens::kWidth) * DsScreens::kHeight)
+                return px;
+            barScratch_ = px;
+            for (int y = 0; y < DsScreens::kHeight; ++y) {
+                uint32_t *row = &barScratch_[static_cast<size_t>(y) * DsScreens::kWidth];
+                bool black = true;
+                for (int x = 0; x < DsScreens::kWidth && black; ++x)
+                    black = (row[x] >> 24) > 0xc0 && (row[x] & 0xff) < 0x18 && ((row[x] >> 8) & 0xff) < 0x18 &&
+                            ((row[x] >> 16) & 0xff) < 0x18;
+                if (black) std::fill(row, row + DsScreens::kWidth, 0u);
+            }
+            return barScratch_;
+        };
+        upload(hudTex_, noBars(s.topHud));
         if (!s.topFront.empty()) {
-            upload(frontTex_, s.topFront);
+            upload(frontTex_, noBars(s.topFront));
             upload(backTex_, s.topBack);
         }
         upload(bottomTex_, s.bottom);
@@ -457,23 +540,44 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
         giantBottom_ = {middle * Pose{Quat(), {0.0f, -half, 0.0f}}, w, h};
     }
 
-    // HUD: floating panels lazily follow your heading; head-locked ones follow exactly.
+    // HUD: a floating panel stays put while you glance around; once you have looked away from it
+    // (HUD > Follow after turning) for a while (Follow delay), it glides around you, level, back
+    // in front of you. Head-locked ones follow exactly.
     float diff = WrapAngle(headYaw - hudYaw_);
-    if (std::fabs(diff) > DegToRad(35.0f)) hudYaw_ = WrapAngle(hudYaw_ + diff * 0.08f);
-    hudPanel_.width = 0.55f * hudScale;
-    hudPanel_.height = hudPanel_.width * 0.75f;
-    if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
-        hudPanel_.pose = head * Pose{Quat(), {0, -0.05f, -hudDist}};
+    if (hudGliding_) {
+        hudYaw_ = WrapAngle(hudYaw_ + diff * (1.0f - std::exp(-4.0f * in.dt)));
+        if (std::fabs(diff) < DegToRad(2.0f)) hudGliding_ = false;
+    } else if (std::fabs(diff) > DegToRad(settings_.Get(SettingId::HudFollowAngle))) {
+        hudAwaySeconds_ += in.dt;
+        if (hudAwaySeconds_ >= settings_.Get(SettingId::HudFollowDelay)) hudGliding_ = true;
     } else {
-        Vec3 fwd = Quat::Yaw(hudYaw_).Forward();
-        Vec3 at = head.position + fwd * hudDist + Vec3{0, -0.18f, 0};
+        hudAwaySeconds_ = 0.0f;
+    }
+    if (hudGliding_) hudAwaySeconds_ = 0.0f;
+    // Filling the view: the DS's screen as wide as HUD > View it fills, centred on your eyes, so
+    // its corners (health, commands) sit at the edges of your view. Otherwise a panel.
+    const bool fill = settings_.Bool(SettingId::HudFillView);
+    // Filling the view it is an arc round your head at the panel distance, spanning the angle;
+    // HUD > Width and Height stretch it, Left / right and Up / down move it (degrees of your view).
+    hudPanel_.width = (fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale) *
+                      settings_.Get(SettingId::HudScaleX);
+    hudPanel_.height = (fill ? hudDist * DegToRad(settings_.Get(SettingId::HudFillAngle)) : 0.55f * hudScale) * 0.75f *
+                       settings_.Get(SettingId::HudScaleY);
+    const float offX = DegToRad(settings_.Get(SettingId::HudOffsetX));
+    const float offY = DegToRad(settings_.Get(SettingId::HudOffsetY));
+    const float hudHeight = (fill ? 0.0f : settings_.Get(SettingId::HudHeight)) + hudDist * std::tan(offY);
+    if (settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) == TopScreenPlacement::HeadLocked) {
+        hudPanel_.pose = head * Pose{Quat::Yaw(-offX), Quat::Yaw(-offX).Rotate(Vec3{0, hudHeight, -hudDist})};
+    } else {
+        Vec3 fwd = Quat::Yaw(hudYaw_ - offX).Forward();
+        Vec3 at = head.position + fwd * hudDist + Vec3{0, hudHeight, 0};
         hudPanel_.pose = FacingFrom(at, head.position);
     }
 
     // Bottom screen: held above a hand like a handheld, worn on the wrist like a watch, or
     // floating low left. Held and worn screens can be moved and turned along their own axes, and
     // grow in only while you look toward them.
-    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    const BottomScreenPlacement placement = HandScreenPlacementNow();
     const int sideSetting = settings_.Enum<Hand>(SettingId::HandScreenSide) == Hand::Left ? 0 : 1;
     if (sideSetting != heldHandSetting_) {
         heldHand_ = -1;  // the setting changed: it decides again
@@ -491,20 +595,29 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                                        : settings_.Get(SettingId::HandScreenSize);
         bottomPanel_.height = bottomPanel_.width * 0.75f;
         const int h = handScreenSide_;
+        // The hand's last pose while its tracking drops for a moment (held very still over a menu,
+        // the headset can take the controller for put down): the screen stays where it was
+        // instead of going.
         if (in.gripValid[h]) {
+            lastGrip_[h] = in.grip[h];
+            lastGripAt_[h] = in.time;
+        }
+        const bool gripOk = in.gripValid[h] || (lastGripAt_[h] > 0.0 && in.time - lastGripAt_[h] < 20.0);
+        const Pose grip = in.gripValid[h] ? in.grip[h] : lastGrip_[h];
+        if (gripOk) {
             // Anchored to the hand (just above the controller) or to the wrist (where a watch
             // sits, behind the controller along the forearm), always facing your eyes upright:
             // the controller's own axes vary too much with how it is held to orient a screen.
             Vec3 anchor = placement == BottomScreenPlacement::InHand
-                              ? in.grip[h].position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
-                              : in.grip[h].Transform({0.0f, -0.02f, 0.13f});
+                              ? grip.position + Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f}
+                              : grip.Transform({0.0f, -0.02f, 0.13f});
             // Held with both hands: the other controller brought up to the handheld takes it to
             // the middle of the two hands; it goes back to one hand once they are pulled apart.
             const int other = 1 - h;
             if (handheld_ && placement == BottomScreenPlacement::InHand &&
                 settings_.Bool(SettingId::HandScreenDsTwoHands) && in.gripValid[other]) {
                 float toHandheld = Length(in.grip[other].position - bottomPanel_.pose.position);
-                float apart = Length(in.grip[other].position - in.grip[h].position);
+                float apart = Length(in.grip[other].position - grip.position);
                 // While that hand points at the touch screen it comes much closer before taking
                 // hold, so the pointer stays usable right in front of the handheld.
                 const float reach = laserOnBottom_ ? 0.05f : 0.14f;
@@ -515,7 +628,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                     // away is free (and becomes the pointer hand).
                     twoHanded_ = false;
                     const Vec3 at = bottomPanel_.pose.position;
-                    const int stays = Length(in.grip[other].position - at) < Length(in.grip[h].position - at) ? other : h;
+                    const int stays = Length(in.grip[other].position - at) < Length(grip.position - at) ? other : h;
                     if (stays != h) {
                         heldHand_ = stays;
                         handScreenSide_ = stays;
@@ -527,7 +640,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             }
             twoHandBlend_ = Clamp(twoHandBlend_ + (twoHanded_ ? 1.0f : -1.0f) * in.dt / 0.2f, 0.0f, 1.0f);
             if (twoHandBlend_ > 0.0f) {
-                Vec3 middle = (in.grip[h].position + in.grip[other].position) * 0.5f +
+                Vec3 middle = (grip.position + in.grip[other].position) * 0.5f +
                               Vec3{0.0f, 0.03f + bottomPanel_.height * 0.5f, 0.0f};
                 float e = twoHandBlend_ * twoHandBlend_ * (3.0f - 2.0f * twoHandBlend_);
                 anchor = anchor + (middle - anchor) * e;
@@ -544,17 +657,17 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
                 // Fixed to the hand: keep the angle relative to the controller that it had when
                 // it last faced you (switching this off, or a recenter).
                 if (!handScreenLockValid_ || recenterNext_) {
-                    handScreenLock_ = in.grip[h].orientation.Conjugate() * face;
+                    handScreenLock_ = grip.orientation.Conjugate() * face;
                     handScreenLockValid_ = true;
                 }
-                face = in.grip[h].orientation * handScreenLock_;
+                face = grip.orientation * handScreenLock_;
             }
             bottomPanel_.pose = Pose{face * turn, anchor} * Pose{Quat(), move};
         }
         // Shown while you look toward it (wider to keep it than to bring it up), or always.
         bool wanted = !settings_.Bool(SettingId::HandScreenAutoShow) || laserOnBottom_ ||
                       (handheld_ && handheld == HandheldDs::Only) || twoHanded_;
-        if (!wanted && in.gripValid[h]) {
+        if (!wanted && gripOk) {
             Vec3 to = bottomPanel_.pose.position - head.position;
             float dist = Length(to);
             float angle = std::acos(Clamp(Dot(to * (1.0f / std::max(dist, 1e-4f)), head.orientation.Forward()), -1.0f, 1.0f));
@@ -562,7 +675,7 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
             // eyes, so the cone is wide.
             wanted = dist < 1.2f && angle < DegToRad(handScreenShown_ > 0.5f ? 60.0f : 45.0f);
         }
-        if (!in.gripValid[h]) wanted = false;
+        if (!gripOk) wanted = false;
         float step = in.dt / 0.18f;  // grow or shrink in about 0.18 s
         handScreenShown_ = Clamp(handScreenShown_ + (wanted ? step : -step), 0.0f, 1.0f);
     } else {
@@ -581,7 +694,8 @@ void VrApp::UpdatePlacements(const XrFrameInput &in) {
     }
     loadingPanel_.width = 1.0f;
     loadingPanel_.height = loadingPanel_.width * 192.0f / 768.0f;
-    loadingPanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.2f + Vec3{0, 0.25f, 0}, screenAnchor_);
+    loadingPanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.2f + Vec3{0, -0.1f, 0}, screenAnchor_);
+    titlePanel_.pose = FacingFrom(screenAnchor_ + Quat::Yaw(screenYaw_).Forward() * 2.4f + Vec3{0, 0.3f, 0}, screenAnchor_);
 
     // The status panel floats just below eye level, to the left of the HUD and clear of it.
     statusPanel_.width = 0.8f;
@@ -622,7 +736,22 @@ void VrApp::Frame(const XrFrameInput &in) {
         // to draw it large too.
         const bool headsetDraws3d = settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds;
         decomp_->Set3dScale(headsetDraws3d ? 1 : settings_.Int(SettingId::Pic3dResolution) + 1);
-        decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds);
+        const bool standInWorld = settings_.Bool(SettingId::ViewStandInWorld);
+        decomp_->SetStandInWorld(standInWorld);
+        decomp_->SetDrawAll(standInWorld && settings_.Bool(SettingId::ViewDrawAll));
+        decomp_->SetOwnCursors(standInWorld);
+        decomp_->SetCutscenesInWorld(settings_.Enum<CutsceneView>(SettingId::CutsceneView) == CutsceneView::SameAsGameplay);
+        decomp_->SetParallelCapture(settings_.Bool(SettingId::PicParallelCapture));
+        decomp_->SetCapturedCards(settings_.Bool(SettingId::CutsceneFloatingScreen));
+        {
+            const BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
+            const bool fp = lastMode_ == ViewMode::FirstPerson;
+            decomp_->SetHidePlayer(!fp || body == BodyDisplay::FullBody ? DecompGame::HidePlayer::None
+                                   : body == BodyDisplay::WithoutHead   ? DecompGame::HidePlayer::Head
+                                                                        : DecompGame::HidePlayer::All,
+                                   settings_.Get(SettingId::FpHeadCut));
+        }
+        decomp_->SetWorldCapture(settings_.Enum<GamePicture>(SettingId::ScreenPicture) != GamePicture::Ds || standInWorld);
     }
 #endif
     ViewMode mode = EffectiveMode();
@@ -633,7 +762,7 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     // ---- Laser pointer: the settings panel (right hand), then the bottom (touch) screen, which
     // the hand that is not holding it points at ----
-    const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+    const BottomScreenPlacement placement = HandScreenPlacementNow();
     const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
     const int touchHand = held ? 1 - handScreenSide_ : 1;
     float px = 0, py = 0, dist = 0;
@@ -693,7 +822,10 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     CombatFrame combat;
     const CombatFrame *combatPtr = nullptr;
-    if (mode == ViewMode::FirstPerson && !panel_.isOpen()) {
+    // Gestures fight: only in a battle area (a swing presses A, which talks to people elsewhere).
+    // Not while a cutscene or an NPC's text is up (the guard pose pressed Block in Day 52's).
+    if (mode == ViewMode::FirstPerson && !panel_.isOpen() && game_->frame().inBattle && !game_->frame().inScript &&
+        !game_->frame().inCutscene) {
         CombatInput ci;
         ci.dt = dt;
         ci.head = in.head;
@@ -701,28 +833,131 @@ void VrApp::Frame(const XrFrameInput &in) {
             ci.hands[h] = in.grip[h];
             ci.handValid[h] = in.gripValid[h];
             ci.trigger[h] = buttons.trigger[h];
+            ci.grip[h] = buttons.grip[h];
         }
         ci.moveAxis = t.moveAxis;
+        {
+            const TexturedWorld &tw = game_->texturedWorld();
+            ci.enemyTargeted = tw.lockOn && (tw.lockOnKind == 1 || tw.lockOnKind == 3);
+        }
         combat = combat_.Update(settings_, ci);
+#ifdef KHVR_HAS_GAME
+        // What the gestures press, into the boot log (a menu opening by itself can be traced).
+        if (decomp_) {
+            auto note = [&](const char *what, SettingId button) {
+                Platform::Get().LogLine(std::string("input: ") + what + " gesture presses " +
+                                        settings_.FormatValue(button));
+            };
+            if (combat.swingStarted) note("swing", SettingId::CtrlAttackButton);
+            if (combat.castMagic) note("cast", SettingId::CtrlMagicButton);
+            if (combat.guardStarted) note("guard", SettingId::CtrlGuardButton);
+            if (combat.dodge) note("dodge", SettingId::CtrlDodgeButton);
+            if (combat.jump) note("jump", SettingId::CtrlJumpButton);
+        }
+#endif
         combatPtr = &combat;
         for (int h = 0; h < 2; ++h) xr_->Haptic(h, combat.hapticAmplitude[h], combat.hapticSeconds[h]);
+    }
+    {
+        // First person, in a battle area: a short hold of the Keyblade hand's grip brings the
+        // Keyblade out, and it stays until the next short hold puts it away; an attack (a swing or
+        // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
+        // Area) it stays away.
+#ifdef KHVR_HAS_GAME
+        // Game > Save this place as the loading area: saved where you stand, then it turns off.
+        if (settings_.Bool(SettingId::GameSavePlace)) {
+            settings_.SetBool(SettingId::GameSavePlace, false);
+            if (decomp_ && game_->frame().inGameplay && decomp_->SavePlace()) {
+                placeTried_ = false;  // loaded afresh when next drawn
+                xr_->Haptic(1, 0.6f, 0.15f);
+            }
+        }
+#endif
+        // Holding the left thumbstick down (half a second) puts the second screen (the wrist,
+        // hand or floating touch screen) away, or brings it back; a press alone does nothing.
+        if (buttons.stickClick[0] && !panel_.isOpen()) {
+            const bool was = leftStickHeldFor_ >= 0.5f;
+            leftStickHeldFor_ += in.dt;
+            if (!was && leftStickHeldFor_ >= 0.5f) {
+                secondScreenOn_ = !secondScreenOn_;
+                xr_->Haptic(0, 0.4f * settings_.Get(SettingId::CombatHaptics), 0.06f);
+            }
+        } else {
+            leftStickHeldFor_ = 0.0f;
+        }
+        const int weapon = settings_.Enum<Hand>(SettingId::FpWeaponHand) == Hand::Left ? 0 : 1;
+        const bool battle = game_->frame().inBattle;
+        const bool attacked = battle && (combat.swingStarted || (buttons.a && !panel_.isOpen()));
+        constexpr float kGripHoldSeconds = 0.3f;
+        if (buttons.grip[weapon] > 0.6f && !panel_.isOpen()) {
+            const bool was = gripHeldFor_ >= kGripHoldSeconds;
+            gripHeldFor_ += in.dt;
+            if (!was && gripHeldFor_ >= kGripHoldSeconds && battle) keybladeOut_ = !keybladeOut_;
+        } else if (buttons.grip[weapon] < 0.4f) {
+            gripHeldFor_ = 0.0f;
+        }
+        if (attacked) keybladeOut_ = true;
+        if (!battle) keybladeOut_ = false;
+        const bool show = mode == ViewMode::FirstPerson && battle && keybladeOut_;
+        if (show && !keybladeShown_) {
+            keybladeAppearedAt_ = in.time;
+            xr_->Haptic(weapon, 0.5f * settings_.Get(SettingId::CombatHaptics), 0.08f);
+        }
+        keybladeShown_ = show;
     }
 
     const GameFrame &before = game_->frame();
     Vec3 camDir = before.camera.target - before.camera.eye;
     float gameCamYaw = YawOf(Vec3{camDir.x, 0, camDir.z});
     float moveBasis = mode == ViewMode::GiantScreen ? gameCamYaw : rig_.moveBasisYaw;
+    mapper_.SetMenuStick(before.menuInput);
     mapper_.Update(settings_, mode, buttons, combatPtr, moveBasis, gameCamYaw, dt);
+    // Chain attacks: the game took an action, so a swing waiting for it has been taken.
+    if (game_->frame().actionsTaken != lastActionsTaken_) {
+        lastActionsTaken_ = game_->frame().actionsTaken;
+        mapper_.NoteActionTaken();
+    }
+#ifdef KHVR_HAS_GAME
+    if (decomp_) {
+        // Roxas's arms reach for your hands: first person, his body shown, in the field.
+        const BodyDisplay body = settings_.Enum<BodyDisplay>(SettingId::FpShowBody);
+        const bool arms = mode == ViewMode::FirstPerson && game_->frame().inGameplay &&
+                          settings_.Bool(SettingId::FpArmsFollow) &&
+                          (body == BodyDisplay::WithoutHead || body == BodyDisplay::FullBody);
+        float hands[2][3] = {};
+        for (int h = 0; h < 2; ++h) {
+            // The wrist: a little back from the controller's grip, toward your arm.
+            const Vec3 wrist = in.grip[h].position + in.grip[h].orientation.Rotate({0.0f, 0.0f, 0.07f});
+            const Vec3 w = rig_.trackingToWorld.Transform(wrist);
+            hands[h][0] = w.x;
+            hands[h][1] = w.y;
+            hands[h][2] = w.z;
+        }
+        Platform::Get().SetArmTargets(arms, hands[0], in.gripValid[0], hands[1], in.gripValid[1]);
+        // First person in VR: his swings reach a little further.
+        Platform::Get().SetReachBonus(mode == ViewMode::FirstPerson ? settings_.Get(SettingId::CombatReach) : 0.0f);
+    }
+    if (decomp_)
+        Platform::Get().SetMoveHeading(settings_.Bool(SettingId::GameAnalogMove) ? mapper_.fieldHeading() : -1);
+#endif
 
     const AppActions &act = mapper_.actions();
+#ifdef KHVR_HAS_GAME
+    if (decomp_ && act.pressedStart) Platform::Get().LogLine("input: the menu button presses START");
+#endif
     if (act.openSettingsPanel) {
         if (panel_.isOpen()) {
             panel_.Close();
         } else {
-            Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
-            settingsPanel_.pose = FacingFrom(in.head.position + fwd * 1.1f + Vec3{0, -0.1f, 0}, in.head.position);
+            panelPlaced_ = false;
             panel_.Open();
         }
+    }
+    // The panel opens in front of you, once your head is tracked (not somewhere unseen).
+    if (panel_.isOpen() && !panelPlaced_ && in.headValid) {
+        Vec3 fwd = Quat::Yaw(YawOf(in.head.orientation)).Forward();
+        settingsPanel_.pose = FacingFrom(in.head.position + fwd * 1.1f + Vec3{0, -0.1f, 0}, in.head.position);
+        panelPlaced_ = true;
     }
     if (!panel_.isOpen()) SaveSettingsIfChanged();
     if (act.toggleViewMode) {
@@ -756,10 +991,31 @@ void VrApp::Frame(const XrFrameInput &in) {
 
     // ---- Place the view ----
     const GameFrame &g = game_->frame();
-    if (mode == ViewMode::ThirdPerson) rig_ = thirdPerson_.Update(settings_, g, t);
+    // Standing in a cutscene: you see from its camera, moving with it. Going in or out of one
+    // places the view afresh.
+    const bool cutscene = mode != ViewMode::GiantScreen && g.inCutscene;
+    if (cutscene != inCutsceneView_) {
+        cutscene_.Reset();
+        thirdPerson_.Reset();
+        firstPerson_.Reset();
+        inCutsceneView_ = cutscene;
+    }
+    if (cutscene) rig_ = cutscene_.Update(settings_, g, t);
+    else if (mode == ViewMode::ThirdPerson) rig_ = thirdPerson_.Update(settings_, g, t);
     else if (mode == ViewMode::FirstPerson) rig_ = firstPerson_.Update(settings_, g, t);
     else rig_ = RigOutput{};
     nextRequests_ = rig_.requests;
+    {
+        // The vignette comes in quickly as artificial motion starts and goes out gently after.
+        // Only standing in the world: on the giant screen it is gone at once.
+        if (!settings_.Bool(SettingId::ComfortVignetteOn) || mode == ViewMode::GiantScreen) {
+            vignette_ = 0.0f;
+        } else {
+            const float target = rig_.vignette;
+            const float rate = target > vignette_ ? 6.0f : 2.5f;
+            vignette_ += (target - vignette_) * (1.0f - std::exp(-rate * dt));
+        }
+    }
     if (rig_.requests.hasRoomScaleStep) pendingRoomScale_ += rig_.requests.roomScaleStep;
     if (rig_.blinkStarted) blinkTime_ = 0.0f;
     if (blinkTime_ >= 0.0f) {
@@ -836,8 +1092,11 @@ void VrApp::RenderGiantScreenViews(const XrFrameInput &in) {
             renderer_.DrawQuad(backTex_.id(), Pose{}, 2.0f, 2.0f, Mat4::Identity());
             glClear(GL_DEPTH_BUFFER_BIT);
             const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            WorldMotion giantMotion;
+            giantMotion.hasEye = true;
+            giantMotion.eye = g.camera.eye;
             renderer_.DrawTexturedWorld(game_->texturedWorld(), eyeProj * view,
-                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp);
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, giantMotion);
         } else {
             renderer_.DrawTriangles(game_->world(), proj * view);
             renderer_.DrawTriangles(game_->player(), proj * view);
@@ -855,25 +1114,100 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     for (int h = 0; h < 2; ++h) {
         if (!in.gripValid[h]) continue;
         const Pose &g = in.grip[h];
-        if (mode == ViewMode::FirstPerson && body != BodyDisplay::Hidden) {
-            // A gloved hand, and the Keyblade along the blade axis the combat code uses.
-            AddOrientedBox(&props, g.position, {0.045f, 0.05f, 0.06f}, g.orientation, Rgba(20, 20, 26));
-            if (h == weapon || dual) {
-                // Shaft, guard and teeth of a Kingdom Key, along the axis swings are measured on.
-                float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
+        // Every Show body choice keeps the VR hands and Keyblade (Hidden leaves only Roxas out);
+        // while a cutscene, an NPC's text or a menu is up they go, as the wrist screen does.
+        const GameFrame &gf = game_->frame();
+        if (mode == ViewMode::FirstPerson && !gf.inScript && !gf.inCutscene && !gf.inMenu) {
+            // Roxas's own hand (as the game last drew it), and the Keyblade along the blade axis
+            // the combat code uses.
+            DrawHand(h, g, vpTracking);
+            // Out (the grip, an attack): the game's own once seen; it grows in over a fifth of a
+            // second as it appears.
+            if ((h == weapon || dual) && keybladeShown_) {
+                const float since = static_cast<float>(in.time - keybladeAppearedAt_);
+                const float grow = Clamp(since / 0.2f, 0.0f, 1.0f);
+                float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength) *
+                            std::max(0.05f, grow * grow * (3.0f - 2.0f * grow));
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);
-                Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip);
-                AddOrientedBox(&props, g.position + axis * (len * 0.5f), {0.016f, 0.016f, len * 0.5f}, q,
-                               Rgba(205, 205, 220));
-                AddOrientedBox(&props, g.position + axis * 0.07f, {0.08f, 0.02f, 0.015f}, q, Rgba(230, 200, 70));
-                AddOrientedBox(&props, g.position + axis * (len - 0.04f) + q.Rotate({0.05f, 0, 0}),
-                               {0.05f, 0.016f, 0.03f}, q, Rgba(205, 205, 220));
+                // Turned a quarter about the blade so the teeth face in, towards your forearm.
+                Quat q = g.orientation * Quat::AxisAngle({1, 0, 0}, grip) * Quat::AxisAngle({0, 0, 1}, kPi * 0.5f) *
+                         Quat::AxisAngle({0, 0, 1}, DegToRad(settings_.Get(SettingId::FpKeybladeTurn)));
+                const TexturedWorld &held = game_->heldWeapon();
+                if (!held.vertices.empty()) {
+                    const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+                    const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
+                    // The game's own Keyblade, its blade along the axis swings are measured on
+                    // and as long as they take it to be.
+                    const Mat4 model = Mat4::FromSimilarity({len, q, g.position + axis * settings_.Get(SettingId::FpKeybladeGrip)});
+                    renderer_.DrawTexturedWorld(held, vpTracking * model,
+                                                nearest, WorldMotion(), 1);
+                    continue;
+                }
+                // Until the game has drawn its own, none (no stand-in).
             }
         }
         // Outside first person the hands are not drawn: the wrist screen and the laser are enough.
     }
-    renderer_.DrawTriangles(props, vpTracking);
+    if (!props.triangles.empty()) renderer_.DrawTriangles(props, vpTracking);
+}
+
+bool VrApp::DrawPlace(const Mat4 &vpTracking) {
+#ifdef KHVR_HAS_GAME
+    if (!settings_.Bool(SettingId::GameUsePlace) || !decomp_) return false;
+    if (!placeTried_) {
+        placeTried_ = true;
+        if (!decomp_->LoadPlace(&place_, &placeFeet_, &placeYaw_)) place_ = TexturedWorld();
+    }
+    if (place_.vertices.empty()) return false;
+    // Its player's spot on your floor (where you stood at the start), facing where you looked.
+    // Your floor, his spot on it, at first person's scale (your eye at Roxas's, as when you stood
+    // there in the game): the place as big as it was, not a giant's.
+    const float realFloor = screenAnchor_.y > 0.8f ? 0.0f : screenAnchor_.y - 1.6f;
+    const float floorY = realFloor + settings_.Get(SettingId::GamePlaceHeight);
+    Similarity toWorld;
+    toWorld.scale = FirstPersonScale(settings_, screenAnchor_.y - realFloor) /
+                    std::max(0.1f, settings_.Get(SettingId::GamePlaceScale));
+    toWorld.rotation = Quat::Yaw(placeYaw_ - screenYaw_);
+    const Vec3 floor{screenAnchor_.x, floorY, screenAnchor_.z};
+    toWorld.translation = placeFeet_ - toWorld.rotation.Rotate(floor * toWorld.scale);
+    const Mat4 vpWorld = vpTracking * Mat4::FromSimilarity(toWorld.Inverse());
+    const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+    renderer_.DrawTexturedWorld(place_, vpWorld, filter == TextureFilter::Nearest || filter == TextureFilter::Sharp,
+                                WorldMotion(), 4);
+    // It is the backdrop: what comes after (the giant screen, the panels) draws over it, never
+    // into its walls and floor.
+    glClear(GL_DEPTH_BUFFER_BIT);
+    return true;
+#else
+    (void)vpTracking;
+    return false;
+#endif
+}
+
+void VrApp::DrawHand(int h, const Pose &g, const Mat4 &vpTracking) {
+    const TexturedWorld &hand = game_->hand(h);
+    if (hand.vertices.empty()) return;  // until the game has drawn his: none
+    // His hand's frame (HandFrame::ToHand) in the controller's grip: closed round its handle, wrist
+    // to knuckles up the grip's +Y, the palm's way across it (to the left for the right hand, to
+    // the right for the left), as a fist holds a sword along -Z. Hand turn turns it about that.
+    const float turn = DegToRad(settings_.Get(SettingId::FpHandTurn)) * (h ? 1.0f : -1.0f);
+    // (Turned half round across the hand: the first look had them upside down and backwards;
+    // and each half round about its own wrist-to-knuckle line: the next had the palms up when
+    // yours were down.)
+    // Hand tilt and Hand swing (the left hand mirrored, so one value suits both) on top.
+    const float side = h ? 1.0f : -1.0f;
+    const Quat adjust = Quat::AxisAngle({1, 0, 0}, -DegToRad(settings_.Get(SettingId::FpHandTilt))) *
+                        Quat::AxisAngle({0, 1, 0}, side * DegToRad(settings_.Get(SettingId::FpHandSwing)));
+    const Quat q = g.orientation * adjust * Quat::AxisAngle({1, 0, 0}, kPi) * Quat::AxisAngle({0, 1, 0}, turn) *
+                   Quat::AxisAngle({0, 1, 0}, h ? 0.0f : kPi);
+    const float size = 0.17f * settings_.Get(SettingId::FpHandSize);  // a hand's length, metres
+    const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+    const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
+    const Vec3 move{side * settings_.Get(SettingId::FpHandRight), 0.01f + settings_.Get(SettingId::FpHandUp),
+                    0.02f - settings_.Get(SettingId::FpHandForward)};
+    const Mat4 model = Mat4::FromSimilarity({size, q, g.position + g.orientation.Rotate(move)});
+    renderer_.DrawTexturedWorld(hand, vpTracking * model, nearest, WorldMotion(), 2 + h);
 }
 
 void VrApp::DrawHandheld(const Mat4 &vpTracking, float scale, float alpha, float smoothing) {
@@ -938,22 +1272,23 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     Mat4 vpTracking = proj * ViewFromPose(in.eyes[eye].pose);
 
     if (passthrough) glClearColor(0, 0, 0, 0);
-    else if (Loading()) glClearColor(0.01f, 0.01f, 0.03f, 1.0f);
-    else if (mode == ViewMode::GiantScreen) glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
+    else if (Loading() || mode == ViewMode::GiantScreen) glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // pitch black
     else glClearColor(0.42f, 0.58f, 0.85f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
 
     if (Loading()) {
-        // The loading area instead of a black giant screen, until the game draws something.
-        renderer_.DrawTriangles(loadingArea_, vpTracking);
-        if (stationTex_.id()) {
+        // The loading area instead of a black giant screen, until the game draws something: the
+        // saved place, else the pillar.
+        const bool place = DrawPlace(vpTracking);
+        if (!place) renderer_.DrawTriangles(loadingArea_, vpTracking);
+        if (stationTex_.id() && !place) {
             // The window lies face up on the pillar, its top toward where you first looked.
             Pose floor{Quat::Yaw(screenYaw_) * Quat::AxisAngle({1, 0, 0}, -kPi / 2),
                        loadingCenter_ + Vec3{0, 0.002f, 0}};
             renderer_.DrawQuad(stationTex_.id(), floor, 6.4f, 6.4f, vpTracking);
         }
-        renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
+        if (!place) renderer_.DrawTriangles(loadingBeam_, vpTracking, 0.10f);
         // The motes face your eye, farthest first so their glows blend over each other.
         const Vec3 eyePos = in.eyes[eye].pose.position;
         std::vector<const Mote *> order;
@@ -970,6 +1305,8 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     } else if (mode == ViewMode::GiantScreen && handheld_ && (!settings_.Bool(SettingId::HandScreenDsGiant) || DsOnly())) {
         // The handheld shows the top screen instead.
     } else if (mode == ViewMode::GiantScreen) {
+        // While the game's title and its menu are up, they float in the saved place; after, black.
+        if (game_->frame().inTitle) DrawPlace(vpTracking);
         float curv = settings_.Get(SettingId::ScreenCurvature);
         float dist = settings_.Get(SettingId::ScreenDistance);
         const bool world3d = World3d();
@@ -1002,10 +1339,40 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         Mat4 worldToTracking = Mat4::FromSimilarity(rig_.trackingToWorld.Inverse());
         Mat4 vpWorld = vpTracking * worldToTracking;
         renderer_.DrawTriangles(game_->world(), vpWorld);
+        if (!game_->texturedWorld().vertices.empty()) {
+            // The game's own 3D, captured in world space (View > Stand in the world).
+            const TextureFilter filter = settings_.Enum<TextureFilter>(SettingId::PicTextureFilter);
+            // Sprites turn to face you: across your view, upright (the world's up stays up).
+            WorldMotion motion;
+            motion.inBetween = settings_.Bool(SettingId::PicInBetweenFrames);
+            // In a cutscene you see from its camera: sprites stay as it drew them for itself.
+            motion.sprites = !game_->frame().inCutscene;
+            const Vec3 f = rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Forward());
+            const Vec3 r{-f.z, 0.0f, f.x};
+            motion.right = Length(r) > 0.05f ? Normalize(r)
+                                             : rig_.trackingToWorld.rotation.Rotate(in.head.orientation.Rotate({1, 0, 0}));
+            motion.up = Normalize(Cross(motion.right, f));
+            motion.hasEye = true;
+            motion.eye = rig_.trackingToWorld.Transform(in.head.position);
+            renderer_.DrawTexturedWorld(game_->texturedWorld(), vpWorld,
+                                        filter == TextureFilter::Nearest || filter == TextureFilter::Sharp, motion);
+            // The field's cursor at its target, facing you, over everything (the game's own are
+            // left out while you stand in the world).
+            const TexturedWorld &tw = game_->texturedWorld();
+            if (tw.lockOn) {
+                WorldDrawList cursor = FieldCursor(tw.lockOnAt, motion.right, motion.up,
+                                                   static_cast<float>(std::fmod(in.time, 1000.0)), tw.lockOnKind,
+                                                   tw.lockOnLocked);
+                renderer_.DrawTriangles(cursor, vpWorld, 0.95f, true);
+            }
+        }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;
         if (drawPlayer) renderer_.DrawTriangles(game_->player(), vpWorld);
     }
+    // Your hands and the Keyblade over the world: inside Roxas's body (Body without head) or a
+    // wall they would be hidden.
+    if (lastMode_ == ViewMode::FirstPerson) glClear(GL_DEPTH_BUFFER_BIT);
     DrawProps(in, vpTracking);
 
     // Panels float in front of the world: never let a pillar, the floor or the character cut into
@@ -1014,14 +1381,22 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
     if (mode != ViewMode::GiantScreen && (!handheld_ || (settings_.Bool(SettingId::HandScreenDsGiant) && !DsOnly())) &&
         settings_.Enum<TopScreenPlacement>(SettingId::HudTopScreen) != TopScreenPlacement::Hidden)
     {
+        // Over everything: the world close by does not cut into it. Filling the view it curves
+        // round your head, so its corners (commands, health) are as near and as easy to read as
+        // its middle.
+        const bool fill = settings_.Bool(SettingId::HudFillView);
+        const float hudDist = settings_.Get(SettingId::HudDistance);
         renderer_.SetScreenSmoothing(screenSmoothing);
-        renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking);
+        renderer_.DrawQuad(hudTex_.id(), hudPanel_.pose, hudPanel_.width, hudPanel_.height, vpTracking, 1.0f,
+                           fill ? 1.0f : 0.0f, hudDist, false, true);
         renderer_.SetScreenSmoothing(0.0f);
     }
     {
-        const BottomScreenPlacement placement = settings_.Enum<BottomScreenPlacement>(SettingId::HandScreenPlacement);
+        const BottomScreenPlacement placement = HandScreenPlacementNow();
         const bool held = placement == BottomScreenPlacement::InHand || placement == BottomScreenPlacement::OnWrist;
-        if (placement != BottomScreenPlacement::Hidden && (!held || in.gripValid[handScreenSide_])) {
+        const int hs = handScreenSide_;
+        const bool gripOk = in.gripValid[hs] || (lastGripAt_[hs] > 0.0 && in.time - lastGripAt_[hs] < 20.0);
+        if (placement != BottomScreenPlacement::Hidden && (!held || gripOk)) {
             // Not looked at: small and see-through, so it is easy to find; looked at: grows to
             // full size and opacity with a smooth ease.
             float t = handScreenShown_, e = t * t * (3.0f - 2.0f * t);
@@ -1035,6 +1410,12 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                 renderer_.SetScreenSmoothing(0.0f);
             }
         }
+    }
+    if (Loading() && titleTex_.id()) {
+        // The title floats: a slow rise and fall of a couple of centimetres.
+        Pose title = titlePanel_.pose;
+        title.position.y += 0.02f * std::sin(static_cast<float>(std::fmod(in.time, 1000.0)) * 1.3f);
+        renderer_.DrawQuad(titleTex_.id(), title, titlePanel_.width, titlePanel_.height, vpTracking);
     }
     if (Loading() && loadingTex_.id())
         renderer_.DrawQuad(loadingTex_.id(), loadingPanel_.pose, loadingPanel_.width, loadingPanel_.height, vpTracking);
@@ -1052,7 +1433,21 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
         float x = blinkTime_ / len;  // 0..1: fade out, hold, fade in
         blink = x < 0.3f ? x / 0.3f : (x > 0.7f ? (1.0f - x) / 0.3f : 1.0f);
     }
-    renderer_.DrawComfortOverlay(mode == ViewMode::GiantScreen ? 0.0f : rig_.vignette, blink);
+    // The vignette is one circle round both eyes' view together.
+    auto edges = [](const XrFovf &f, float out[4]) {
+        out[0] = std::tan(f.angleLeft);
+        out[1] = std::tan(f.angleRight);
+        out[2] = std::tan(f.angleDown);
+        out[3] = std::tan(f.angleUp);
+    };
+    float mine[4], left[4], right[4];
+    edges(in.eyes[eye].fov, mine);
+    edges(in.eyes[0].fov, left);
+    edges(in.eyes[1].fov, right);
+    const float both[4] = {std::min(left[0], right[0]), std::max(left[1], right[1]),
+                           std::min(left[2], right[2]), std::max(left[3], right[3])};
+    renderer_.DrawComfortOverlay(vignette_, settings_.Get(SettingId::ComfortVignette),
+                                 settings_.Get(SettingId::ComfortVignetteSize), blink, mine, both);
 }
 
 }  // namespace khvr

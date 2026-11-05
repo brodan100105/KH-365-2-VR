@@ -13,9 +13,14 @@ constexpr float kEndFraction = 0.45f;
 // Velocity smoothing time constant (s).
 constexpr float kVelocitySmoothing = 0.012f;
 // Guard: blade within this angle of horizontal, hand at most this far from the head.
-constexpr float kGuardMaxTiltDeg = 35.0f;
+constexpr float kGuardMaxTiltDeg = 25.0f;
 constexpr float kGuardMaxReach = 0.75f;
-constexpr float kGuardHoldSeconds = 0.12f;
+// Held this long, nearly still: a blade only turned sideways for a moment (between swings, or
+// moved slowly) is no guard (it pressed Block, which looked like a swing).
+constexpr float kGuardHoldSeconds = 0.6f;
+// The hand moving faster than this from one frame to the next is the tracking jumping (the
+// controller lost from view, as when it is turned sideways against the body), not a swing.
+constexpr float kTrackingJump = 7.0f;
 // Dodge: a flick is released within this long; held longer, the stick is walking.
 constexpr float kFlickMaxHold = 0.25f;
 // Physical jump: upward head speed (m/s).
@@ -71,12 +76,26 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
             continue;
         }
         Vec3 tip = BladeTip(in.hands[h], length, gripAngle);
-        if (st.hasPrev) {
+        const Vec3 grip = in.hands[h].position;
+        if (st.hasPrev && Length(grip - st.prevGrip) / in.dt > kTrackingJump) {
+            // Start over from where tracking found it again.
+            st.velocity = st.gripVelocity = Vec3{0, 0, 0};
+            st.armPath = 0.0f;
+            st.fastFrames = 0;
+        } else if (st.hasPrev) {
             Vec3 raw = (tip - st.prevTip) / in.dt;
             float k = 1.0f - std::exp(-in.dt / kVelocitySmoothing);
             st.velocity = Lerp(st.velocity, raw, k);
+            st.gripVelocity = Lerp(st.gripVelocity, (grip - st.prevGrip) / in.dt, k);
+            // The hand's path through one fast motion: it must be the arm swinging, not the wrist.
+            const float armSpeed = s.Get(SettingId::CombatArmSpeed);
+            if (Length(st.gripVelocity) > armSpeed * 0.5f && Length(st.velocity) > threshold * kEndFraction)
+                st.armPath += Length(grip - st.prevGrip);
+            else
+                st.armPath = 0.0f;
         }
         st.prevTip = tip;
+        st.prevGrip = grip;
         st.hasPrev = true;
 
         bool armed = motion && (h == weaponHand || dual);
@@ -91,7 +110,9 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
             continue;
         }
         st.fastFrames = speed > threshold ? st.fastFrames + 1 : 0;
-        if (st.fastFrames >= kFramesToStart && st.cooldown <= 0.0f && !out.swingStarted) {
+        const bool arm = Length(st.gripVelocity) >= s.Get(SettingId::CombatArmSpeed) &&
+                         st.armPath >= s.Get(SettingId::CombatArmDistance);
+        if (st.fastFrames >= kFramesToStart && arm && st.cooldown <= 0.0f && !out.swingStarted) {
             st.inSwing = true;
             st.fastFrames = 0;
             out.swingStarted = true;
@@ -117,7 +138,7 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
                            Normalize(Vec3{fwd.x, 0, fwd.z})) > 0.3f;
         bool reach = Length(toHand) < kGuardMaxReach;
         bool height = toHand.y > -0.55f && toHand.y < 0.25f;  // chest to just above the eyes
-        bool slow = Length(hands_[weaponHand].velocity) < threshold * 0.5f;
+        bool slow = Length(hands_[weaponHand].velocity) < threshold * 0.3f;
         // Across the body: the blade points sideways, not forward.
         Vec3 right = in.head.orientation.Right();
         bool across = std::fabs(Dot(axis, Normalize(Vec3{right.x, 0, right.z}))) > 0.6f;
@@ -139,8 +160,10 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
         bool pressed = in.trigger[off] > 0.75f;
         bool released = in.trigger[off] < 0.35f;
         HandState &st = hands_[off];
+        // The off-hand trigger casts only with the first person button profile: otherwise it is R.
         if (s.Enum<MagicGesture>(SettingId::CombatMagicGesture) == MagicGesture::PointAndTrigger &&
-            in.handValid[off] && pressed && !st.triggerHeld) {
+            s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile &&
+            in.handValid[off] && pressed && !st.triggerHeld && in.enemyTargeted) {
             Vec3 point = in.hands[off].orientation.Forward();
             Vec3 look = in.head.orientation.Forward();
             // The hand has to point roughly where you look.
@@ -169,7 +192,9 @@ CombatFrame CombatRecognizer::Update(const Settings &s, const CombatInput &in) {
     float mag = Length(in.moveAxis);
     if (mag < 0.2f) {
         if (flickPending_) {
-            if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick) {
+            // Only with an enemy on the cursor: a quick tap of the stick while walking about the
+            // Grey Area pressed the dodge button there, which opens the game's menu.
+            if (s.Enum<DodgeMode>(SettingId::CombatDodge) == DodgeMode::StickFlick && in.enemyTargeted) {
                 out.dodge = true;
                 out.dodgeDirection = flickDirection_;
             }

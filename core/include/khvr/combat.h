@@ -50,7 +50,12 @@ struct CombatInput {
     Pose hands[2];
     bool handValid[2] = {false, false};
     float trigger[2] = {0, 0};   // analog trigger value per hand
+    float grip[2] = {0, 0};      // analog grip value per hand
     Vec3 moveAxis;               // left stick
+    // The field's cursor is on an enemy (soft or locked): magic is cast and the stick flick
+    // dodges only then, so pulling the off-hand trigger or tapping the stick elsewhere (the Grey
+    // Area, where those buttons open the game's menu) presses nothing.
+    bool enemyTargeted = false;
 };
 
 // Where the blade tip is for a grip pose: the Keyblade points along the controller's -Z,
@@ -71,6 +76,9 @@ private:
         bool hasPrev = false;
         Vec3 prevTip;
         Vec3 velocity;           // smoothed tip velocity
+        Vec3 prevGrip;
+        Vec3 gripVelocity;       // smoothed hand velocity
+        float armPath = 0.0f;    // metres the hand has travelled in the current fast motion
         int fastFrames = 0;      // consecutive frames above the threshold
         bool inSwing = false;
         float cooldown = 0.0f;   // seconds until the next swing may start

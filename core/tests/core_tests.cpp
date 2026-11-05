@@ -8,6 +8,7 @@
 
 #include "khvr/combat.h"
 #include "khvr/demo_game.h"
+#include "khvr/held_weapon.h"
 #include "khvr/input_mapper.h"
 #include "khvr/math.h"
 #include "khvr/settings.h"
@@ -86,6 +87,22 @@ TEST(UpscaleScale2xFlatAndDiagonal) {
 
 // ---------------------------------------------------------------- math
 
+TEST(TitleTextLargeSmoothAndTransparentAround) {
+    int w = 0, h = 0;
+    std::vector<uint32_t> px = PaintTitleText("KH", 8, 10, Rgba(255, 255, 255), Rgba(150, 190, 255, 150), &w, &h);
+    CHECK(w == (2 * 10 + 2) * 8 + 20 && h == (20 + 2) * 8 + 20);
+    CHECK(px.size() == static_cast<size_t>(w) * h);
+    CHECK(px[0] == 0);  // nothing in the corners
+    int solid = 0, partial = 0;
+    for (uint32_t p : px) {
+        const uint32_t a = p >> 24;
+        solid += a == 255 && (p & 0xffffff) == 0xffffff;
+        partial += a > 0 && a < 255;
+    }
+    CHECK(solid > 2000);    // the letters, white
+    CHECK(partial > 500);   // their soft edges and the glow
+}
+
 TEST(MathYawRoundTrip) {
     for (float deg : {-170.0f, -90.0f, 0.0f, 45.0f, 135.0f}) {
         Quat q = Quat::Yaw(DegToRad(deg));
@@ -138,6 +155,60 @@ TEST(SettingsIniRoundTrip) {
     CHECK(b.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
 }
 
+TEST(WeaponFrameFromItsShape) {
+    // A key along +Y from y = 0 to 2, its teeth towards -X at the tip, its model's origin off to
+    // one side (as a model placed on a hand can have it).
+    const Vec3 o{3, -1, 2};
+    std::vector<Vec3> pts{o + Vec3{0, 0, 0}, o + Vec3{0.05f, 0.1f, 0}, o + Vec3{0, 2, 0}, o + Vec3{-0.3f, 1.9f, 0},
+                          o + Vec3{0, 1, 0.02f}};
+    WeaponFrame f = FindWeaponFrame(pts);
+    CHECK(f.valid);
+    CHECK(f.blade.y > 0.99f);                      // pommel to tip
+    CHECK_NEAR(f.grip.y, o.y + 0.4f, 0.06f);       // the handle, a fifth in from the pommel
+    const Vec3 tip = f.ToHand(o + Vec3{0, 2, 0});
+    CHECK(tip.z < -0.9f);                          // the tip along -Z
+    CHECK(f.ToHand(o + Vec3{-0.3f, 1.9f, 0}).x > 0.1f);  // the teeth towards +X
+}
+
+TEST(HandFrameFromItsShape) {
+    // A hand from the wrist at the origin out along +X (0.05 to 0.2), 0.08 wide along Z and 0.03
+    // thick along Y: its palm's way is Y.
+    std::vector<Vec3> pts;
+    for (float x : {0.05f, 0.2f})
+        for (float y : {-0.015f, 0.015f})
+            for (float z : {-0.04f, 0.04f}) pts.push_back({x, y, z});
+    HandFrame f = FindHandFrame(pts);
+    CHECK(f.valid);
+    CHECK(f.fingers.x > 0.99f);
+    CHECK(std::fabs(f.palm.y) > 0.99f);
+    CHECK_NEAR(f.length, 0.15f, 1e-4f);
+    const Vec3 knuckle = f.ToHand({0.2f, 0, 0});
+    CHECK_NEAR(knuckle.y, 0.5f, 1e-3f);  // half a hand from the middle, along +Y
+    CHECK_NEAR(knuckle.x, 0.0f, 1e-3f);
+}
+
+TEST(SettingsComfortProfiles) {
+    Settings s;
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Medium);
+    CHECK(!s.Bool(SettingId::ComfortVignetteOn));
+    s.SetEnum(SettingId::ComfortProfile, ComfortProfile::Low);
+    CHECK(s.Bool(SettingId::ComfortVignetteOn));
+    CHECK_NEAR(s.Get(SettingId::ComfortVignette), 1.0f, 1e-6f);
+    CHECK(s.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Snap);
+    s.SetEnum(SettingId::ComfortProfile, ComfortProfile::High);
+    CHECK(!s.Bool(SettingId::ComfortVignetteOn));
+    CHECK(s.Enum<TurnMode>(SettingId::ComfortTurn) == TurnMode::Smooth);
+    s.SetEnum(SettingId::ComfortTurn, TurnMode::Snap);  // now what Medium sets
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Medium);
+    s.SetEnum(SettingId::ComfortTurn, TurnMode::Off);
+    CHECK(s.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::Custom);
+    // A file from before the profiles: its vignette was on only by the old default.
+    Settings old;
+    old.LoadIni("[Comfort]\nturn = smooth\nvignette_on = true\n");
+    CHECK(!old.Bool(SettingId::ComfortVignetteOn));
+    CHECK(old.Enum<ComfortProfile>(SettingId::ComfortProfile) == ComfortProfile::High);
+}
+
 TEST(SettingsIniWarnings) {
     Settings s;
     std::vector<std::string> w;
@@ -164,12 +235,12 @@ TEST(SettingsStepAndFormat) {
 }
 
 TEST(SettingsEveryTabHasOptions) {
-    // The panel has two rows of six tabs, and room for eleven options on a tab.
+    // Twelve sections, each with options (the panel's pages scroll, so any number fits).
     CHECK(SettingTabs().size() == 12);
     for (const char *tab : SettingTabs()) {
         int n = 0;
         for (const SettingDef &d : SettingDefs()) n += std::strcmp(d.tab, tab) == 0;
-        CHECK(n >= 1 && n <= 11);
+        CHECK(n >= 1);
     }
     for (const SettingDef &d : SettingDefs()) {
         CHECK(d.help && *d.help);
@@ -229,6 +300,71 @@ TEST(ThirdPersonTeleportReinitializes) {
     CHECK(Near(rig.anchor(), g.playerPos));
 }
 
+TEST(CutsceneRigSeesFromTheCutsceneCamera) {
+    Settings s;
+    s.Set(SettingId::CutsceneWorldScale, 1.0f);
+    CutsceneRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.camera.eye = {2, 3, 10};
+    g.camera.target = {2, 3, 0};  // looking along -Z
+    TrackingFrame t = MakeTracking({0.2f, 1.6f, 0.1f});
+    RigOutput o = rig.Update(s, g, t);
+    // Your head where you stand is the camera's eye, your look its way.
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {2, 3, 10}));
+    const Vec3 look = o.trackingToWorld.TransformDir(t.head.orientation.Forward());
+    CHECK(Near(Normalize(look), {0, 0, -1}));
+    // The camera pans: the view goes with it, smoothly.
+    g.camera.eye = {3, 3, 10};
+    g.camera.target = {3, 3, 0};
+    for (int i = 0; i < 90; ++i) o = rig.Update(s, g, t);
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {3, 3, 10}));
+    // A cut to the other side of the scene: there at once, looking the new way.
+    g.camera.eye = {0, 3, -20};
+    g.camera.target = {10, 3, -20};  // along +X
+    o = rig.Update(s, g, t);
+    CHECK(Near(o.trackingToWorld.Transform(t.head.position), {0, 3, -20}));
+    CHECK(Near(Normalize(o.trackingToWorld.TransformDir(t.head.orientation.Forward())), {1, 0, 0}));
+}
+
+TEST(ThirdPersonFollowsCameraSettlingAfterSpawn) {
+    Settings s;
+    ThirdPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.camera.eye = {0, 2, 6};
+    g.camera.target = {0, 1, 0};  // looking along -Z
+    rig.Update(s, g, MakeTracking());
+    const float start = rig.viewYaw();
+    // The level's camera swings round behind the character over the first half second.
+    for (int i = 1; i <= 45; ++i) {
+        const float a = kPi * i / 45;
+        g.camera.eye = {6 * std::sin(a), 2, 6 * std::cos(a)};
+        rig.Update(s, g, MakeTracking());
+    }
+    CHECK_NEAR(std::fabs(WrapAngle(rig.viewYaw() - start)), kPi, 0.05f);
+    // Once it has held still a moment, the view no longer follows it.
+    for (int i = 0; i < 90; ++i) rig.Update(s, g, MakeTracking());
+    const float settled = rig.viewYaw();
+    g.camera.eye = {6, 2, 0};
+    for (int i = 0; i < 10; ++i) rig.Update(s, g, MakeTracking());
+    CHECK_NEAR(rig.viewYaw(), settled, 1e-4f);
+}
+
+TEST(ThirdPersonRecenterPlacesYouFromYourHead) {
+    Settings s;
+    s.SetEnum(SettingId::TpFollow, FollowMode::Locked);
+    ThirdPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    // Recentering sitting (eyes at 1.1 m) a metre to the side of the room's origin: your eyes
+    // still go to 1.6 m + Viewpoint height above the character's floor, Distance behind it.
+    TrackingFrame t = MakeTracking({1.0f, 1.1f, 0.5f});
+    t.recenter = true;
+    RigOutput o = rig.Update(s, g, t);
+    const float scale = o.trackingToWorld.scale;
+    const Vec3 eye = o.trackingToWorld.Transform(t.head.position);
+    CHECK_NEAR(eye.y / scale, 1.6f + s.Get(SettingId::TpHeight), 1e-3f);
+    CHECK_NEAR(Length(Vec3{eye.x, 0, eye.z}) / scale, s.Get(SettingId::TpDistance), 1e-3f);
+}
+
 TEST(ThirdPersonSnapTurnAroundCharacter) {
     Settings s;
     ThirdPersonRig rig;
@@ -260,6 +396,8 @@ TEST(ThirdPersonMoveBasisFollowsHead) {
 
 TEST(FirstPersonHeadOnCharacter) {
     Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     s.SetBool(SettingId::FpMatchCharacterHeight, false);
     FirstPersonRig rig;
     GameFrame g = MakeGame({5, 2, 5}, DegToRad(30));
@@ -274,6 +412,8 @@ TEST(FirstPersonHeadOnCharacter) {
 
 TEST(FirstPersonMatchesCharacterHeight) {
     Settings s;  // character eye height 1.5 m
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     FirstPersonRig rig;
     GameFrame g = MakeGame({0, 0, 0});
     TrackingFrame t = MakeTracking({0, 1.8f, 0});
@@ -285,8 +425,37 @@ TEST(FirstPersonMatchesCharacterHeight) {
     CHECK_NEAR(o.trackingToWorld.scale, 1.5f / 1.8f, 1e-4f);
 }
 
+TEST(FirstPersonGlidesAfterLunges) {
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    s.SetBool(SettingId::FpRoomScale, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    rig.Update(s, g, MakeTracking());
+    // An attack lunges him half a unit forward in one game frame: the view does not jump with it.
+    g.playerPos = {0, 0, -0.5f};
+    g.frameCounter++;
+    RigOutput o;
+    for (int i = 0; i < 3; ++i) o = rig.Update(s, g, MakeTracking());
+    const Vec3 eye = o.trackingToWorld.Transform({0, 1.6f, 0});
+    CHECK(eye.z > -0.25f);
+    // ... but it gets there.
+    for (int i = 0; i < 270; ++i) o = rig.Update(s, g, MakeTracking());
+    CHECK(o.trackingToWorld.Transform({0, 1.6f, 0}).z < -0.49f);
+    // Walking him with the stick, it keeps right with him.
+    TrackingFrame t = MakeTracking();
+    t.moveAxis = {0, 0, -1};
+    g.playerPos = {0, 0, -1.0f};
+    g.frameCounter++;
+    for (int i = 0; i < 12; ++i) o = rig.Update(s, g, t);
+    CHECK(o.trackingToWorld.Transform({0, 1.6f, 0}).z < -0.99f);
+}
+
 TEST(FirstPersonRoomScaleStep) {
     Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);  // the rig's own geometry, at the scale of the game
+    s.Set(SettingId::FpEyeHeight, 1.5f);
     s.SetBool(SettingId::FpMatchCharacterHeight, false);
     FirstPersonRig rig;
     GameFrame g = MakeGame({0, 0, 0});
@@ -296,24 +465,176 @@ TEST(FirstPersonRoomScaleStep) {
     CHECK(Near(o.requests.roomScaleStep, {0.1f, 0, 0}));
     // Until the game applies it, the view shows the step as already applied.
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0.1f, 1.6f, 0}));
-    // The game frame advances but a wall blocked the move: you are pushed back.
+    // The game frame advances but a wall blocked the move: you are pushed back, gliding (as from
+    // his attacks' lunges) from where the view showed you.
     g.frameCounter++;
     o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
+    CHECK(Length(o.trackingToWorld.Transform({0.1f, 1.6f, 0}) - Vec3{0.1f, 1.6f, 0}) < 0.05f);  // just starting back
+    for (int i = 0; i < 270; ++i) o = rig.Update(s, g, MakeTracking({0.1f, 1.6f, 0}));
     CHECK(Near(o.trackingToWorld.Transform({0.1f, 1.6f, 0}), {0, 1.6f, 0}));
+    // Without smooth motion, at once.
+    s.SetBool(SettingId::ViewSmoothMotion, false);
+    rig.Update(s, g, MakeTracking({0.2f, 1.6f, 0}));
+    g.frameCounter++;
+    o = rig.Update(s, g, MakeTracking({0.2f, 1.6f, 0}));
+    CHECK(Near(o.trackingToWorld.Transform({0.2f, 1.6f, 0}), {0, 1.6f, 0}));
+}
+
+TEST(FirstPersonWalksInTheRoomWithoutLag) {
+    // Walking across the room, the game applying each step on its next frame: the view keeps
+    // your head over him, not gliding behind.
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.Set(SettingId::FpEyeHeight, 1.5f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    rig.Update(s, g, MakeTracking({0, 1.6f, 0}));
+    RigOutput o;
+    float x = 0;
+    // The headset at 90 frames a second, the game at 30: it takes the steps asked since its last
+    // frame on its next one.
+    Vec3 asked{0, 0, 0};
+    float worst = 0;
+    for (int i = 1; i <= 180; ++i) {
+        x = 0.005f * i;
+        o = rig.Update(s, g, MakeTracking({x, 1.6f, 0}));
+        if (o.requests.hasRoomScaleStep) asked = asked + o.requests.roomScaleStep;
+        if (i % 3 == 0) {
+            g.playerPos = g.playerPos + asked;
+            asked = {0, 0, 0};
+            g.frameCounter++;
+        }
+        worst = std::fmax(worst, Length(o.trackingToWorld.Transform({x, 1.6f, 0}) - Vec3{x, 1.6f, 0}));
+    }
+    CHECK(worst < 0.02f);
+}
+
+TEST(FirstPersonRoomStepsAsTheGameReportsThem) {
+    // The game takes each step a frame or two late and says so: the view shows your head where
+    // it is all along, without stepping back and forth.
+    Settings s;
+    s.Set(SettingId::FpWorldScale, 1.0f);
+    s.Set(SettingId::FpEyeHeight, 1.5f);
+    s.SetBool(SettingId::FpMatchCharacterHeight, false);
+    FirstPersonRig rig;
+    GameFrame g = MakeGame({0, 0, 0});
+    g.roomStepsReported = true;
+    rig.Update(s, g, MakeTracking({0, 1.6f, 0}));
+    Vec3 asked{0, 0, 0}, queued{0, 0, 0}, taken{0, 0, 0};
+    float x = 0, worst = 0;
+    for (int i = 1; i <= 180; ++i) {
+        x = 0.005f * i;
+        RigOutput o = rig.Update(s, g, MakeTracking({x, 1.6f, 0}));
+        worst = std::fmax(worst, Length(o.trackingToWorld.Transform({x, 1.6f, 0}) - Vec3{x, 1.6f, 0}));
+        if (o.requests.hasRoomScaleStep) asked = asked + o.requests.roomScaleStep;  // sent next frame
+        if (i % 3 == 0) {
+            // The game's frame: it takes what had been sent before this one.
+            g.playerPos = g.playerPos + queued;
+            taken = taken + queued;
+            queued = asked - taken;
+            g.frameCounter++;
+        }
+        g.roomStepTaken = taken;
+        g.roomStepUnapplied = asked - taken;
+    }
+    CHECK(worst < 0.02f);
+}
+
+TEST(SmootherKeepsUpWhileWalking) {
+    // Walking at a steady pace, the game at 30 frames a second, the headset at 90: predicting,
+    // the view is where he is, not a game frame behind; and it still moves smoothly.
+    MotionSmoother m;
+    m.Reset({0, 0, 0});
+    uint32_t frame = 0;
+    float worstLag = 0, worstStep = 0, last = 0;
+    for (int i = 1; i <= 90; ++i) {
+        if (i % 3 == 0) ++frame;
+        const float truth = 0.1f * static_cast<float>(i) / 3.0f;  // where he would be by now
+        const Vec3 p = m.Update({0.1f * static_cast<float>(frame), 0, 0}, frame, 1.0f / 90, {}, true);
+        if (i > 30) {
+            worstLag = std::fmax(worstLag, std::fabs(truth - p.x));
+            worstStep = std::fmax(worstStep, p.x - last);
+        }
+        last = p.x;
+    }
+    CHECK(worstLag < 0.04f);   // under half a game frame's move (0.1)
+    CHECK(worstStep < 0.06f);  // shared out, not 0.1 at once
+}
+
+TEST(SwingsWaitForTheGameToTakeThem) {
+    // A swing mid-attack: its press comes again every fourth game frame until the game takes it;
+    // a second swing meanwhile waits its turn; no swing, no press.
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    CombatFrame swing;
+    swing.swingStarted = true;
+    const uint16_t a = kDsA;
+    m.Update(s, ViewMode::FirstPerson, c, &swing, 0, 0, 1.0f / 90);
+    int pattern = 0;
+    for (int f = 0; f < 8; ++f) pattern = pattern * 2 + ((m.SampleForGameFrame() & a) != 0);
+    CHECK(pattern == 0xcc);  // pressed two frames, released two, again
+    m.Update(s, ViewMode::FirstPerson, c, &swing, 0, 0, 1.0f / 90);  // swung again meanwhile
+    m.NoteActionTaken();  // the first taken: the second starts, after a released frame
+    CHECK(m.attackPending());
+    CHECK((m.SampleForGameFrame() & a) == 0);
+    CHECK((m.SampleForGameFrame() & a) == 0);
+    CHECK((m.SampleForGameFrame() & a) != 0);
+    m.NoteActionTaken();
+    CHECK(!m.attackPending());
+    CombatFrame none;
+    m.Update(s, ViewMode::FirstPerson, c, &none, 0, 0, 1.0f / 90);
+    for (int f = 0; f < 6; ++f) CHECK((m.SampleForGameFrame() & a) == 0);
+}
+
+TEST(SmootherPlaysStepsOutBetweenGameFrames) {
+    MotionSmoother m;
+    m.Reset({0, 0, 0});
+    uint32_t frame = 0;
+    // The game at 30 frames a second, the headset at 120: a 1-unit step every 4 headset frames.
+    float last = 0, biggest = 0;
+    for (int i = 1; i <= 40; ++i) {
+        if (i % 4 == 0) ++frame;
+        Vec3 p = m.Update({static_cast<float>(frame), 0, 0}, frame, 1.0f / 120);
+        if (i > 12) biggest = std::fmax(biggest, p.x - last);
+        last = p.x;
+    }
+    CHECK(biggest < 0.4f);   // the steps shared out over the headset frames, not 1 at once
+    CHECK(last > 8.0f);      // a game frame behind at most
 }
 
 // ---------------------------------------------------------------- combat
 
-CombatInput Swing(float tipSpeed, float dt, int frame, bool moving) {
+// A horizontal swing at `tipSpeed`: the whole arm about the shoulder (the hand on a 0.5 m
+// circle, turning with it), or the wrist alone (the hand still, the controller turning).
+CombatInput Swing(float tipSpeed, float dt, int frame, bool moving, bool wristOnly = false) {
     CombatInput in;
     in.dt = dt;
     in.head.position = {0, 1.6f, 0};
     in.handValid[1] = true;
-    in.hands[1].position = {0.2f, 1.2f, -0.3f};
-    // Rotate the controller about +Y so the tip sweeps horizontally.
-    float yaw = moving ? -frame * tipSpeed * dt / CombatRecognizer::kBladeLength : 0.0f;
+    const float arm = 0.5f;
+    const float radius = wristOnly ? CombatRecognizer::kBladeLength : arm + CombatRecognizer::kBladeLength;
+    float yaw = moving ? -frame * tipSpeed * dt / radius : 0.0f;
+    const Vec3 shoulder{0.2f, 1.2f, 0.2f};
+    in.hands[1].position = wristOnly ? Vec3{0.2f, 1.2f, -0.3f} : shoulder + Quat::Yaw(yaw).Rotate({0, 0, -arm});
     in.hands[1].orientation = Quat::Yaw(yaw);
     return in;
+}
+
+TEST(CombatWristFlickIsNotASwing) {
+    Settings s;
+    CombatRecognizer r;
+    float dt = 1.0f / 90.0f;
+    int swings = 0;
+    for (int i = 0; i < 30; ++i) swings += r.Update(s, Swing(5.0f, dt, i, true, true)).swingStarted;
+    CHECK(swings == 0);
+    // With the arm checks off, the tip alone counts.
+    s.Set(SettingId::CombatArmSpeed, 0.0f);
+    s.Set(SettingId::CombatArmDistance, 0.0f);
+    CombatRecognizer r2;
+    for (int i = 0; i < 30; ++i) swings += r2.Update(s, Swing(5.0f, dt, i, true, true)).swingStarted;
+    CHECK(swings == 1);
 }
 
 TEST(CombatSwingDetected) {
@@ -323,8 +644,8 @@ TEST(CombatSwingDetected) {
     SwingKind kind = SwingKind::Thrust;
     float dt = 1.0f / 90.0f;
     for (int i = 0; i < 10; ++i) r.Update(s, Swing(0, dt, i, false));
-    for (int i = 0; i < 20; ++i) {
-        CombatFrame f = r.Update(s, Swing(4.0f, dt, i, true));
+    for (int i = 0; i < 40; ++i) {
+        CombatFrame f = r.Update(s, Swing(6.0f, dt, i, true));  // the hand at 2.2 m/s
         if (f.swingStarted) {
             ++swings;
             kind = f.swing.kind;
@@ -354,7 +675,9 @@ TEST(CombatGuardPose) {
     // Blade pointing left, level, in front of the face.
     in.hands[1].orientation = Quat::Yaw(DegToRad(90));
     bool guarding = false, started = false;
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; i < 20; ++i) started |= r.Update(s, in).guardStarted;
+    CHECK(!started);  // a moment sideways is no guard
+    for (int i = 0; i < 60; ++i) {
         CombatFrame f = r.Update(s, in);
         guarding = f.guarding;
         started |= f.guardStarted;
@@ -363,11 +686,42 @@ TEST(CombatGuardPose) {
     CHECK(started);
 }
 
+TEST(CombatTrackingJumpIsNoSwing) {
+    // The controller held still, its tracking jumping 0.4 m and back now and then (lost from
+    // view, turned sideways against the body).
+    Settings s;
+    CombatRecognizer r;
+    CombatInput in;
+    in.dt = 1.0f / 90.0f;
+    in.head.position = {0, 1.6f, 0};
+    in.handValid[1] = true;
+    in.hands[1].orientation = Quat::Yaw(DegToRad(90));
+    int swings = 0;
+    for (int i = 0; i < 270; ++i) {
+        const bool jumped = (i / 4) % 10 == 5;
+        in.hands[1].position = {0.25f, 1.2f + (jumped ? 0.4f : 0.0f), -0.3f};
+        swings += r.Update(s, in).swingStarted;
+    }
+    CHECK(swings == 0);
+}
+
 TEST(CombatStickFlickDodges) {
     Settings s;
     CombatRecognizer r;
     CombatInput in;
     in.dt = 1.0f / 90.0f;
+    // Without an enemy on the cursor a flick does nothing (it opened the Grey Area's menu).
+    {
+        CombatRecognizer idle;
+        bool any = false;
+        for (int i = 0; i < 20; ++i) idle.Update(s, in);
+        in.moveAxis = {1, 0, 0};
+        for (int i = 0; i < 2; ++i) any |= idle.Update(s, in).dodge;
+        in.moveAxis = {};
+        any |= idle.Update(s, in).dodge;
+        CHECK(!any);
+    }
+    in.enemyTargeted = true;
     for (int i = 0; i < 20; ++i) r.Update(s, in);
     in.moveAxis = {1, 0, 0};
     CHECK(!r.Update(s, in).dodge);  // not yet: it could be the start of walking
@@ -408,6 +762,122 @@ TEST(MapperDpadOctants) {
     CHECK(InputMapper::DpadFromDirection(0, 1, DegToRad(90)) == kDsLeft);
 }
 
+TEST(MapperMenuStickOneAxisWithRelease) {
+    Settings s;
+    InputMapper m;
+    m.SetMenuStick(true);
+    ControllerState c;
+    auto dpad = [&](float x, float y) {
+        c.stickX[0] = x;
+        c.stickY[0] = y;
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+        return static_cast<uint16_t>(m.heldButtons() & (kDsUp | kDsDown | kDsLeft | kDsRight));
+    };
+    CHECK(dpad(0.0f, 0.45f) == 0);              // a light push does not press yet
+    CHECK(dpad(0.0f, 0.7f) == kDsUp);
+    CHECK(dpad(0.5f, 0.6f) == kDsUp);           // drifting toward the diagonal keeps Up alone
+    CHECK(dpad(0.0f, 0.4f) == kDsUp);           // easing off holds until the release point
+    CHECK(dpad(0.0f, 0.2f) == 0);
+    CHECK(dpad(0.75f, 0.7f) == kDsRight);       // a diagonal press is one axis
+    CHECK(dpad(0.3f, 0.75f) == kDsUp);          // a clear move to the other axis switches
+    CHECK(dpad(0.0f, -0.8f) == kDsDown);        // and so does reversing
+}
+
+TEST(MapperFieldOctantHysteresis) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    auto dpad = [&](float degrees) {
+        c.stickX[0] = -std::sin(DegToRad(degrees));
+        c.stickY[0] = std::cos(DegToRad(degrees));
+        m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.011f);
+        return static_cast<uint16_t>(m.heldButtons() & (kDsUp | kDsDown | kDsLeft | kDsRight));
+    };
+    CHECK(dpad(0) == kDsUp);
+    CHECK(dpad(25) == kDsUp);                   // just past the edge: still Up
+    CHECK(dpad(35) == (kDsUp | kDsLeft));
+    CHECK(dpad(20) == (kDsUp | kDsLeft));       // and back just past it: still up-left
+    CHECK(dpad(10) == kDsUp);
+}
+
+TEST(MapperTriggersAreLAndRInMenus) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    c.trigger[0] = 0.55f;  // a light pull
+    c.trigger[1] = 0.55f;
+    m.SetMenuStick(true);  // a menu or a tutorial's pages
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK((m.heldButtons() & (kDsL | kDsR)) == (kDsL | kDsR));
+    c.trigger[0] = 0.4f;  // easing off a little holds it
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(m.heldButtons() & kDsL);
+    c.trigger[0] = 0.1f;
+    m.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(!(m.heldButtons() & kDsL));
+}
+
+TEST(MapperMenuHeldFromStartIsIgnored) {
+    Settings s;
+    InputMapper m;
+    ControllerState c;
+    c.menu = true;  // held as the app starts
+    bool panel = false;
+    for (int i = 0; i < 200; ++i) {
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+        panel |= m.actions().openSettingsPanel;
+    }
+    c.menu = false;
+    m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(!panel);
+    CHECK(!m.actions().pressedStart);
+    // Pressed again after letting go, it works.
+    c.menu = true;
+    for (int i = 0; i < 200; ++i) {
+        m.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 1.0f / 90.0f);
+        panel |= m.actions().openSettingsPanel;
+    }
+    CHECK(panel);
+}
+
+TEST(MapperFirstPersonButtonsSameByDefault) {
+    Settings s;
+    ControllerState c;
+    c.trigger[0] = 1.0f;
+    c.trigger[1] = 1.0f;
+    InputMapper same;
+    same.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK((same.heldButtons() & (kDsL | kDsR)) == (kDsL | kDsR));  // as in third person
+    s.SetEnum(SettingId::CtrlFirstPersonButtons, FirstPersonButtons::Profile);
+    InputMapper profile;
+    profile.Update(s, ViewMode::FirstPerson, c, nullptr, 0, 0, 1.0f / 90.0f);
+    CHECK(profile.heldButtons() & kDsL);      // the weapon (right) hand's trigger
+    CHECK(!(profile.heldButtons() & kDsR));   // the other trigger casts instead
+}
+
+TEST(MapperLeftStickSelectOnlyOnTheGiantScreen) {
+    // A short press of the left thumbstick: Select on the giant screen (on letting go), nothing
+    // standing in the world; held, nothing either (the app takes it).
+    Settings s;
+    for (ViewMode mode : {ViewMode::GiantScreen, ViewMode::FirstPerson}) {
+        InputMapper m;
+        ControllerState c;
+        c.stickClick[0] = true;
+        for (int i = 0; i < 10; ++i) m.Update(s, mode, c, nullptr, 0, 0, 0.011f);
+        c.stickClick[0] = false;
+        m.Update(s, mode, c, nullptr, 0, 0, 0.011f);
+        const bool select = (m.SampleForGameFrame() & kDsSelect) != 0;
+        CHECK(select == (mode == ViewMode::GiantScreen));
+    }
+    InputMapper held;
+    ControllerState c;
+    c.stickClick[0] = true;
+    for (int i = 0; i < 60; ++i) held.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+    c.stickClick[0] = false;
+    held.Update(s, ViewMode::GiantScreen, c, nullptr, 0, 0, 0.011f);
+    CHECK(!(held.SampleForGameFrame() & kDsSelect));
+}
+
 TEST(MapperSwingPulse) {
     Settings s;
     InputMapper m;
@@ -427,6 +897,7 @@ TEST(MapperMenuTapIsStartHoldIsPanel) {
     Settings s;
     InputMapper m;
     ControllerState c;
+    m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);  // the button up once first
     c.menu = true;
     m.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);
     c.menu = false;
@@ -434,6 +905,7 @@ TEST(MapperMenuTapIsStartHoldIsPanel) {
     CHECK(m.SampleForGameFrame() & kDsStart);
 
     InputMapper hold;
+    hold.Update(s, ViewMode::ThirdPerson, c, nullptr, 0, 0, 0.1f);
     c.menu = true;
     bool opened = false;
     for (int i = 0; i < 10; ++i) {

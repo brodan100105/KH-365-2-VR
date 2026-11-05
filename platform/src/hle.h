@@ -2,11 +2,40 @@
 // hardware's behaviour as the game's code sees it, not its circuits).
 #pragma once
 
+#include <atomic>
+
 #include <cstdarg>
 #include <cstdint>
 #include <string>
 
 namespace khvr::hle {
+
+// Where the screens' time goes, for the heartbeat: milliseconds added up since it last printed
+// them (render2d.cpp adds the 3D layer and the HUD pass, Platform::CaptureWorld the capture).
+void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs);
+// SWAP_BUFFERS: the game finished a frame's 3D (hle_gx.cpp). The player is read now, with the
+// polygons it is drawn with, so the two never come from different frames.
+void NoteFrameSwapped();
+// The player's feet as NoteFrameSwapped read them (world, game units); false without a player.
+bool SwapPlayerPosition(float out[3]);
+// An event script (a cutscene) ran as NoteFrameSwapped read the scene.
+bool SwapEventScene();
+// Standing in the world: the headset draws the field's cursors (khvr_host_own_cursors).
+extern std::atomic<bool> gOwnCursors;
+// The field has enemies (their overlays started since the field's own): a battle area, not the
+// Grey Area or a town.
+extern std::atomic<bool> gBattleArea;
+// Analog movement: the heading (u16, the game's D-pad heading convention: 0 up, 0x4000 left,
+// relative to its camera) the player's held D-pad stands for, -1 none (Platform::SetMoveHeading).
+extern std::atomic<int32_t> gMoveHeading;
+// How much further (fx32) Roxas's swings reach (Platform::SetReachBonus): first person.
+extern std::atomic<int32_t> gReachBonus;
+// The player actor of the last SWAP_BUFFERS, 0 none.
+uint32_t SwapPlayerActor();
+// Room-scale walking: the player's step for this frame (fx32 x, z), taken once.
+void TakePlayerStep(int32_t xz[2]);
+// The index of the joint named `name` in a render object's model, -1 none.
+int ModelJointIndex(uint32_t obj, const char *name);
 
 // ---- Logging (platform/src/log.cpp): to the boot log file and the platform's ring buffer. ----
 void Log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -49,6 +78,7 @@ void IoOnIrqTaken(int bit);  // re-raises timers with more overflows queued
 uint8_t IoReg8(uint32_t off);  // plain register storage, for the renderers (offset from 0x04000000)
 uint16_t IoReg16(uint32_t off);
 uint32_t IoReg32(uint32_t off);
+void IoDispCapDone();  // a display capture finished: DISPCAPCNT's enable bit clears
 uint64_t IoCycles();  // emulated ARM9 bus cycles (33.5 MHz) since boot
 
 // The VRAM banks A-I and how the guest has mapped them (VRAMCNT).

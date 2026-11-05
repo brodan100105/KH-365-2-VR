@@ -1,6 +1,9 @@
 #include "khvr/platform.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -141,9 +144,20 @@ bool Platform::Start(const PlatformConfig &config, std::string *error) {
     return true;
 }
 
+namespace {
+// The player as the game's last SWAP_BUFFERS left it (hle::NoteFrameSwapped).
+std::mutex gSwapPlayerMu;
+PlatformPlayer gSwapPlayer;
+bool gSwapPlayerValid = false;
+}  // namespace
+
 void Platform::Restart() {
     using namespace hle;
     if (gState != PlatformState::Resetting) return;
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        gSwapPlayerValid = false;  // the guest's memory goes
+    }
     SaveFlush();
     ThreadsReset();
     MovieClose();
@@ -183,6 +197,11 @@ void Platform::Stop() {
     if (hle::gState == PlatformState::Running) hle::gState = PlatformState::Stopped;
 }
 
+namespace hle {
+void ApplyPlayerStep();  // below
+void ReadPlayerStepTotal(float out[2]);
+}
+
 bool Platform::VBlank(int timeoutMs) {
     using namespace hle;
     if (gState != PlatformState::Running) return false;
@@ -206,6 +225,7 @@ bool Platform::VBlank(int timeoutMs) {
     IpcRaiseIfReply();
     IoVBlank(kFrameCycles);
     GxVBlank();
+    ApplyPlayerStep();
     ++gFrames;
     // The idle thread leaves halt, the game runs its frame and halts again.
     uint64_t halts = ThreadsWakeIdle();
@@ -220,25 +240,218 @@ std::atomic<bool> gWorldCapture{false};
 }
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
+void Platform::SetCapturedCards(bool on) { hle::gCapturedCards = on; }
+void Platform::SetDrawAll(bool on) { hle::gDrawAll = on; }
+
 void Platform::SetWorldCapture(bool on) {
     gWorldCapture = on;
     hle::gWorldCaptureOn = on;
 }
 
-void Platform::CaptureWorld(PlatformWorld *out) { hle::GxCaptureWorld(out); }
+void Platform::CaptureWorld(PlatformWorld *out) {
+    const auto t0 = std::chrono::steady_clock::now();
+    hle::GxCaptureWorld(out);
+    hle::NoteCaptureTimes(0, 0, std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count());
+}
+
+namespace hle {
+void NoteFrameSwapped() {
+    PlatformPlayer now;
+    Platform::Get().ReadPlayerNow(&now);
+    static uint32_t actionsTaken = 0;
+    if (now.valid && now.actor && Read16(now.actor + 0x1c) != 0) ++actionsTaken;
+    now.actionsTaken = actionsTaken;
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    gSwapPlayer = now;
+    gSwapPlayerValid = true;
+}
+
+bool SwapPlayerPosition(float out[3]) {
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    if (!gSwapPlayerValid || !gSwapPlayer.valid) return false;
+    std::copy(gSwapPlayer.position, gSwapPlayer.position + 3, out);
+    return true;
+}
+
+bool SwapEventScene() {
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    return gSwapPlayerValid && gSwapPlayer.event;
+}
+
+std::atomic<bool> gOwnCursors{false};
+
+// Name `index` of an NNS G3D resource dictionary (NNSG3dResDict: its entries' header at
+// +ofsEntry, a u16 at +6, whose second u16 is the offset of the 16-byte names), "" when out of range.
+std::string DictName(uint32_t dict, uint32_t index) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(dict, 8) || index >= Read8(dict + 1)) return "";
+    const uint32_t entries = dict + Read16(dict + 6);
+    if (!ok(entries, 4)) return "";
+    const uint32_t name = entries + Read16(entries + 2) + index * 16;
+    if (!ok(name, 16)) return "";
+    std::string out;
+    for (int i = 0; i < 16; ++i) {
+        const char c = static_cast<char>(Read8(name + i));
+        if (!c) break;
+        out += c >= 32 && c < 127 ? c : '?';
+    }
+    return out;
+}
+
+// The joint names of a render object's model (NNSG3dRenderObj: its NNSG3dResMdl at +4, whose
+// joint dictionary follows its 0x40-byte header), "" when it has none.
+std::string ModelJointNames(uint32_t obj) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(obj, 8)) return "";
+    const uint32_t mdl = Read32(obj + 4);
+    if (!ok(mdl, 0x48)) return "";
+    const uint32_t dict = mdl + 0x40;
+    std::string out;
+    const uint32_t n = Read8(dict + 1);
+    for (uint32_t i = 0; i < n && i < 64; ++i) out += " " + std::to_string(i) + ":" + DictName(dict, i);
+    return out;
+}
+
+int ModelJointIndex(uint32_t obj, const char *name) {
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!ok(obj, 8)) return -1;
+    const uint32_t mdl = Read32(obj + 4);
+    if (!ok(mdl, 0x48)) return -1;
+    const uint32_t dict = mdl + 0x40;
+    const uint32_t n = Read8(dict + 1);
+    for (uint32_t i = 0; i < n && i < 64; ++i)
+        if (DictName(dict, i) == name) return static_cast<int>(i);
+    return -1;
+}
+
+// The player actor of the last SWAP_BUFFERS, 0 none.
+uint32_t SwapPlayerActor() {
+    std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+    return gSwapPlayerValid && gSwapPlayer.valid ? gSwapPlayer.actor : 0;
+}
+}  // namespace hle
+
+void Platform::SetOwnCursors(bool on) { hle::gOwnCursors = on; }
+
+namespace hle {
+std::atomic<int32_t> gMoveHeading{-1};
+
+// Room-scale walking: your steps in your room, still to be given to the player (game units); all
+// those taken (or dropped) so far; and the VBlanks since the game last took any.
+std::mutex gPlayerStepMu;
+double gPlayerStep[2] = {0, 0};
+double gPlayerStepTotal[2] = {0, 0};
+int gVBlanksSinceStepTaken = 0;
+
+void TakePlayerStep(int32_t xz[2]) {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    for (int k = 0; k < 2; ++k) {
+        xz[k] = static_cast<int32_t>(std::lround(gPlayerStep[k] * 4096.0));
+        gPlayerStep[k] -= xz[k] / 4096.0;  // the part below the game's precision waits
+        gPlayerStepTotal[k] += xz[k] / 4096.0;
+    }
+    gVBlanksSinceStepTaken = 0;
+    static uint32_t logged = 0;
+    if ((xz[0] || xz[1]) && logged < 3) {
+        ++logged;
+        Log("room-scale: the player's step takes %.3f %.3f (game units)", xz[0] / 4096.0, xz[1] / 4096.0);
+    }
+}
+
+// Before each VBlank: steps the game has not taken for a while (a menu, an event scene) go, so he
+// does not lurch with them later. (Its logic runs at 30 frames a second, every other VBlank:
+// steps waiting one VBlank are its next frame's.)
+void ApplyPlayerStep() {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    if (++gVBlanksSinceStepTaken > 8) {
+        for (int k = 0; k < 2; ++k) {
+            gPlayerStepTotal[k] += gPlayerStep[k];
+            gPlayerStep[k] = 0;
+        }
+    }
+}
+
+void ReadPlayerStepTotal(float out[2]) {
+    std::lock_guard<std::mutex> lock(gPlayerStepMu);
+    out[0] = static_cast<float>(gPlayerStepTotal[0]);
+    out[1] = static_cast<float>(gPlayerStepTotal[1]);
+}
+}
+void Platform::AddPlayerStep(float dx, float dz) {
+    std::lock_guard<std::mutex> lock(hle::gPlayerStepMu);
+    hle::gPlayerStep[0] += dx;
+    hle::gPlayerStep[1] += dz;
+}
+void Platform::SetMoveHeading(int heading) { hle::gMoveHeading = heading; }
+
+namespace hle {
+std::atomic<int32_t> gReachBonus{0};
+}
+void Platform::SetReachBonus(float units) {
+    hle::gReachBonus = static_cast<int32_t>(std::lround(std::max(0.0f, units) * 4096.0f));
+}
+
+void Platform::SetArmTargets(bool on, const float left[3], bool leftValid, const float right[3], bool rightValid) {
+    hle::GxSetArmTargets(on, left, leftValid, right, rightValid);
+}
 
 bool Platform::ReadPlayer(PlatformPlayer *out) {
+    {
+        std::lock_guard<std::mutex> lock(gSwapPlayerMu);
+        if (gSwapPlayerValid) {
+            *out = gSwapPlayer;
+            return out->valid;
+        }
+    }
+    return ReadPlayerNow(out);
+}
+
+bool Platform::ReadPlayerNow(PlatformPlayer *out) {
     using namespace hle;
     *out = PlatformPlayer();
-    // As the field's own code finds it (func_ov022_020881f8, Ov022_ScoreCandidateByFacing): the
-    // battle session's player table (data_ov022_020b2e78 +4, 0xc-byte entries whose +0x20 is
-    // the player actor), the local player's entry (QueryActiveStateOrDelegate: 0 alone, 1 when
-    // the second slot is the one played), the position at actor +0x48c and the heading, a u16
-    // angle at +0x80 of the node at actor +0x20.
+    out->battle = gBattleArea;
+    ReadPlayerStepTotal(out->stepTaken);
+    if (!Guest()) return false;
+    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    // What else runs, from the object registry's step functions (as the heartbeat lists them):
+    // a menu over the field, or an event script (a cutscene: its player may not exist, as when
+    // Roxas wakes in his room). Read with or without a player.
+    static const uint32_t objSystem = SymbolAddress("gObjSystem");
+    if (objSystem) {
+        uint32_t obj = Read32(objSystem + 12);
+        for (int i = 0; obj && ok(obj, 0x18) && i < 96; ++i, obj = Read32(obj + 12)) {
+            const char *fn = FunctionName(Read32(obj + 20));
+            if (!fn) continue;
+            // Menus over the field: the camp menu (ov025, ov008), the save point (ov009), shops
+            // (ov026), game over (ov027), the calendar (ov004), mission results (ov005) and
+            // select (ov006), the monologue screen (ov007).
+            static const char *const kMenus[] = {"Ov025_", "Ov008_", "Ov009_", "Ov026_", "Ov027_",
+                                                 "Ov004_", "Ov005_", "Ov006_", "Ov007_"};
+            for (const char *m : kMenus)
+                if (!std::strncmp(fn, m, 6)) out->menu = true;
+            if (!std::strncmp(fn, "Ov023_", 6)) out->event = true;
+            if (!std::strncmp(fn, "Ov000_", 6)) out->title = true;
+        }
+    }
+    // A choice waits for an answer (an NPC's question, a confirmation): game state flag 0x20ef,
+    // set by Ov002_ScriptOpenChoicePanel and cleared once answered (Ov002_ScriptCmd_WaitPanelPose).
+    // The flags are a big-endian bit array at *gGameState + 0x10 (GameState_IsFlagSet). The
+    // mission banner ("Defeat the Shadows!", Ov002_Hud_IsPanelOpen) is not one: you move then.
+    static const uint32_t gameState = SymbolAddress("gGameState");
+    if (gameState) {
+        const uint32_t flags = Read32(gameState) + 0x10;
+        constexpr uint32_t kChoice = 0x20ef;
+        if (ok(flags + kChoice / 32 * 4, 4))
+            out->choice = (Read32(flags + kChoice / 32 * 4) >> (31 - kChoice % 32)) & 1;
+    }
+    // The player, as the field's own code finds it (func_ov022_020881f8,
+    // Ov022_ScoreCandidateByFacing): the battle session's player table (data_ov022_020b2e78 +4,
+    // 0xc-byte entries whose +0x20 is the player actor), the local player's entry
+    // (QueryActiveStateOrDelegate: 0 alone, 1 when the second slot is the one played), the
+    // position at actor +0x48c and the heading, a u16 angle at +0x80 of the node at actor +0x20.
     static const uint32_t session = SymbolAddress("data_ov022_020b2e78");
     static const uint32_t secondFlag = SymbolAddress("data_0204be04");
-    if (!session || !Guest()) return false;
-    auto ok = [](uint32_t a, uint32_t len) { return a >= 0x01000000 && a + len <= GuestMemSize(); };
+    if (!session) return false;
     const uint32_t table = Read32(session + 4);
     if (!ok(table, 0x40)) return false;
     int index = 0;
@@ -258,6 +471,25 @@ bool Platform::ReadPlayer(PlatformPlayer *out) {
 namespace {
 std::atomic<uint32_t> gSkippedCaptures{0}, gCaptures{0};
 std::atomic<float> gCaptureMsMax{0.0f}, gCaptureMsSum{0.0f};
+std::atomic<float> g3dMsSum{0.0f}, gHudMsSum{0.0f}, gWorldMsSum{0.0f};
+}
+
+namespace hle {
+void NoteCaptureTimes(float layer3dMs, float hudMs, float worldMs) {
+    g3dMsSum = g3dMsSum + layer3dMs;
+    gHudMsSum = gHudMsSum + hudMs;
+    gWorldMsSum = gWorldMsSum + worldMs;
+}
+}  // namespace hle
+
+namespace {
+std::atomic<uint32_t> gCuts{0}, gCutKept{0}, gCutDropped{0};
+}
+
+void Platform::NoteLockOnCut(int kept, int dropped) {
+    ++gCuts;
+    gCutKept += static_cast<uint32_t>(kept);
+    gCutDropped += static_cast<uint32_t>(dropped);
 }
 
 void Platform::NoteDisplay(bool skipped, float captureMs) {
@@ -271,6 +503,36 @@ void Platform::NoteDisplay(bool skipped, float captureMs) {
 }
 
 void Platform::CaptureScreens(PlatformScreens *out) {
+    // A scene drawing 3D on both screens in turn: its frames for the other screen show the
+    // screens the other way round, the top screen's text box on and off with them (Agrabah,
+    // Aladdin's scene): the last of the world's frames stays.
+    static PlatformScreens kept;
+    static bool hasKept = false;
+    // (Captured on its own schedule, the screens may also be taken while engine A, the one with
+    // the top screen's 3D and text box, shows on the bottom: those keep the last ones as well.)
+    const bool aOnTopNow = hle::IoReg16(0x304) & 0x8000;
+    // (Only by which screen engine A shows now: the world's choice of frames is its own, and
+    // keeping the screens by it too froze them for a whole Agrabah cutscene, its text box and
+    // static gone.)
+    // Those frames are still drawn (the game captures the screen from them, display capture),
+    // and their bottom screen, engine A's 3D for the other screen, is that screen's picture: it
+    // goes to the wrist, in place of the one engine B shows between (black in Agrabah).
+    static uint32_t otherBottom[PlatformScreens::kWidth * PlatformScreens::kHeight];
+    static bool hasOther = false;
+    // Any scene that draws this way, in any view (the DS picture on the giant screen as well as
+    // the world around you): the top screen keeps its own frames, the bottom the other's.
+    const bool twoScreens = hle::GxAlternatingScreens();
+    if (!twoScreens) hasOther = false;
+    if (twoScreens && hasKept && !aOnTopNow) {
+        static PlatformScreens other;
+        hle::Render2D(&other, 1, false);
+        std::memcpy(otherBottom, other.bottom, sizeof otherBottom);
+        hasOther = true;
+        *out = kept;
+        std::memcpy(out->bottom, otherBottom, sizeof otherBottom);
+        out->twoScreens = true;
+        return;
+    }
     const bool split = gWorldCapture.load() && (hle::IoReg16(0x304) & 0x8000);  // engine A on top
     hle::Render2D(out, g3dScale.load(), split);
     out->split = split;
@@ -278,9 +540,14 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     out->movie = hle::MovieCopyPicture(out->top);
     if (out->movie) {
         std::memcpy(out->topHud, out->top, sizeof out->top);
+        std::memset(out->topObj, 0, sizeof out->topObj);
         out->topScale = 1;
         out->split = false;
     }
+    out->twoScreens = twoScreens;
+    if (twoScreens && hasOther) std::memcpy(out->bottom, otherBottom, sizeof otherBottom);
+    kept = *out;
+    hasKept = true;
 }
 
 void Platform::SetInput(uint16_t buttons, bool touching, int x, int y) {
@@ -338,6 +605,7 @@ void LogActionScript() {
 }
 }  // namespace
 
+
 // Calls to the guest functions in guest/counted.txt (postprocess inserts khvr_count at their
 // entry); the heartbeat logs the ones that changed.
 extern "C" {
@@ -385,15 +653,77 @@ void Platform::Heartbeat() {
     }
     // How the screens kept up since the last heartbeat (the app's driver reports them).
     if (uint32_t n = gCaptures.exchange(0); n || gSkippedCaptures) {
-        Log("  screens: %u drawn (%.1f ms average, %.1f ms at most), %u skipped to keep up", n,
-            n ? gCaptureMsSum.load() / n : 0.0f, gCaptureMsMax.load(), gSkippedCaptures.exchange(0));
+        Log("  screens: %u drawn (%.1f ms average, %.1f ms at most; of which the 3D layer %.1f, the HUD pass %.1f, "
+            "the world capture %.1f), %u skipped to keep up", n,
+            n ? gCaptureMsSum.load() / n : 0.0f, gCaptureMsMax.load(), n ? g3dMsSum.exchange(0) / n : 0.0f,
+            n ? gHudMsSum.exchange(0) / n : 0.0f, n ? gWorldMsSum.exchange(0) / n : 0.0f, gSkippedCaptures.exchange(0));
         gCaptureMsSum = 0.0f;
         gCaptureMsMax = 0.0f;
     }
     if (GxWorldStats &w = gWorldStats; w.captures) {
-        Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture",
-            w.captures, w.triangles, w.textures, w.leftOut);
+        Log("  world: %u captures, the last %u triangles, %u textures, %u polygons left in the DS picture, "
+            "%u markers placed in the world, lock-on sight in %u frames, %u HUD pieces in front of the camera, "
+            "box tests %u in view and %u out of it%s, %u frames of 3D for the other screen left out",
+            w.captures, w.triangles, w.textures, w.leftOut, w.markers, w.lockOns, w.hudPieces, w.boxesInView,
+            w.boxesOutOfView, hle::gDrawAll ? " (drawn anyway)" : "", w.otherScreenFrames);
+        w.otherScreenFrames = 0;
         w.captures = 0;
+        w.markers = 0;
+        w.lockOns = 0;
+        if (gCuts) {
+            Log("  lock-on sight cut %u times: %u sprite pixels kept a cut, %u dropped as other sprites", gCuts.load(),
+                gCutKept.load() / gCuts.load(), gCutDropped.load() / gCuts.load());
+            gCuts = 0;
+            gCutKept = 0;
+            gCutDropped = 0;
+        }
+        w.hudPieces = 0;
+        w.boxesInView = w.boxesOutOfView = 0;
+        if (w.eventPlaced || w.eventCameraSpace)
+            Log("  event scene: %u frames placed in the world with the game's camera, %u in camera space only",
+                w.eventPlaced, w.eventCameraSpace);
+        w.eventPlaced = w.eventCameraSpace = 0;
+        // Roxas's models (for his Keyblade in your hand): the render objects on him, by address
+        // (and from his actor's, when close), polygons and size.
+        if (w.objectsDrawn) {
+            const uint32_t actor = SwapPlayerActor();
+            auto where = [actor](uint32_t obj) {
+                char b[48];
+                const int64_t d = static_cast<int64_t>(obj) - actor;
+                if (actor && d > -0x10000 && d < 0x10000) std::snprintf(b, sizeof b, "0x%08x (actor %+lld)", obj, static_cast<long long>(d));
+                else std::snprintf(b, sizeof b, "0x%08x", obj);
+                return std::string(b);
+            };
+            std::string line = w.playerObj ? "his " + where(w.playerObj) + ", " + std::to_string(w.playerPolygons) + " polygons"
+                                           : "none of the models is on him";
+            for (int i = 0; i < 4; ++i) {
+                if (!w.attachedObj[i]) continue;
+                char b[64];
+                std::snprintf(b, sizeof b, ", %u polygons, %.2f from its origin", w.attachedPolygons[i], w.attachedLength[i]);
+                line += "; on him " + where(w.attachedObj[i]) + b;
+            }
+            if (w.playerObj) {
+                char b[96];
+                std::snprintf(b, sizeof b, "; %u joints", w.playerJoints);
+                line += b;
+                if (w.keyJointPolygons) {
+                    std::snprintf(b, sizeof b, ", his Keyblade a joint of %u polygons, %.2f long", w.keyJointPolygons,
+                                  w.keyJointLength);
+                    line += b;
+                }
+            }
+            Log("  Roxas: %u models drawn (%u to %u since the last heartbeat); %s", w.objectsDrawn, w.objectsMin,
+                w.objectsMax, line.c_str());
+            // A line a joint: a log line holds 512 characters.
+            if (const std::vector<std::string> joints = TakePlayerJointTable(); !joints.empty()) {
+                Log("  Roxas's joints (heading as the player line says):");
+                const std::string names = ModelJointNames(w.playerObj);
+                Log("    his model's joints by name:%s", names.empty() ? " (none found)" : names.substr(0, 480).c_str());
+                for (const std::string &j : joints) Log("%s", j.c_str());
+            }
+            w.objectsMin = ~0u;
+            w.objectsMax = 0;
+        }
     }
     ThreadsSnapshot t = ThreadsSnapshotNow();
     // Display state: an image the 2D renderer cannot show yet (3D on BG0, a fade) still has
@@ -436,8 +766,11 @@ void Platform::Heartbeat() {
     {
         PlatformPlayer pl;
         if (ReadPlayer(&pl))
-            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg", pl.actor, pl.position[0], pl.position[1],
-                pl.position[2], pl.heading * 57.29578f);
+            Log("  player: actor 0x%08x at %.2f %.2f %.2f, heading %.0f deg%s%s%s", pl.actor, pl.position[0],
+                pl.position[1], pl.position[2], pl.heading * 57.29578f, pl.menu ? ", camp menu" : "",
+                pl.event ? ", event script" : "", pl.choice ? ", a choice waits" : "");
+        else if (pl.menu || pl.event)
+            Log("  player: none%s%s", pl.menu ? ", a menu" : "", pl.event ? ", event script" : "");
     }
     // The VBlank task chain (RegisterNamedTask: name at +4, callback at +0x14, next at +0x18).
     static const uint32_t vblankWork = SymbolAddress("data_027e0088");
@@ -479,6 +812,8 @@ std::string Platform::crashReason() const {
 }
 
 std::vector<std::string> Platform::RecentLog(size_t lines) const { return hle::RecentLogLines(lines); }
+
+void Platform::LogLine(const std::string &line) { hle::Log("%s", line.c_str()); }
 
 }  // namespace khvr
 

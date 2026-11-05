@@ -33,5 +33,26 @@ void khvr_host_watch(const void *addr, unsigned long size);
 void khvr_host_movie_open(const char *path);
 void khvr_host_movie_frame(unsigned long frame);
 void khvr_host_movie_close(void);
+/* The field's cursor is on a target at this world position (VecFx32) this frame: `kind` 1 or 3 an
+ * enemy, 2 one of the field's entries (a person to talk to, a thing to use); `locked` when locked on. */
+void khvr_host_lock_on(const void *position, long kind, long locked);
+/* Nonzero when the headset draws the field's cursors itself (standing in the world). */
+int khvr_host_own_cursors(void);
+/* Nonzero when what the game's camera does not see is drawn too (Platform::SetDrawAll). */
+int khvr_host_draw_all(void);
+/* Analog movement: the heading the player actor's held D-pad stands for (0..0xffff, the D-pad's
+ * own convention), or -1 to use the D-pad's eight (Ov022_HeadingFromHeldDpad). */
+long khvr_host_move_heading(const void *actor);
+/* A model's joint `node` is the current position matrix (NNSi_G3dFuncSbc_NODEDESC), about to be
+ * stored: the port may turn it (Roxas's arms following yours). */
+void khvr_host_joint(const void *renderObj, unsigned long node);
+/* How much further (fx32) the attacker's swings reach: Roxas's, in first person; 0 otherwise. */
+long khvr_host_reach_bonus(const void *actor);
+/* The player's room-scale step (fx32, x and z) into xz for this frame, taken once; 0 0 for any
+ * other actor (Ov022_ApplyExternalPush adds it to his step, which meets the walls). */
+void khvr_host_room_step(const void *actor, long *xz);
+/* NNS_G3dDraw draws this render object (NNSG3dRenderObj) from begin to end. */
+void khvr_host_model_begin(const void *obj);
+void khvr_host_model_end(void);
 
 #endif
