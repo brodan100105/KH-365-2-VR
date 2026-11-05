@@ -169,12 +169,13 @@ and into VR as real geometry around you.
       the cast waits (a gentle buzz and the cursor dimming say why). Without a target it goes
       where the Keyblade points.
 
-## Two-screen cutscenes: the second screen on the wrist (in test)
+## Two-screen cutscenes: the second screen drawn to the wrist (done)
 
 Agrabah's scenes draw 3D on both screens in turn. Holding the two-screen state through missed
-turns did not stop the black flicker, so the fallback is in: in those scenes the wrist screen
-comes on and shows the second screen's own picture, and the floating card is off by default
-(Game > Second screen floating in scenes). Come back to a fix in the main view later.
+turns did not stop the black flicker, so the fallback is in: in those scenes the second screen's own
+frames are drawn throughout (to the wrist screen's picture, the screen itself hidden as in any
+cutscene), and the floating card is off by default (Game > Second screen floating in scenes).
+Tested: Agrabah's scene is steady.
 
 ## Open bugs from testing
 
