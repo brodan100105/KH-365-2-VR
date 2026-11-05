@@ -519,7 +519,9 @@ void Platform::CaptureScreens(PlatformScreens *out) {
     // goes to the wrist, in place of the one engine B shows between (black in Agrabah).
     static uint32_t otherBottom[PlatformScreens::kWidth * PlatformScreens::kHeight];
     static bool hasOther = false;
-    const bool twoScreens = gWorldCapture.load() && hle::GxAlternatingScreens();
+    // Any scene that draws this way, in any view (the DS picture on the giant screen as well as
+    // the world around you): the top screen keeps its own frames, the bottom the other's.
+    const bool twoScreens = hle::GxAlternatingScreens();
     if (!twoScreens) hasOther = false;
     if (twoScreens && hasKept && !aOnTopNow) {
         static PlatformScreens other;
