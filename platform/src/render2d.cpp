@@ -615,6 +615,7 @@ void DisplayCapture(const uint32_t *engineA) {
             dst[at] = static_cast<uint8_t>(c);
             dst[at + 1] = static_cast<uint8_t>(c >> 8);
         }
+    VramNoteCapture(bank, writeOff, static_cast<uint32_t>(w * h * 2));
     IoDispCapDone();
 }
 

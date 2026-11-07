@@ -24,8 +24,32 @@ endorsed by Square Enix, Disney, Nintendo or Meta.*
 > **Status: iteration 4, the world in VR.** The whole decomp builds into the APK and runs natively
 > on the headset, with its movies, music and sound, and its 3D drawn by the port's own DS 3D
 > engine. You can stand in the game's world in third or first person, cutscenes play around you,
-> and first person has motion combat; the game's Keyblade in your hand and Roxas's arms following
-> yours are in progress ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
+> and first person has motion combat with Roxas's hands and the game's own Keyblade in yours
+> ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)). Story tested in the
+> headset up to Day 97.
+
+## VR progress
+
+**Overall: about 56%** of the plan, from the first boot to a PC VR build. Percentages are estimates
+from the project plan and playtesting on a Quest 3 (as of November 7, 2026).
+
+| Area | Done | What it covers |
+|---|---|---|
+| **Native VR compatibility** | 86% | The game runs natively from your own cartridge dump (3D, 2D, saves, movies, music and sound); its world drawn around you with sprites that face you, the HUD and cutscenes; third and first person movement with comfort options; the loading area and menus. |
+| **Completed story** | Day 97 of 358 (27%) | How far the story has been played through in the headset. Later days may still have scenes that need fixes. |
+| **VR combat** | 42% | Roxas's hands and the game's Keyblade in yours, motion swings, guard and combos. Still to come: Keyblade effects, magic from the Keyblade, and combat where your own swing is the attack. |
+| **Additional VR features** | 5% | Extras planned on top of the game: haptics, a wrist quickbar, positional sound, speech bubbles, photo mode. |
+| **PC VR** | 0% | The same app for SteamVR and Meta Link, once the Quest version is stable. |
+
+**Coming up:** making first-person combat feel VR native, then the extra VR features. Fixes from
+playtesting land along the way.
+
+## Download
+
+**[Experimental build](https://github.com/brodan100105/KH-365-2-VR/releases/tag/experimental)**: the most recent build that has been tested on a headset,
+`KH-Days-VR-experimental.apk`. Expect bugs: it is an early, experimental build, and newer work is
+still being tested before it is shared. See [Installing](#installing-with-sidequest) below; you
+need your own dump of the European cartridge.
 
 ## Control Mapping
 
@@ -41,6 +65,31 @@ endorsed by Square Enix, Disney, Nintendo or Meta.*
 | **Giant screen** | The game's camera on a big curved 4:3 screen, re-rendered at headset resolution, optionally stereoscopic. Used for menus and cutscenes, or for the whole game if you like. |
 
 Switch between panoramic and first person at any time by holding the right thumbstick click.
+
+## Controls (Quest controllers)
+
+![The button guide: both Quest controllers with what each button does](docs/images/button_guide.png)
+
+*The button guide, as the headset shows it (left Menu, hold > Button guide), with the default
+settings and the Keyblade in the right hand.*
+
+| Button | Does |
+|---|---|
+| Left thumbstick | Move |
+| A / B / X / Y | DS A / B / X / Y |
+| Left Menu, tap / hold | START / VR settings panel |
+| Left thumbstick click, hold | Show or hide the wrist (touch) screen |
+| Left thumbstick click, tap | SELECT (giant screen and menus) |
+| Right thumbstick left/right | Turn (snap or smooth) |
+| Right thumbstick click, tap / hold | Recenter / switch third and first person |
+| Left / right trigger | DS L / R (third person and giant screen) |
+| Other hand's trigger at the touch screen | Touch |
+
+**First person:** short-hold the weapon-hand grip to bring the Keyblade out, swing to attack (keep
+swinging for combos), hold it across your face to guard, off-hand grip to lock on, off-hand trigger
+to cast, walk in your room to move. The full guide, with every gesture and its setting, is in
+[docs/CONTROLS.md](docs/CONTROLS.md); in the headset, **Button guide** on the settings panel shows
+it on a drawing of both controllers.
 
 ## Settings
 
@@ -59,9 +108,8 @@ only matches that release). The ROM is never part of this project or its APK.
 
 ### 1. Get the APK
 
-1. Open the repository's **Actions** tab, pick the newest **build** run with a green check, and
-   download **khdays-vr-apk** at the bottom of its page.
-2. Unzip it: inside is `app-release.apk`.
+1. Download `KH-Days-VR-experimental.apk` from the
+   **[Experimental build](https://github.com/brodan100105/KH-365-2-VR/releases/tag/experimental)** page (under Assets).
 
 ### 2. One-time setup
 
@@ -75,7 +123,7 @@ only matches that release). The ROM is never part of this project or its APK.
 ### 3. Install the app
 
 In SideQuest, click **Install APK file from folder on computer** (the box with a down arrow at
-the top) and pick `app-release.apk`, or drag the APK onto the SideQuest window. Wait for
+the top) and pick `KH-Days-VR-experimental.apk`, or drag the APK onto the SideQuest window. Wait for
 "Success" in SideQuest's task list.
 
 To update later, install the new APK the same way, right over the old one: your save and
@@ -124,14 +172,12 @@ Quest storage (/sdcard)
 ### With adb instead
 
 ```sh
-adb install -r app-release.apk
+adb install -r KH-Days-VR-experimental.apk
 adb push your-rom.nds /sdcard/KHDaysVR/
 adb shell appops set --uid com.khdays.vr MANAGE_EXTERNAL_STORAGE allow
 ```
 
-The settings live in `/sdcard/Android/data/com.khdays.vr/files/khvr.ini`. The APK contains the
-game's code compiled from the decomp, so keep its download private (a private repository keeps
-CI artifacts private).
+The settings live in `/sdcard/Android/data/com.khdays.vr/files/khvr.ini`.
 
 ## Building
 

@@ -33,14 +33,19 @@ both controllers.
 
 | Motion | Does | Setting |
 |---|---|---|
-| Swing the Keyblade | Attack: one swing is one press of **Swing presses** (A) | Combat > Swing threshold, Swing cooldown |
+| Weapon-hand grip, short hold (0.3 s) | Bring the Keyblade out, or put it away (battle areas only; swinging brings it out too) | |
+| Swing the Keyblade | Attack: one swing is one press of **Swing presses** (A); keep swinging for a combo (each swing waits until the game can take it) | Combat > Swing threshold, Swing cooldown |
 | Hold the Keyblade level across your body, in front of your face | Guard: holds **Guard presses** (Y) | Combat > Guard gesture |
 | Point the off hand where you look and pull its trigger | Cast the selected command (**Cast presses**, X) | Combat > Magic / commands |
 | Flick the left stick to its edge and let go | Dodge roll in that direction (**Dodge presses**, Y) | Combat > Dodge roll |
 | Jump in your room | Jump (**Physical jump presses**, B) | Combat > Physical jump (off by default) |
-| Off-hand grip | **Grip presses** (R, lock-on) | |
+| Off-hand grip | **Lock-on button** (R) | Controls > Lock-on button |
 | Weapon-hand trigger | DS L | |
 | Walk in your room | Moves the character; walls push you back | First person > Room-scale walking |
 
 Swings are classified as horizontal, vertical, diagonal or thrust; the classification is
 reported to the game layer so a later iteration can pick matching combo animations.
+
+Roxas's own hands are drawn on your controllers in first person (First person > Hand size, turn,
+tilt and position). They, the Keyblade and the wrist screen are hidden in cutscenes, NPC text and
+menus.

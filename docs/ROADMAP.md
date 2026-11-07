@@ -76,8 +76,12 @@ Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
 
 ## Last step: the public release
 
-Until the game is done, nothing changes: the repository stays private, CI builds the APK on every
-push, and testers download it from Actions. Before the repository goes public:
+Now (November 2026): development and its test builds happen in a private repository (KH Days VR
+Test Repo), whose builds are plain downloads for the owner. This public release repository gets
+tested work through pull requests, and one tested build is shared as the Experimental build
+(a pre-release under the tag `experimental`, published by running **build** with
+`experimental_ref` set to a tested commit); every other CI build's APK is uploaded only inside an
+archive locked with the owner's `APK_PASSWORD` secret. The original checklist for going public:
 
 - [ ] **No prebuilt APK anywhere public.** The APK holds the game's code compiled from the decomp,
       so the public workflow only builds and runs the tests; the APK upload stays off.
