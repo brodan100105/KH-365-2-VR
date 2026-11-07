@@ -6,10 +6,17 @@ on:
     paths-ignore: ['docs/**', '**.md']
   pull_request:
   workflow_dispatch:
+    inputs:
+      experimental_ref:
+        description: >-
+          Publish the public Experimental build from this commit (a tested one). Empty: an
+          ordinary build, its APK only for the owner.
+        required: false
+        default: ''
 
 # A newer push to the same branch cancels the older build still running.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.ref }}-${{ inputs.experimental_ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,10 +32,13 @@ jobs:
 
   game-apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the Experimental build's release
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true   # decomp/: the C sources of the game (no game data)
+          ref: ${{ inputs.experimental_ref || github.sha }}
       - name: Install the guest toolchain (clang, wasm-ld, wasm2c)
         run: |
           sudo apt-get update
@@ -77,15 +87,49 @@ jobs:
       - name: Build the Quest APK
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
+      # The repository is public: a development build is for the owner only, its APK and symbols
+      # in archives locked with the APK_PASSWORD secret (7-Zip, AES-256, names hidden too).
+      # Without the secret nothing is uploaded. Everyone else gets the Experimental build below.
+      - name: Lock the development build for the owner
+        if: inputs.experimental_ref == ''
+        env:
+          APK_PASSWORD: ${{ secrets.APK_PASSWORD }}
+        run: |
+          if [ -z "$APK_PASSWORD" ]; then
+            echo "::notice::No APK_PASSWORD secret: the development APK is not uploaded."
+            exit 0
+          fi
+          mkdir -p locked
+          7z a -p"$APK_PASSWORD" -mhe=on locked/khdays-vr-dev.7z ./android/app/build/outputs/apk/release/*.apk > /dev/null
+          7z a -p"$APK_PASSWORD" -mhe=on locked/khdays-vr-symbols.7z ./android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so > /dev/null
       - uses: actions/upload-artifact@v4
+        if: inputs.experimental_ref == ''
         with:
-          name: khdays-vr-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          name: khdays-vr-dev-locked
+          path: locked/khdays-vr-dev.7z
+          if-no-files-found: ignore
           # Artifacts count against the account's storage: a week is enough to install a build.
           retention-days: 7
-      - name: Keep the unstripped library for tools/symbolize.py
+      - name: Keep the unstripped library for tools/symbolize.py (locked)
+        if: inputs.experimental_ref == ''
         uses: actions/upload-artifact@v4
         with:
-          name: khdays-vr-symbols
-          path: android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so
+          name: khdays-vr-symbols-locked
+          path: locked/khdays-vr-symbols.7z
+          if-no-files-found: ignore
           retention-days: 2
+      # The public Experimental build: one tested commit, as a pre-release under the fixed tag
+      # "experimental" (replaced each time, so the README's link stays the same).
+      - name: Publish the Experimental build
+        if: inputs.experimental_ref != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.experimental_ref }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          day=$(TZ=America/New_York date '+%B %-d, %Y')
+          cp android/app/build/outputs/apk/release/*.apk KH-Days-VR-experimental.apk
+          gh release delete experimental --cleanup-tag --yes || true
+          gh release create experimental KH-Days-VR-experimental.apk --prerelease --target "$sha" \
+            --title "Experimental build ($day)" \
+            --notes "Experimental build of KH 358/2 Days VR from commit ${sha:0:7}, built $day. Expect bugs: newer work is still being tested. You need your own dump of the European cartridge (YKGP); see the README for installing."
