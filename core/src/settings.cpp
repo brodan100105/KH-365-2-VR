@@ -153,6 +153,11 @@ std::vector<SettingDef> BuildDefs() {
                   "Moves Roxas's hands up or down on your controllers."));
     d.push_back(F(S::FpHandForward, "First person", "hand_forward", "Hand forward", 0.03f, -0.1f, 0.1f, 0.005f, "m",
                   "Moves Roxas's hands forward or back on your controllers."));
+    d.push_back(B(S::FpSwingTrail, "First person", "swing_trail", "Keyblade trail", true,
+                  "A light trail follows your Keyblade when you swing it fast, and a glint runs up "
+                  "the blade as it appears in your hand."));
+    d.push_back(F(S::FpTrailLength, "First person", "trail_length", "Trail length", 0.18f, 0.05f, 0.5f, 0.01f, "s",
+                  "How long the Keyblade's trail lasts behind a swing."));
     d.push_back(B(S::FpArmsFollow, "First person", "arms_follow2", "Arms follow your hands (experimental)", false,
                   "With Show body: Body without head or Full body, Roxas's own arms reach for your "
                   "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "

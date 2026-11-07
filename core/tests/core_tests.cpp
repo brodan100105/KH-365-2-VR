@@ -1,5 +1,6 @@
 #include <cstring>
 // Unit tests for the platform-independent VR core. Run with `ctest` or ./khvr_core_tests.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -14,6 +15,7 @@
 #include "khvr/settings.h"
 #include "khvr/upscale.h"
 #include "khvr/settings_panel.h"
+#include "khvr/swing_trail.h"
 #include "khvr/view_rig.h"
 
 using namespace khvr;
@@ -1021,7 +1023,7 @@ TEST(PanelPagesScroll) {
     float x = 0, y = 0;
     CHECK(p.Find(B::ScrollDown, 0, &x, &y));
     CHECK(!p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));  // far down
-    for (int i = 0; i < 40; ++i) p.Scroll(1);
+    for (int i = 0; i < 100; ++i) p.Scroll(1);
     CHECK(p.scroll() > 0);
     CHECK(p.Find(B::Increase, static_cast<int>(SettingId::ComfortSeatedHeight), &x, &y));
     float before = s.Get(SettingId::ComfortSeatedHeight);
@@ -1072,6 +1074,51 @@ TEST(DemoPillarBlocksRoomScaleStep) {
     Vec3 d = g.frame().playerPos - Vec3{6, 0, 6};
     d.y = 0;
     CHECK(Length(d) >= 1.2f + 0.35f - 1e-3f);
+}
+
+TEST(SwingTrailOnlyBehindFastSwings) {
+    SwingTrail trail;
+    // Carried slowly: no trail.
+    for (int i = 0; i <= 10; ++i) {
+        const float x = 0.005f * i;
+        trail.Update({x, 1, 0}, {x, 1.8f, 0}, true, i / 90.0);
+    }
+    WorldDrawList slow;
+    trail.Build(&slow, 10 / 90.0, 0.18f);
+    CHECK(slow.triangles.empty());
+    // Swung fast (a tip 0.8 m out at 6 rad/s): a ribbon, both sides.
+    trail.Reset();
+    for (int i = 0; i <= 10; ++i) {
+        const float a = 6.0f * (i / 90.0f);
+        trail.Update({0, 1, 0}, {0.8f * std::sin(a), 1, -0.8f * std::cos(a)}, true, i / 90.0);
+    }
+    WorldDrawList fast;
+    trail.Build(&fast, 10 / 90.0, 0.18f);
+    CHECK(fast.triangles.size() == 10 * 12);
+    // The hilt edge is clear, the tip edge shows.
+    bool clear = false, shows = false;
+    for (const WorldVertex &v : fast.triangles) {
+        clear |= (v.color >> 24) == 0;
+        shows |= (v.color >> 24) > 100;
+    }
+    CHECK(clear && shows);
+    // Gone once its time is over; put away, it is cleared.
+    WorldDrawList later;
+    trail.Build(&later, 10 / 90.0 + 0.3, 0.18f);
+    CHECK(later.triangles.empty());
+    trail.Update({0, 1, 0}, {0, 1.8f, 0}, false, 0.5);
+    CHECK(trail.samples() == 0);
+}
+
+TEST(SummonGlintRunsUpTheBlade) {
+    WorldDrawList early, done;
+    BuildSummonGlint(&early, {0, 1, 0}, {0, 1.8f, 0}, {0, 1.5f, 1}, 0.2f);
+    CHECK(!early.triangles.empty());
+    float maxY = 0;
+    for (const WorldVertex &v : early.triangles) maxY = std::max(maxY, v.position.y);
+    CHECK(maxY < 1.4f);  // near the hilt at the start
+    BuildSummonGlint(&done, {0, 1, 0}, {0, 1.8f, 0}, {0, 1.5f, 1}, 1.0f);
+    CHECK(done.triangles.empty());
 }
 
 TEST(DemoAttackHitsDummyInFront) {

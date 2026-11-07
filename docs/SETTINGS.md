@@ -73,6 +73,8 @@ hands, DS + giant screen) and the options changed most.
 | `hand_right` | Hand outward | -0.1 to 0.1 m | `0` | Moves Roxas's hands outward (above 0, away from each other) or inward. |
 | `hand_up` | Hand height | -0.1 to 0.1 m | `-0.005` | Moves Roxas's hands up or down on your controllers. |
 | `hand_forward` | Hand forward | -0.1 to 0.1 m | `0.03` | Moves Roxas's hands forward or back on your controllers. |
+| `swing_trail` | Keyblade trail | `true` / `false` | `true` | A light trail follows your Keyblade when you swing it fast, and a glint runs up the blade as it appears in your hand. |
+| `trail_length` | Trail length | 0.05 to 0.5 s | `0.18` | How long the Keyblade's trail lasts behind a swing. |
 | `arms_follow2` | Arms follow your hands (experimental) | `true` / `false` | `false` | With Show body: Body without head or Full body, Roxas's own arms reach for your controllers (his shoulders, elbows and wrists bend; his legs keep the game's animation). |
 
 ## Combat

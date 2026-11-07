@@ -904,6 +904,23 @@ void VrApp::Frame(const XrFrameInput &in) {
             xr_->Haptic(weapon, 0.5f * settings_.Get(SettingId::CombatHaptics), 0.08f);
         }
         keybladeShown_ = show;
+        // Its trail follows the blade in your hand (where it really goes, not Roxas's swing),
+        // sampled once a frame; put away or hidden (a script, a cutscene, a menu), it is cleared.
+        const GameFrame &gf = game_->frame();
+        const bool drawn = show && !gf.inScript && !gf.inCutscene && !gf.inMenu;
+        const bool dual = settings_.Bool(SettingId::FpDualWield);
+        for (int h = 0; h < 2; ++h) {
+            const bool out = drawn && in.gripValid[h] && (h == weapon || dual) && settings_.Bool(SettingId::FpSwingTrail);
+            if (!out) {
+                swingTrail_[h].Reset();
+                continue;
+            }
+            const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
+            const Vec3 axis = BladeAxis(in.grip[h], gripAngle);
+            const Vec3 base = in.grip[h].position + axis * settings_.Get(SettingId::FpKeybladeGrip);
+            const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
+            swingTrail_[h].Update(base, base + axis * len, true, in.time);
+        }
     }
 
     const GameFrame &before = game_->frame();
@@ -1150,6 +1167,23 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         // Outside first person the hands are not drawn: the wrist screen and the laser are enough.
     }
     if (!props.triangles.empty()) renderer_.DrawTriangles(props, vpTracking);
+    // The Keyblade's effects, see-through over the rest: the trail behind your swings and the
+    // glint up the blade as it appears.
+    if (mode == ViewMode::FirstPerson && settings_.Bool(SettingId::FpSwingTrail)) {
+        WorldDrawList effects;
+        const float life = settings_.Get(SettingId::FpTrailLength);
+        for (int h = 0; h < 2; ++h) swingTrail_[h].Build(&effects, in.time, life);
+        const float since = static_cast<float>(in.time - keybladeAppearedAt_);
+        if (keybladeShown_ && since < 0.35f && in.gripValid[weapon]) {
+            const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
+            const Pose &g = in.grip[weapon];
+            const Vec3 axis = BladeAxis(g, gripAngle);
+            const Vec3 base = g.position + axis * settings_.Get(SettingId::FpKeybladeGrip);
+            const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
+            BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / 0.35f);
+        }
+        if (!effects.triangles.empty()) renderer_.DrawTriangles(effects, vpTracking, 0.999f);
+    }
 }
 
 bool VrApp::DrawPlace(const Mat4 &vpTracking) {

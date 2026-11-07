@@ -12,6 +12,7 @@
 #include "khvr/input_mapper.h"
 #include "khvr/settings.h"
 #include "khvr/settings_panel.h"
+#include "khvr/swing_trail.h"
 #include "khvr/view_rig.h"
 #include "renderer.h"
 #include "xr_platform.h"
@@ -165,6 +166,7 @@ private:
     bool keybladeOut_ = false;  // brought out (a short grip hold, an attack) until put away
     float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
     double keybladeAppearedAt_ = 0.0;
+    SwingTrail swingTrail_[2];  // the Keyblade's trail behind your swings, per hand
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),

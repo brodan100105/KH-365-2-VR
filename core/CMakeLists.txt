@@ -16,6 +16,7 @@ add_library(khvr_core STATIC
     src/input_mapper.cpp
     src/settings.cpp
     src/settings_panel.cpp
+    src/swing_trail.cpp
     src/upscale.cpp
     src/view_rig.cpp
 )
