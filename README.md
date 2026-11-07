@@ -63,6 +63,11 @@ Switch between panoramic and first person at any time by holding the right thumb
 
 ## Controls (Quest controllers)
 
+![The button guide: both Quest controllers with what each button does](docs/images/button_guide.png)
+
+*The button guide, as the headset shows it (left Menu, hold > Button guide), with the default
+settings and the Keyblade in the right hand.*
+
 | Button | Does |
 |---|---|
 | Left thumbstick | Move |

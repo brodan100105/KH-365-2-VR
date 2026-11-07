@@ -87,11 +87,31 @@ jobs:
       - name: Build the Quest APK
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
-      # The repository is public: a development build is for the owner only, its APK and symbols
-      # in archives locked with the APK_PASSWORD secret (7-Zip, AES-256, names hidden too).
-      # Without the secret nothing is uploaded. Everyone else gets the Experimental build below.
+      # In the private test repository a build's APK and symbols are plain downloads. In the public
+      # release repository a development build is for the owner only, its APK and symbols in
+      # archives locked with the APK_PASSWORD secret (7-Zip, AES-256, names hidden too), nothing
+      # without the secret; everyone else gets the Experimental build below.
+      - uses: actions/upload-artifact@v4
+        if: github.event.repository.private && inputs.experimental_ref == ''
+        with:
+          name: khdays-vr-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          # The account's artifact storage is small: a few days is enough to install a build.
+          retention-days: 4
+      - name: Keep the unstripped library for tools/symbolize.py
+        if: github.event.repository.private && inputs.experimental_ref == ''
+        run: |
+          mkdir -p symbols
+          xz -T0 -c android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so > symbols/libkhdaysvr.so.xz
+      - uses: actions/upload-artifact@v4
+        if: github.event.repository.private && inputs.experimental_ref == ''
+        with:
+          name: khdays-vr-symbols
+          path: symbols/libkhdaysvr.so.xz
+          compression-level: 0
+          retention-days: 2
       - name: Lock the development build for the owner
-        if: inputs.experimental_ref == ''
+        if: ${{ !github.event.repository.private && inputs.experimental_ref == '' }}
         env:
           APK_PASSWORD: ${{ secrets.APK_PASSWORD }}
         run: |
@@ -103,7 +123,7 @@ jobs:
           7z a -p"$APK_PASSWORD" -mhe=on locked/khdays-vr-dev.7z ./android/app/build/outputs/apk/release/*.apk > /dev/null
           7z a -p"$APK_PASSWORD" -mhe=on locked/khdays-vr-symbols.7z ./android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so > /dev/null
       - uses: actions/upload-artifact@v4
-        if: inputs.experimental_ref == ''
+        if: ${{ !github.event.repository.private && inputs.experimental_ref == '' }}
         with:
           name: khdays-vr-dev-locked
           path: locked/khdays-vr-dev.7z
@@ -111,7 +131,7 @@ jobs:
           # Artifacts count against the account's storage: a week is enough to install a build.
           retention-days: 7
       - name: Keep the unstripped library for tools/symbolize.py (locked)
-        if: inputs.experimental_ref == ''
+        if: ${{ !github.event.repository.private && inputs.experimental_ref == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: khdays-vr-symbols-locked

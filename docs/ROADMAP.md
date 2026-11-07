@@ -76,7 +76,9 @@ Planned in detail in [ITERATION3_PLAN.md](ITERATION3_PLAN.md).
 
 ## Last step: the public release
 
-Now (November 2026): the repository is public. One tested build is shared as the Experimental build
+Now (November 2026): development and its test builds happen in a private repository (KH Days VR
+Test Repo), whose builds are plain downloads for the owner. This public release repository gets
+tested work through pull requests, and one tested build is shared as the Experimental build
 (a pre-release under the tag `experimental`, published by running **build** with
 `experimental_ref` set to a tested commit); every other CI build's APK is uploaded only inside an
 archive locked with the owner's `APK_PASSWORD` secret. The original checklist for going public:

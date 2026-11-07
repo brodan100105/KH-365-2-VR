@@ -432,10 +432,14 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     const bool fpProfile = s.Enum<FirstPersonButtons>(SettingId::CtrlFirstPersonButtons) == FirstPersonButtons::Profile;
     label(tr, kMargin, top, "Trigger", !fpProfile ? "DS L" : weaponRight ? "DS L / 1st person: cast" : "DS L / 1st person: DS L");
     label(up, kMargin, top + 60, "Y", "DS Y");
-    label(st, kMargin, top + 120, "Thumbstick", "move / hold: 2nd screen / tap: SELECT (menus)");
+    label(st, kMargin, top + 120, "Thumbstick", "move / hold: wrist screen");
     label(lo, kMargin, top + 180, "X", "DS X");
     label(mn, kMargin, top + 240, "Menu", "tap: START / hold: settings");
-    label(gr, kMargin, top + 300, "Grip", fpProfile && weaponRight ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-");
+    // (The weapon hand's grip brings the Keyblade out or puts it away with a short hold, whatever
+    // the buttons; the other hand's is lock-on with the first-person buttons.)
+    const std::string keyblade = "1st person: Keyblade";
+    const std::string lockOn = fpProfile ? "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on" : "-";
+    label(gr, kMargin, top + 300, "Grip", weaponRight ? lockOn : keyblade);
     // Right controller.
     controller(624, top + 140, true, &st, &up, &lo, &mn, &tr, &gr);
     const int rx = 772;
@@ -445,14 +449,14 @@ void SettingsPanel::DrawGuide(const Settings &s) {
     label(lo, rx, top + 180, "A", "DS A");
     c.DrawText(rx, top + 240, "hold stick click:", kDim);
     c.DrawText(rx, top + 260, "switch view", kDim);
-    label(gr, rx, top + 300, "Grip", !fpProfile || weaponRight ? "-" : "1st person: " + bind(SettingId::CtrlLockOnButton) + " lock-on");
+    label(gr, rx, top + 300, "Grip", weaponRight ? keyblade : lockOn);
 
     // First person's gestures.
     int y = top + 352;
     c.DrawText(kMargin, y, "First person, with the Keyblade in your " + std::string(weaponRight ? "right" : "left") + " hand:",
                kPanelEdge);
     y += 24;
-    c.DrawText(kMargin, y, "Swing: attack (" + bind(SettingId::CtrlAttackButton) + ")   Hold it level before your face: guard (" +
+    c.DrawText(kMargin, y, "Swing: attack (" + bind(SettingId::CtrlAttackButton) + "), keep swinging for combos   Hold it level before your face: guard (" +
                                bind(SettingId::CtrlGuardButton) + ")", kText);
     y += 22;
     c.DrawText(kMargin, y, (fpProfile ? "Point the other hand and pull its trigger: cast (" + bind(SettingId::CtrlMagicButton) + ")   "
@@ -460,6 +464,8 @@ void SettingsPanel::DrawGuide(const Settings &s) {
                                "Flick the stick: dodge (" + bind(SettingId::CtrlDodgeButton) + ")", kText);
     y += 22;
     c.DrawText(kMargin, y, "Aim the other hand at the touch screen and pull its trigger to touch it.", kDim);
+    y += 22;
+    c.DrawText(kMargin, y, "Hold the weapon-hand grip: Keyblade out / away.   Tap the left thumbstick: SELECT (menus).", kDim);
 }
 
 }  // namespace khvr
