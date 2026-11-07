@@ -7,6 +7,8 @@
 // once), the divider and square root unit, IPC (to the ARM7 stand-in), the keypad, interrupts,
 // VRAM bank mapping, and the geometry engine's status.
 #include <algorithm>
+#include <chrono>
+#include <mutex>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -497,6 +499,46 @@ void VramTexture(uint8_t *tex, uint8_t *pal) {
             for (uint32_t i = 0; i < size && at + i < kTexPalSize; ++i) pal[at + i] |= bank[i];
         }
     }
+}
+
+namespace {
+struct CaptureNote {
+    uint32_t lo = 0, hi = 0;
+    std::chrono::steady_clock::time_point at;
+    bool any = false;
+};
+CaptureNote gCaptureNotes[4];
+std::mutex gCaptureNoteMu;
+}  // namespace
+
+void VramNoteCapture(int bank, uint32_t offset, uint32_t size) {
+    if (bank < 0 || bank > 3) return;
+    std::lock_guard<std::mutex> lock(gCaptureNoteMu);
+    CaptureNote &n = gCaptureNotes[bank];
+    const auto now = std::chrono::steady_clock::now();
+    if (!n.any || now - n.at > std::chrono::seconds(2)) {
+        n.lo = offset;
+        n.hi = offset + size;
+    } else {
+        n.lo = std::min(n.lo, offset);
+        n.hi = std::max(n.hi, offset + size);
+    }
+    n.at = now;
+    n.any = true;
+}
+
+bool VramTextureCaptured(uint32_t texAddr, uint32_t size) {
+    // The bank (A-D) mapped as texture memory at this address's 128 KB slot.
+    const uint32_t slot = (texAddr >> 17) & 3, inBank = texAddr & 0x1ffff;
+    std::lock_guard<std::mutex> lock(gCaptureNoteMu);
+    const auto now = std::chrono::steady_clock::now();
+    for (int b = 0; b < 4; ++b) {
+        const uint8_t cnt = gRegs[0x240 + b];
+        if (!(cnt & 0x80) || (cnt & 7) != 3 || ((cnt >> 3) & 3) != slot) continue;
+        const CaptureNote &n = gCaptureNotes[b];
+        if (n.any && now - n.at < std::chrono::seconds(2) && inBank < n.hi && inBank + size > n.lo) return true;
+    }
+    return false;
 }
 
 uint8_t *VramBank(int bank) { return gBanks[bank].data(); }

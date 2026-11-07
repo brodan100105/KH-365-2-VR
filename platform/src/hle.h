@@ -92,6 +92,10 @@ const uint8_t *VramExtPalette(int engine, bool obj, int slot);
 // 0-5 (96 KB, banks E-G), as mapped now. Unmapped parts read as 0.
 constexpr uint32_t kTexVramSize = 0x80000, kTexPalSize = 0x18000;
 void VramTexture(uint8_t *tex, uint8_t *pal);
+// Display capture's writes: noted per bank, so a texture can be told to be a captured picture
+// (in VRAM the capture wrote lately) rather than a model's own direct-colour texture.
+void VramNoteCapture(int bank, uint32_t offset, uint32_t size);
+bool VramTextureCaptured(uint32_t texAddr, uint32_t size);
 // Plain memory reads of the 2D engines' regions through the current mapping.
 // Screen snapshots (hle_io.cpp): what the 2D renderer reads, to a file and back.
 bool SnapshotWrite(const std::string &path);

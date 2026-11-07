@@ -2324,7 +2324,12 @@ void GxCaptureWorld(PlatformWorld *out) {
         if (w.attr & (1u << 11)) flags |= kWorldDepthWrite;
         if (((w.attr >> 4) & 3) == 1) flags |= kWorldDecal;
         bool staticCard = false;
-        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128) {
+        // (Only one in VRAM display capture wrote lately: a model may have a direct-colour texture
+        // of its own, Jasmine's body, and was left out as a picture, its scene sent to the giant
+        // screen.)
+        if (format == 7 && tex >= 0 && out->textures[tex].width >= 128 &&
+            (g.alternatingHold > 0 || VramTextureCaptured((w.texParam & 0xffff) * 8,
+                                static_cast<uint32_t>(out->textures[tex].width * out->textures[tex].height * 2)))) {
             out->capturedPicture = true;
             // A captured picture (the DS's own screen, shown on a card) shows only while it is
             // static (neighbouring texels far apart on average, as no drawn picture is): Agrabah's
