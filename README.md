@@ -27,6 +27,11 @@ endorsed by Square Enix, Disney, Nintendo or Meta.*
 > and first person has motion combat; the game's Keyblade in your hand and Roxas's arms following
 > yours are in progress ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)).
 
+## Control Mapping
+
+<img width="1024" height="488" alt="image-1794086250147" src="https://github.com/user-attachments/assets/dba8afd3-165e-4afb-8161-d2083b1585c3" />
+
+
 ## View modes
 
 | Mode | What it is |
