@@ -185,7 +185,7 @@ Tested: Agrabah's scene is steady.
   ground.
 - Day 97, the giant Heartless in the desert: its cutscenes went to the giant screen and Jasmine's
   body was invisible. A direct-colour texture (format 7, 128+ wide) was taken for a captured
-  picture; now only one in VRAM that display capture wrote lately is (in test).
+  picture; now only one in VRAM that display capture wrote lately is. Fixed (tested).
 
 ## Ideas: quality of life and immersion
 
