@@ -91,25 +91,22 @@ jobs:
       # release repository a development build is for the owner only, its APK and symbols in
       # archives locked with the APK_PASSWORD secret (7-Zip, AES-256, names hidden too), nothing
       # without the secret; everyone else gets the Experimental build below.
-      - uses: actions/upload-artifact@v4
-        if: github.event.repository.private && inputs.experimental_ref == ''
-        with:
-          name: khdays-vr-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          # The account's artifact storage is small: a few days is enough to install a build.
-          retention-days: 4
-      - name: Keep the unstripped library for tools/symbolize.py
-        if: github.event.repository.private && inputs.experimental_ref == ''
+      # (In the private repository the build goes out as its "test-build" release, replaced by
+      # each push to main: release files do not count against the account's small artifact
+      # storage, which filled up and stopped every build's upload. Only the owner sees it.)
+      - name: Publish the test build (private repository)
+        if: github.event.repository.private && inputs.experimental_ref == '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p symbols
-          xz -T0 -c android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so > symbols/libkhdaysvr.so.xz
-      - uses: actions/upload-artifact@v4
-        if: github.event.repository.private && inputs.experimental_ref == ''
-        with:
-          name: khdays-vr-symbols
-          path: symbols/libkhdaysvr.so.xz
-          compression-level: 0
-          retention-days: 2
+          sha=$(git rev-parse HEAD)
+          when=$(TZ=America/New_York date '+%b %-d, %-I:%M %p EST')
+          cp android/app/build/outputs/apk/release/*.apk KH-Days-VR-test.apk
+          xz -T0 -c android/app/build/intermediates/cxx/*/*/obj/arm64-v8a/libkhdaysvr.so > libkhdaysvr.so.xz
+          gh release delete test-build --cleanup-tag --yes || true
+          gh release create test-build KH-Days-VR-test.apk libkhdaysvr.so.xz --prerelease --target "$sha" \
+            --title "Test build ($when, ${sha:0:7})" \
+            --notes "$(git log -1 --format=%s)"
       - name: Lock the development build for the owner
         if: ${{ !github.event.repository.private && inputs.experimental_ref == '' }}
         env:
