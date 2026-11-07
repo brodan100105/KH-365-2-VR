@@ -21,7 +21,8 @@ and into VR as real geometry around you.
 5. Photo mode: pause, fly around the scene, take pictures with the trigger.
 6. Step 6, the clock tower as the loading area.
 7. The open ideas, as chosen.
-8. A PCVR build (once the Quest version is stable): see the last section.
+8. Step 7, VR-native combat: the Keyblade in your hand is the attack, not Roxas's swing.
+9. A PCVR build (once the Quest version is stable): see the last section.
 
 ## Step 1: the world as geometry (capture, textures, a stereo giant screen)
 
@@ -237,6 +238,33 @@ the body; chests opened by striking or touching them; a pointer and a wrist quic
 - [ ] The first time you reach the top of the Twilight Town clock tower, its captured geometry and
       textures are saved to the KHDaysVR folder; later boots stand you there instead of in the
       Heart's Station (which stays the fallback). Nothing from the game goes into the APK.
+
+## Step 7: VR-native combat (the Keyblade in your hand is the attack)
+
+In first person, hits come from where your Keyblade goes, not from Roxas's attack animation. The
+game keeps its own rules (damage, HP, enemy AI, reactions, drops); only what decides a hit
+changes, through overrides of its functions as room-scale walking does. A setting (Combat >
+Swing style: game swing / your swing) keeps today's swing-presses-A combat.
+
+1. **Blade hits.** Each frame the blade in your hand (already placed in game space) sweeps from
+   where it was to where it is; an enemy it passes through is hit through the game's own damage
+   path. In first person Roxas's attack animation and its hit test are left out.
+2. **Speed and direction.** Damage from the blade's speed (a tap little or nothing, a full swing
+   full damage), in place of the swing threshold; knockback the way you swung (the push the
+   room-scale override uses); the swing classes (horizontal, vertical, thrust) mapped to the
+   game's finisher-like effects.
+3. **You are where you stand.** Roxas's hurtbox follows your head and body (room-scale already
+   moves him): lean or duck out of an attack and it misses.
+4. **Guard with the blade.** An attack or projectile meeting the blade is blocked, at the last
+   moment a parry (the game's guard-counter), in place of the guard pose pressing Y.
+5. **Enemies react as theirs.** Flinch, stagger and death stay the game's animations.
+
+Hard parts: the game's combo state, finishers, abilities and "attack connected" checks expect
+Roxas's attack animation (feed them from your swings, found in the decomp); balance (a limit of
+one hit per enemy per swing, damage scaled to speed, so flailing does not trivialise fights);
+enemies' invulnerability after a hit and hit-stun timing. Magic and Limits keep the game's
+animations (step 5b covers spells). After the Keyblade effects (trails and damage numbers make
+your hits readable) and next to step 5b, which needs the same groundwork.
 
 ## Last: a PCVR build (once the Quest version is stable)
 
