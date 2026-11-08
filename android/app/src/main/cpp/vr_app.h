@@ -172,6 +172,8 @@ private:
     std::vector<TexturedWorld> summonFx_;
     std::vector<float> summonFxAt_;
     unsigned summonFxRevision_ = 0;
+    bool summonAsked_ = false;  // First person > Record the summoning effect again, passed on
+    Vec3 KeybladeShift(int hand, const Pose &grip) const;
     // Damage numbers floating up from hits enemies took (world space), in first person.
     struct DamageNumber {
         Vec3 world;

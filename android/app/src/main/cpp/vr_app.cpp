@@ -869,6 +869,18 @@ void VrApp::Frame(const XrFrameInput &in) {
         // the attack button) brings it out too. It grows in as it appears. Elsewhere (the Grey
         // Area) it stays away.
 #ifdef KHVR_HAS_GAME
+        // First person > Record the summoning effect again: asked of the game layer, and off
+        // again once it has recorded one.
+        if (decomp_) {
+            if (settings_.Bool(SettingId::FpSummonRecord) && !summonAsked_) {
+                decomp_->RecordSummonAgain();
+                summonAsked_ = true;
+            } else if (summonAsked_ && !decomp_->RecordingSummonAgain()) {
+                summonAsked_ = false;
+                settings_.SetBool(SettingId::FpSummonRecord, false);
+                xr_->Haptic(1, 0.6f, 0.15f);
+            }
+        }
         // Game > Save this place as the loading area: saved where you stand, then it turns off.
         if (settings_.Bool(SettingId::GameSavePlace)) {
             settings_.SetBool(SettingId::GameSavePlace, false);
@@ -942,7 +954,7 @@ void VrApp::Frame(const XrFrameInput &in) {
             }
             const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
             const Vec3 axis = BladeAxis(in.grip[h], gripAngle);
-            const Vec3 base = in.grip[h].position + axis * settings_.Get(SettingId::FpKeybladeGrip);
+            const Vec3 base = in.grip[h].position + axis * settings_.Get(SettingId::FpKeybladeGrip) + KeybladeShift(h, in.grip[h]);
             const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
             swingTrail_[h].Update(base, base + axis * len, true, in.time);
         }
@@ -1181,7 +1193,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                     const bool nearest = filter == TextureFilter::Nearest || filter == TextureFilter::Sharp;
                     // The game's own Keyblade, its blade along the axis swings are measured on
                     // and as long as they take it to be.
-                    const Mat4 model = Mat4::FromSimilarity({len, q, g.position + axis * settings_.Get(SettingId::FpKeybladeGrip)});
+                    const Mat4 model = Mat4::FromSimilarity(
+                        {len, q, g.position + axis * settings_.Get(SettingId::FpKeybladeGrip) + KeybladeShift(h, g)});
                     renderer_.SetWorldOpacity(appear);
                     renderer_.DrawTexturedWorld(held, vpTracking * model,
                                                 nearest, WorldMotion(), 1);
@@ -1191,8 +1204,16 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                     if (h == weapon && !summonFx_.empty() && since <= summonFxAt_.back() + 0.05f) {
                         size_t f = 0;
                         while (f + 1 < summonFxAt_.size() && summonFxAt_[f + 1] <= since) ++f;
+                        // Its own size and place round the blade (First person > Summon effect...),
+                        // in the Keyblade's frame: one blade length a unit, the blade along -Z.
+                        const float l = std::max(1e-3f, len);
+                        const Mat4 fx = model * Mat4::FromSimilarity(
+                                                    {settings_.Get(SettingId::FpSummonSize), Quat(),
+                                                     Vec3{settings_.Get(SettingId::FpSummonRight) / l,
+                                                          settings_.Get(SettingId::FpSummonUp) / l,
+                                                          -settings_.Get(SettingId::FpSummonAlong) / l}});
                         if (!summonFx_[f].vertices.empty())
-                            renderer_.DrawTexturedWorld(summonFx_[f], vpTracking * model, nearest, WorldMotion(), 5);
+                            renderer_.DrawTexturedWorld(summonFx_[f], vpTracking * fx, nearest, WorldMotion(), 5);
                     }
                     continue;
                 }
@@ -1214,7 +1235,7 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
             const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
             const Pose &g = in.grip[weapon];
             const Vec3 axis = BladeAxis(g, gripAngle);
-            const Vec3 base = g.position + axis * settings_.Get(SettingId::FpKeybladeGrip);
+            const Vec3 base = g.position + axis * settings_.Get(SettingId::FpKeybladeGrip) + KeybladeShift(weapon, g);
             const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
             BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / kSummonGlintSeconds);
         }
@@ -1260,6 +1281,13 @@ void VrApp::DrawDamageNumbers(const XrFrameInput &in, const Mat4 &vpTracking) {
             renderer_.DrawQuad(digitTex_[digit].id(), p, h * 28.0f / 48.0f, h, vpTracking, alpha, 0.0f, 1.0f, false, true);
         }
     }
+}
+
+Vec3 VrApp::KeybladeShift(int h, const Pose &grip) const {
+    // First person > Keyblade outward, up, forward: in the controller's frame, outward mirrored
+    // for the left hand.
+    const float out = settings_.Get(SettingId::FpKeybladeRight) * (h == 0 ? -1.0f : 1.0f);
+    return grip.orientation.Rotate(Vec3{out, settings_.Get(SettingId::FpKeybladeUp), -settings_.Get(SettingId::FpKeybladeForward)});
 }
 
 bool VrApp::DrawPlace(const Mat4 &vpTracking) {

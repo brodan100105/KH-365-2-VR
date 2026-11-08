@@ -138,6 +138,24 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::FpKeybladeTurn, "First person", "keyblade_turn", "Keyblade turn", 0.0f, -180.0f, 180.0f, 15.0f,
                   "deg", "Turns the Keyblade about its blade in your hand (if its teeth face the wrong way). "
                   "The change shows at once while the panel is open."));
+    d.push_back(F(S::FpKeybladeRight, "First person", "keyblade_right", "Keyblade outward", 0.0f, -0.15f, 0.15f, 0.005f, "m",
+                  "Moves the Keyblade in your hand outward (above 0, away from your other hand) or inward."));
+    d.push_back(F(S::FpKeybladeUp, "First person", "keyblade_up", "Keyblade up", 0.0f, -0.15f, 0.15f, 0.005f, "m",
+                  "Moves the Keyblade in your hand up or down (the controller's up)."));
+    d.push_back(F(S::FpKeybladeForward, "First person", "keyblade_forward", "Keyblade forward", 0.0f, -0.15f, 0.15f, 0.005f, "m",
+                  "Moves the Keyblade in your hand forward or back."));
+    d.push_back(F(S::FpSummonSize, "First person", "summon_size", "Summon effect size", 1.0f, 0.2f, 2.0f, 0.05f, "x",
+                  "How large the game's summoning glow is round the Keyblade as it appears."));
+    d.push_back(F(S::FpSummonAlong, "First person", "summon_along", "Summon effect along blade", 0.0f, -0.6f, 0.6f, 0.01f, "m",
+                  "Moves the summoning glow along the Keyblade (above 0 toward its tip)."));
+    d.push_back(F(S::FpSummonRight, "First person", "summon_right", "Summon effect sideways", 0.0f, -0.3f, 0.3f, 0.01f, "m",
+                  "Moves the summoning glow across the Keyblade, to one side or the other."));
+    d.push_back(F(S::FpSummonUp, "First person", "summon_up", "Summon effect up", 0.0f, -0.3f, 0.3f, 0.01f, "m",
+                  "Moves the summoning glow across the Keyblade the other way (up or down from it)."));
+    d.push_back(B(S::FpSummonRecord, "First person", "summon_record", "Record the summoning effect again", false,
+                  "Turn on, then let Roxas draw his Keyblade in the game (put away a second or more, then "
+                  "attack): its summoning glow is recorded again, replacing the one kept. It turns itself "
+                  "off once recorded."));
     d.push_back(F(S::FpHandSize, "First person", "hand_size", "Hand size", 0.9f, 0.5f, 1.5f, 0.05f, "x",
                   "How big Roxas's hands are on your controllers."));
     d.push_back(F(S::FpHandTurn, "First person", "hand_turn", "Hand turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",

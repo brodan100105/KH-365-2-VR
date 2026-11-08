@@ -112,6 +112,7 @@ private:
     void FinishSummon();
     void LoadSummon();
     bool summonRecording_ = false;
+    std::atomic<bool> summonWanted_{false};
     std::deque<std::pair<double, TexturedWorld>> summonBefore_;  // the effects of the last moment, world
     WeaponFrame summonFrame_;   // the Keyblade's frame in the world, last seen
     double summonLastFx_ = 0.0;  // when the glow last showed while recording
@@ -126,6 +127,10 @@ public:
     // The game's summoning effect, frame by frame in the hand's frame (as heldWeapon), and each
     // frame's time from its start (seconds), copied out when it changed since `*revision`;
     // empty until Roxas has drawn his Keyblade once.
+    // Record the summoning effect again at the next summoning (it is kept once recorded); false
+    // again once recorded.
+    void RecordSummonAgain() { summonWanted_ = true; }
+    bool RecordingSummonAgain() const { return summonWanted_.load(); }
     bool TakeSummonEffect(unsigned *revision, std::vector<TexturedWorld> *frames, std::vector<float> *times) const {
         std::lock_guard<std::mutex> lock(summonMu_);
         if (*revision == summonRevision_) return false;

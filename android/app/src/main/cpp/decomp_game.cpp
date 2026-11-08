@@ -788,6 +788,27 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     }
 }
 
+// A summoning frame (in the Keyblade's frame: one blade length a unit, the blade along -Z from
+// the grip) with only what is close round the blade and textured: other effects about him then
+// (a swing's trail further out, a plain dark polygon shown as a black panel) left out.
+TexturedWorld NearBlade(const TexturedWorld &f) {
+    TexturedWorld kept;
+    kept.textures = f.textures;
+    for (size_t t = 0; t < f.triangleFlags.size(); ++t) {
+        if (f.triangleTexture[t] < 0) continue;
+        bool near = true;
+        for (int i = 0; i < 3 && near; ++i) {
+            const Vec3 &p = f.vertices[t * 3 + i].position;
+            near = std::fabs(p.x) < 0.7f && std::fabs(p.y) < 0.7f && p.z > -1.5f && p.z < 0.5f;
+        }
+        if (!near) continue;
+        for (int i = 0; i < 3; ++i) kept.vertices.push_back(f.vertices[t * 3 + i]);
+        kept.triangleTexture.push_back(f.triangleTexture[t]);
+        kept.triangleFlags.push_back(f.triangleFlags[t]);
+    }
+    return kept;
+}
+
 // The summoning glow along the blade in the hand's frame (the blade along -Z from the grip at
 // the origin): its long axis, over all its frames, turned onto the blade and its middle onto the
 // blade's line, one turn for all so its animation stays as recorded. Recorded while the
@@ -840,13 +861,19 @@ void DecompGame::RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblad
     TexturedWorld fx;
     CopyTriangles(w, kWorldModelEffect, [](const Vec3 &p) { return p; }, &fx, true);
     const bool has = !fx.vertices.empty();
+    // Into the Keyblade's frame, keeping only what is close round the blade (one blade length
+    // is 1 there) and textured: other effects about him then (a swing's trail further out, a
+    // plain dark polygon) came along and showed as a black panel.
     auto toHand = [](TexturedWorld f, const WeaponFrame &k) {
         for (TexturedVertex &v : f.vertices) v.position = k.ToHand(v.position);
-        return f;
+        return NearBlade(f);
     };
+    // Kept once recorded: recorded again only when asked (First person > Record the summoning
+    // effect again), not with every summoning (a later one, with more going on, replaced it).
+    const bool want = summonWanted_.load() || summonAt_.empty();
     if (keyblade) summonFrame_ = *keyblade;
     if (!summonRecording_) {
-        if (keyblade && now - heldDrawnAt_ > 1.0) {
+        if (keyblade && now - heldDrawnAt_ > 1.0 && want) {
             // It appears: the glow from the moment before, from its first frame.
             summonRecording_ = true;
             summonTake_.clear();
@@ -875,8 +902,9 @@ void DecompGame::RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblad
     if (has) summonLastFx_ = now;
     summonTake_.push_back(toHand(std::move(fx), summonFrame_));
     summonTimes_.push_back(static_cast<float>(now - summonStart_));
-    // Done once the glow has been gone a fifth of a second, or after a second and a half.
-    if (now - summonLastFx_ > 0.2 || now - summonStart_ > 1.5 || summonTake_.size() >= 64) FinishSummon();
+    // Done once the glow has been gone a fifth of a second, or after 0.7 s (the glow lasts a few
+    // frames).
+    if (now - summonLastFx_ > 0.2 || now - summonStart_ > 0.7 || summonTake_.size() >= 48) FinishSummon();
 }
 
 void DecompGame::FinishSummon() {
@@ -890,6 +918,7 @@ void DecompGame::FinishSummon() {
     for (const TexturedWorld &f : summonTake_) drawn += !f.vertices.empty();
     if (drawn < 3) return;
     AlignSummonToBlade(&summonTake_);
+    summonWanted_ = false;
     {
         std::lock_guard<std::mutex> lock(summonMu_);
         summon_ = summonTake_;
@@ -925,12 +954,20 @@ void DecompGame::LoadSummon() {
     for (size_t i = 0; i < times.size(); ++i) {
         PlatformWorld kept;
         TexturedWorld f;
+        if (times[i] > 0.7f) break;  // (a recording by an earlier version ran on to a second)
         if (PlatformWorldRead(dataDir_ + "/khvr_summon_" + std::to_string(i) + ".bin", &kept) &&
             kept.vertices.size() == kept.triangleFlags.size() * 3)
             ToTextured(kept, &f);
-        frames.push_back(std::move(f));
+        frames.push_back(NearBlade(f));
     }
-    if (frames.size() < 3) return;
+    times.resize(frames.size());
+    while (!frames.empty() && frames.back().vertices.empty()) {
+        frames.pop_back();
+        times.pop_back();
+    }
+    size_t drawn = 0;
+    for (const TexturedWorld &f : frames) drawn += !f.vertices.empty();
+    if (drawn < 3) return;
     AlignSummonToBlade(&frames);  // (already along it when saved by this version: no change)
     std::lock_guard<std::mutex> lock(summonMu_);
     summon_ = std::move(frames);
