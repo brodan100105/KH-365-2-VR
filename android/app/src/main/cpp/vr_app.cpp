@@ -45,6 +45,11 @@ Mat4 LookAt(const Vec3 &eye, const Vec3 &target, const Vec3 &upHint) {
 }
 
 // The quad a placement draws faces +Z of its pose; this turns "facing the viewer at `from`".
+// The Keyblade summoning: a glint that envelops the blade over kSummonGlintSeconds, the
+// Keyblade itself fading in kKeybladeAppearDelay after it starts.
+constexpr float kSummonGlintSeconds = 0.7f;
+constexpr float kKeybladeAppearDelay = 0.5f;
+
 Pose FacingFrom(const Vec3 &at, const Vec3 &from) {
     Vec3 d = from - at;
     return {Quat::Yaw(std::atan2(d.x, d.z)), at};
@@ -1153,13 +1158,13 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
             // Roxas's own hand (as the game last drew it), and the Keyblade along the blade axis
             // the combat code uses.
             DrawHand(h, g, vpTracking);
-            // Out (the grip, an attack): the game's own once seen; it grows in over a fifth of a
-            // second as it appears.
+            // Out (the grip, an attack): the game's own once seen; full size, fading in quickly
+            // half a second after the summoning glint starts (inside it).
             if ((h == weapon || dual) && keybladeShown_) {
                 const float since = static_cast<float>(in.time - keybladeAppearedAt_);
-                const float grow = Clamp(since / 0.2f, 0.0f, 1.0f);
-                float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength) *
-                            std::max(0.05f, grow * grow * (3.0f - 2.0f * grow));
+                const float appear = Clamp((since - kKeybladeAppearDelay) / 0.12f, 0.0f, 1.0f);
+                if (appear <= 0.0f) continue;
+                float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
                 float grip = DegToRad(settings_.Get(SettingId::FpGripAngle));
                 Vec3 axis = BladeAxis(g, grip);
                 // Turned a quarter about the blade so the teeth face in, towards your forearm.
@@ -1172,8 +1177,10 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                     // The game's own Keyblade, its blade along the axis swings are measured on
                     // and as long as they take it to be.
                     const Mat4 model = Mat4::FromSimilarity({len, q, g.position + axis * settings_.Get(SettingId::FpKeybladeGrip)});
+                    renderer_.SetWorldOpacity(appear);
                     renderer_.DrawTexturedWorld(held, vpTracking * model,
                                                 nearest, WorldMotion(), 1);
+                    renderer_.SetWorldOpacity(1.0f);
                     continue;
                 }
                 // Until the game has drawn its own, none (no stand-in).
@@ -1189,13 +1196,13 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         const float life = settings_.Get(SettingId::FpTrailLength);
         for (int h = 0; h < 2; ++h) swingTrail_[h].Build(&effects, in.time, life);
         const float since = static_cast<float>(in.time - keybladeAppearedAt_);
-        if (keybladeShown_ && since < 0.45f && in.gripValid[weapon]) {
+        if (keybladeShown_ && since < kSummonGlintSeconds && in.gripValid[weapon]) {
             const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
             const Pose &g = in.grip[weapon];
             const Vec3 axis = BladeAxis(g, gripAngle);
             const Vec3 base = g.position + axis * settings_.Get(SettingId::FpKeybladeGrip);
             const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
-            BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / 0.45f);
+            BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / kSummonGlintSeconds);
         }
         if (!effects.triangles.empty()) renderer_.DrawTriangles(effects, vpTracking, 0.999f);
     }

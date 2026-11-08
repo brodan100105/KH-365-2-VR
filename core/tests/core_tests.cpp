@@ -1131,9 +1131,21 @@ TEST(SummonGlintRunsUpTheBlade) {
     WorldDrawList early, done;
     BuildSummonGlint(&early, {0, 1, 0}, {0, 1.8f, 0}, {0, 1.5f, 1}, 0.2f);
     CHECK(!early.triangles.empty());
-    float maxY = 0;
-    for (const WorldVertex &v : early.triangles) maxY = std::max(maxY, v.position.y);
-    CHECK(maxY < 1.4f);  // near the hilt at the start
+    // Brightest near the hilt at the start (the band sweeps up the blade).
+    float brightY = 0, bright = -1;
+    for (const WorldVertex &v : early.triangles)
+        if (static_cast<float>(v.color >> 24) > bright) {
+            bright = static_cast<float>(v.color >> 24);
+            brightY = v.position.y;
+        }
+    CHECK(brightY < 1.4f);
+    // Wide enough to envelop the blade: well over 10 cm across.
+    float minX = 1e9f, maxX = -1e9f;
+    for (const WorldVertex &v : early.triangles) {
+        minX = std::min(minX, v.position.x);
+        maxX = std::max(maxX, v.position.x);
+    }
+    CHECK(maxX - minX > 0.2f);
     BuildSummonGlint(&done, {0, 1, 0}, {0, 1.8f, 0}, {0, 1.5f, 1}, 1.0f);
     CHECK(done.triangles.empty());
 }

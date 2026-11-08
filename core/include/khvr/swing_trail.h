@@ -33,8 +33,9 @@ private:
     std::deque<Sample> samples_;
 };
 
-// The glint as the Keyblade appears: a bright band crossing the blade from hilt (t = 0) to tip
-// (t = 1), facing the eye, fading out at the end.
+// The summoning effect as the Keyblade appears (t from 0 to 1): a band wide enough to envelop it
+// sweeping from below the hilt to past the tip, then a glow round the whole blade, brightest as
+// the Keyblade fades in (about 70 %), facing the eye.
 void BuildSummonGlint(WorldDrawList *out, const Vec3 &base, const Vec3 &tip, const Vec3 &eye, float t);
 
 }  // namespace khvr

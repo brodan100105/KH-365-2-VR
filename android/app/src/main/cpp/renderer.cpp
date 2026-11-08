@@ -76,6 +76,7 @@ uniform int uDecal;
 // The DS's fades of its 3D layer: (target, amount) twice; target 1 white, 0 black.
 uniform vec4 uFade;
 uniform float uCut;
+uniform float uOpacity;  // the whole model (the Keyblade fading in), 1 otherwise
 out vec4 oColor;
 void main() {
     vec4 c = vColor;
@@ -87,6 +88,7 @@ void main() {
     if (c.a < uCut) discard;
     c.rgb = mix(c.rgb, vec3(uFade.x), uFade.y);
     c.rgb = mix(c.rgb, vec3(uFade.z), uFade.w);
+    c.a *= uOpacity;
     oColor = c;
 })";
 
@@ -283,6 +285,7 @@ bool Renderer::Init() {
     worldDecal_ = glGetUniformLocation(worldProgram_, "uDecal");
     worldSampler_ = glGetUniformLocation(worldProgram_, "uTex");
     worldFade_ = glGetUniformLocation(worldProgram_, "uFade");
+    worldOpacity_ = glGetUniformLocation(worldProgram_, "uOpacity");
     worldCut_ = glGetUniformLocation(worldProgram_, "uCut");
     worldBlend_ = glGetUniformLocation(worldProgram_, "uBlend");
     worldSprites_ = glGetUniformLocation(worldProgram_, "uSprites");
@@ -508,6 +511,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     fade(0, &f[0], &f[1]);
     fade(1, &f[2], &f[3]);
     glUniform4f(worldFade_, f[0], f[1], f[2], f[3]);
+    glUniform1f(worldOpacity_, worldOpacityValue_);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, c.worldVbo);
@@ -530,7 +534,7 @@ void Renderer::DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewPro
     glDepthFunc(GL_LEQUAL);
     glFrontFace(GL_CCW);  // the DS's front faces are counterclockwise too
     for (const WorldBatch &b : c.worldBatches) {
-        SetBlend(b.blend);
+        SetBlend(b.blend || worldOpacityValue_ < 1.0f);
         glDepthMask(b.depthWrite ? GL_TRUE : GL_FALSE);
         glUniform1f(worldCut_, b.cut);
         if (b.cull == 0) {

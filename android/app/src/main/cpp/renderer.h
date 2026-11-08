@@ -89,6 +89,8 @@ public:
     static constexpr int kWorldSlots = 5;  // and 4 the saved place (loading, the title's menus)
     void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
                            const WorldMotion &motion = WorldMotion(), int slot = 0);
+    // The opacity of the following DrawTexturedWorld calls (the Keyblade fading in); set it back to 1.
+    void SetWorldOpacity(float opacity) { worldOpacityValue_ = opacity; }
 
 private:
     GLuint litProgram_ = 0, texProgram_ = 0, lineProgram_ = 0, overlayProgram_ = 0;
@@ -101,6 +103,8 @@ private:
     // DrawTexturedWorld: its vertices, regrouped by texture and blending once per revision.
     GLuint worldProgram_ = 0;
     GLint worldMvp_ = -1, worldUseTex_ = -1, worldDecal_ = -1, worldSampler_ = -1, worldFade_ = -1, worldCut_ = -1;
+    GLint worldOpacity_ = -1;
+    float worldOpacityValue_ = 1.0f;
     GLint worldBlend_ = -1, worldSprites_ = -1, worldRight_ = -1, worldUp_ = -1;
     struct WorldBatch {
         int32_t texture;  // index into the world's textures, -1 none
