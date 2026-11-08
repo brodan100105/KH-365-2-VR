@@ -134,7 +134,8 @@ struct Gx {
     // many swaps in a row it has changed, and each way's polygons (averaged).
     bool lastAOnTop = true;
     int swapRun = 0;
-    int alternatingHold = 0;  // swaps the two-screen state still holds without a swap of screens
+    int alternatingHold = 0;
+    uint16_t shownBldcnt = 0, shownBldy = 0, shownMaster = 0;  // fades as the shown frame left them  // swaps the two-screen state still holds without a swap of screens
     float phasePolys[2] = {0, 0};
     bool lastSwapOther = false;  // the last frame was the other screen's (left out of the world)
     int keptPhase = -1;  // which way round (engine A on top or not) the world's frames come, -1 none
@@ -1057,6 +1058,12 @@ void Exec(uint8_t cmd, const uint32_t *p) {
         g.shownManualSort = p[0] & 1;
         g.shownWBuffer = p[0] & 2;
         g.shownVp = {g.vpX1, g.vpY1, g.vpX2, g.vpY2};
+        // The fade registers as this frame (kept for the world) leaves them: in a scene drawing 3D
+        // on both screens, read live at capture time they were the other screen's every other
+        // frame (it blacks that one out), and the whole view flashed black.
+        g.shownBldcnt = IoReg16(0x50);
+        g.shownBldy = IoReg16(0x54);
+        g.shownMaster = IoReg16(0x6c);
         break;
     }
     case 0x60:
@@ -2668,10 +2675,11 @@ void GxCaptureWorld(PlatformWorld *out) {
     out->viewport[3] = g.shownVp[3];
     // Fades: engine A's BLDY brightness when the 3D layer (BG0) is its first target, then its
     // master brightness.
-    const uint16_t bldcnt = IoReg16(0x50), master = IoReg16(0x6c);
+    const bool twoScreens = g.alternatingHold > 0;
+    const uint16_t bldcnt = twoScreens ? g.shownBldcnt : IoReg16(0x50), master = twoScreens ? g.shownMaster : IoReg16(0x6c);
     const uint32_t effect = (bldcnt >> 6) & 3;
     out->fadeMode[0] = (bldcnt & 1) && (effect == 2 || effect == 3) ? static_cast<int>(effect - 1) : 0;
-    out->fadeFactor[0] = std::min<int>(IoReg16(0x54) & 31, 16);
+    out->fadeFactor[0] = std::min<int>((twoScreens ? g.shownBldy : IoReg16(0x54)) & 31, 16);
     out->fadeMode[1] = (master >> 14) == 1 ? 1 : (master >> 14) == 2 ? 2 : 0;
     out->fadeFactor[1] = std::min<int>(master & 31, 16);
     gWorldStats.triangles = static_cast<uint32_t>(out->triangleTexture.size());

@@ -180,6 +180,11 @@ Tested: Agrabah's scene is steady.
 
 ## Open bugs from testing
 
+- The Coliseum's first cutscene (two screens of 3D, the second blacked out each other frame)
+  flashed the whole view black now and then: a skipped frame let two dark readings of the fade
+  through in a row. Fades in such scenes are now read on the kept frames and must hold eight
+  captures (in test).
+
 - Beast's Castle, first mission: a gargoyle disappears depending on distance.
 - Looking for Xion, the forest (the 8th wonder): in the cutscene Roxas and Axel float above the
   ground.

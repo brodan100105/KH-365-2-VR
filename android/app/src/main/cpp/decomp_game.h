@@ -112,7 +112,7 @@ private:
     bool KeepPlacedScene();
     double placedSceneAt_ = -1e9;  // steady-clock seconds a cutscene was last placed in the world
     size_t placedTriangles_ = 0;   // and its triangles then
-    int fadeSeen_[2][3] = {};      // each screen's fade (0..16) in the last three captures
+    int fadeSeen_[2][8] = {};      // each screen's fade (0..16) in the last eight captures, newest first
     int fadeModeSeen_[2] = {0, 0};
     std::atomic<bool> worldCapture_{false};
     std::unique_ptr<PlatformWorld> latestWorld_;

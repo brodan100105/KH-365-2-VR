@@ -489,11 +489,15 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
         // shows once it has held three captures (a tenth of a second), at the least of them.
         for (int i = 0; i < 2; ++i) {
             const int seen = w.fadeMode[i] ? w.fadeFactor[i] : 0;
-            fadeSeen_[i][2] = fadeSeen_[i][1];
-            fadeSeen_[i][1] = fadeSeen_[i][0];
+            for (int k = 7; k > 0; --k) fadeSeen_[i][k] = fadeSeen_[i][k - 1];
             fadeSeen_[i][0] = w.fadeMode[i] ? seen : 0;
             if (w.fadeMode[i]) fadeModeSeen_[i] = w.fadeMode[i];
-            const int held = std::min({fadeSeen_[i][0], fadeSeen_[i][1], fadeSeen_[i][2]});
+            // In a scene drawing 3D on both screens, eight (the screen it blacks out goes dark
+            // every other frame, and a skipped frame let two dark ones through in a row: the
+            // whole view flashed black, the Coliseum's cutscene).
+            const int window = w.alternatingScreens ? 8 : 3;
+            int held = fadeSeen_[i][0];
+            for (int k = 1; k < window; ++k) held = std::min(held, fadeSeen_[i][k]);
             if (seen > held + 4) {
                 char line[96];
                 std::snprintf(line, sizeof line, "view: a brief fade left out (screen %d, mode %d, %d/16)", i,
