@@ -177,6 +177,7 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
         if (PlatformWorldRead(dataDir + "/khvr_keyblade.bin", &kept) && !kept.vertices.empty() &&
             kept.vertices.size() == kept.triangleFlags.size() * 3)
             ToTextured(kept, &heldWeapon_);
+        LoadSummon();
     }
     cfg.savePath = dataDir + "/khdays.sav";
     cfg.logPath = dataDir + "/khvr_boot.log";
@@ -562,7 +563,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
 // The triangles of one of Roxas's models (kWorldModel...) into `to`, each vertex where `place`
 // puts its point in the model's own space, with the textures they use.
 template <typename Place>
-void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedWorld *to) {
+void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedWorld *to, bool fromWorld = false) {
     // Into a new one first: when nothing changed (a rigid model, as it mostly is), the old stays,
     // its revision too, so the renderer keeps what it built (and the textures are not copied).
     TexturedWorld k;
@@ -574,7 +575,8 @@ void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedW
         for (int i = 0; i < 3; ++i) {
             const PlatformWorldVertex &v = w.vertices[t * 3 + i];
             const float *l = &w.local[(t * 3 + i) * 3];
-            k.vertices.push_back({place(Vec3{l[0], l[1], l[2]}), v.u, v.v, v.color});
+            const Vec3 p = fromWorld ? Vec3{v.x, v.y, v.z} : Vec3{l[0], l[1], l[2]};
+            k.vertices.push_back({place(p), v.u, v.v, v.color});
         }
         int32_t tex = w.triangleTexture[t];
         if (tex >= 0 && static_cast<size_t>(tex) < w.textures.size()) {
@@ -634,8 +636,11 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     // Of the models attached to Roxas, the longest is his Keyblade.
     int best = -1;
     WeaponFrame frame;
+    std::vector<Vec3> bestPoints, bestWorld;
+    size_t bestA = 0, bestB = 0;
     for (int a = 0; a < kWorldAttachedMax; ++a) {
         std::vector<Vec3> points, world;
+        size_t ia = 0, ib = 0;
         for (size_t t = 0; t < triangles; ++t)
             if (w.triangleModel[t] == kWorldModelAttached + a)
                 for (int k = 0; k < 3; ++k) {
@@ -652,7 +657,6 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         Vec3 held;
         bool hint = false;
         {
-            size_t ia = 0, ib = 0;
             for (size_t i = 0; i < world.size(); ++i)
                 if (Length(world[i] - world[0]) > Length(world[ia] - world[0])) ia = i;
             for (size_t i = 0; i < world.size(); ++i)
@@ -675,9 +679,17 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;
             frame = f;
+            bestPoints = points;
+            bestWorld = world;
+            bestA = ia;
+            bestB = ib;
         }
     }
-    if (best < 0) return;  // not drawn this frame: the last one stays
+    const double nowSeen = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (best < 0) {
+        RecordSummon(w, nullptr, nowSeen);
+        return;  // not drawn this frame: the last one stays
+    }
     TexturedWorld &k = heldWeapon_;
     {
         // A much smaller model on him for a moment (a part of an effect) does not replace the
@@ -705,6 +717,43 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
             Platform::Get().LogLine(line);
         }
     }
+    // The same frame in the world (the model is only moved, turned and scaled into it), for the
+    // effects drawn round it: the summoning glow, recorded into the hand's frame.
+    {
+        const Vec3 al = bestPoints[bestA], bl = bestPoints[bestB], aw = bestWorld[bestA], bw = bestWorld[bestB];
+        const float ll = Length(bl - al), lw = Length(bw - aw);
+        size_t ic = 0;
+        float off = -1.0f;
+        const Vec3 e1l = ll > 1e-6f ? (bl - al) * (1.0f / ll) : Vec3{1, 0, 0};
+        for (size_t i = 0; i < bestPoints.size(); ++i) {
+            const Vec3 d = bestPoints[i] - al;
+            const float o = Length(d - e1l * Dot(d, e1l));
+            if (o > off) {
+                off = o;
+                ic = i;
+            }
+        }
+        if (ll > 1e-6f && lw > 1e-6f && off > 1e-5f) {
+            auto basis = [](const Vec3 &a, const Vec3 &b, const Vec3 &c, Vec3 e[3]) {
+                e[0] = Normalize(b - a);
+                const Vec3 d = c - a;
+                e[1] = Normalize(d - e[0] * Dot(d, e[0]));
+                e[2] = Cross(e[0], e[1]);
+            };
+            Vec3 el[3], ew[3];
+            basis(al, bl, bestPoints[ic], el);
+            basis(aw, bw, bestWorld[ic], ew);
+            const float scale = lw / ll;
+            auto toWorldDir = [&](const Vec3 &v) { return ew[0] * Dot(v, el[0]) + ew[1] * Dot(v, el[1]) + ew[2] * Dot(v, el[2]); };
+            WeaponFrame wf;
+            wf.grip = aw + toWorldDir(frame.grip - al) * scale;
+            wf.blade = toWorldDir(frame.blade);
+            wf.side = toWorldDir(frame.side);
+            wf.length = frame.length * scale;
+            wf.valid = true;
+            RecordSummon(w, &wf, nowSeen);
+        }
+    }
     const size_t before = k.vertices.size();
     CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
     // Kept on the headset (from your own game) so it is in your hand from the start next time,
@@ -719,6 +768,86 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
         PlatformWorldWrite(dataDir_ + "/khvr_keyblade.bin", keep);
         if (row >= 0) PlatformWorldWrite(dataDir_ + "/khvr_keyblade_" + std::to_string(row) + ".bin", keep);
     }
+}
+
+void DecompGame::RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblade, double now) {
+    // The game's own summoning effect: when Roxas draws his Keyblade after a second without it,
+    // the see-through models on him (his effects) over the next second, frame by frame, in the
+    // Keyblade's frame (as the Keyblade in your hand is), kept on the headset to play round the
+    // Keyblade you summon.
+    if (!keyblade) {
+        if (summonRecording_) FinishSummon();
+        return;
+    }
+    if (!summonRecording_ && now - heldDrawnAt_ > 1.0) {
+        summonRecording_ = true;
+        summonStart_ = now;
+        summonTake_.clear();
+        summonTimes_.clear();
+    }
+    heldDrawnAt_ = now;
+    if (!summonRecording_) return;
+    if (now - summonStart_ > 1.0 || summonTake_.size() >= 48) {
+        FinishSummon();
+        return;
+    }
+    TexturedWorld f;
+    CopyTriangles(w, kWorldModelEffect, [&](const Vec3 &p) { return keyblade->ToHand(p); }, &f, true);
+    summonTake_.push_back(std::move(f));
+    summonTimes_.push_back(static_cast<float>(now - summonStart_));
+}
+
+void DecompGame::FinishSummon() {
+    summonRecording_ = false;
+    size_t drawn = 0;
+    for (const TexturedWorld &f : summonTake_) drawn += !f.vertices.empty();
+    // Only a take with the effect in most of it (a summoning, not a swing's trail now and then).
+    if (summonTake_.size() < 6 || drawn * 2 < summonTake_.size()) return;
+    {
+        std::lock_guard<std::mutex> lock(summonMu_);
+        summon_ = summonTake_;
+        summonAt_ = summonTimes_;
+        ++summonRevision_;
+    }
+    char line[128];
+    std::snprintf(line, sizeof line, "keyblade: its summoning effect taken, %zu frames over %.2f s", summon_.size(),
+                  summonAt_.empty() ? 0.0 : summonAt_.back());
+    Platform::Get().LogLine(line);
+    if (dataDir_.empty()) return;
+    // Kept on the headset: one file per frame, and their times.
+    for (size_t i = 0; i < summon_.size(); ++i) {
+        PlatformWorld keep;
+        ToPlatform(summon_[i], &keep);
+        PlatformWorldWrite(dataDir_ + "/khvr_summon_" + std::to_string(i) + ".bin", keep);
+    }
+    if (FILE *t = std::fopen((dataDir_ + "/khvr_summon.txt").c_str(), "w")) {
+        for (float s : summonAt_) std::fprintf(t, "%f\n", s);
+        std::fclose(t);
+    }
+}
+
+void DecompGame::LoadSummon() {
+    if (dataDir_.empty()) return;
+    FILE *t = std::fopen((dataDir_ + "/khvr_summon.txt").c_str(), "r");
+    if (!t) return;
+    std::vector<float> times;
+    float s = 0;
+    while (std::fscanf(t, "%f", &s) == 1 && times.size() < 64) times.push_back(s);
+    std::fclose(t);
+    std::vector<TexturedWorld> frames;
+    for (size_t i = 0; i < times.size(); ++i) {
+        PlatformWorld kept;
+        TexturedWorld f;
+        if (PlatformWorldRead(dataDir_ + "/khvr_summon_" + std::to_string(i) + ".bin", &kept) &&
+            kept.vertices.size() == kept.triangleFlags.size() * 3)
+            ToTextured(kept, &f);
+        frames.push_back(std::move(f));
+    }
+    if (frames.size() < 6) return;
+    std::lock_guard<std::mutex> lock(summonMu_);
+    summon_ = std::move(frames);
+    summonAt_ = std::move(times);
+    ++summonRevision_;
 }
 
 void DecompGame::KeepEquippedWeapon() {

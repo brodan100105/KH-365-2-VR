@@ -99,11 +99,11 @@ void BuildSummonGlint(WorldDrawList *out, const Vec3 &base, const Vec3 &tip, con
             Quad(out, upper, upperC);
         }
     }
-    // A glow around the whole blade, rising from 40 % and brightest as the Keyblade appears
-    // (at about 70 %), gone by the end; soft at its edges.
-    if (t > 0.4f) {
-        const float glow = t < 0.7f ? (t - 0.4f) / 0.3f : 1.0f - (t - 0.7f) / 0.3f;
-        const float a = 0.55f * std::clamp(glow, 0.0f, 1.0f);
+    // A glow around the whole blade from the start, while the Keyblade fades in inside it, then
+    // fading out from 35 %; soft at its edges.
+    {
+        const float glow = t < 0.35f ? 1.0f : 1.0f - (t - 0.35f) / 0.65f;
+        const float a = 0.6f * std::clamp(glow, 0.0f, 1.0f);
         const Vec3 b1 = b0 + axis * span;
         const Vec3 inner0 = b0, inner1 = b1;
         const Vec3 left[4] = {inner0 - across * halfWidth, inner0, inner1, inner1 - across * halfWidth};

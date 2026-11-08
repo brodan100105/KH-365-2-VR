@@ -86,7 +86,7 @@ public:
     // `motion`: see WorldMotion.
     // `slot`: each world drawn every frame has its own (0 the game's world, 1 the Keyblade in
     // your hand, 2 and 3 your hands), so they do not take turns rebuilding.
-    static constexpr int kWorldSlots = 5;  // and 4 the saved place (loading, the title's menus)
+    static constexpr int kWorldSlots = 6;  // 4 the saved place (loading, the title's menus), 5 the summoning effect
     void DrawTexturedWorld(const TexturedWorld &world, const Mat4 &viewProj, bool nearest,
                            const WorldMotion &motion = WorldMotion(), int slot = 0);
     // The opacity of the following DrawTexturedWorld calls (the Keyblade fading in); set it back to 1.

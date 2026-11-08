@@ -48,7 +48,7 @@ Mat4 LookAt(const Vec3 &eye, const Vec3 &target, const Vec3 &upHint) {
 // The Keyblade summoning: a glint that envelops the blade over kSummonGlintSeconds, the
 // Keyblade itself fading in kKeybladeAppearDelay after it starts.
 constexpr float kSummonGlintSeconds = 0.7f;
-constexpr float kKeybladeAppearDelay = 0.5f;
+constexpr float kKeybladeAppearDelay = 0.0f;
 
 Pose FacingFrom(const Vec3 &at, const Vec3 &from) {
     Vec3 d = from - at;
@@ -912,6 +912,11 @@ void VrApp::Frame(const XrFrameInput &in) {
 #ifdef KHVR_HAS_GAME
         // Hits enemies took: their damage floats up from where each landed (first person only).
         if (decomp_) {
+            // The game's summoning effect, when it was (re)recorded: each frame its own revision,
+            // so the renderer takes each as new.
+            if (decomp_->TakeSummonEffect(&summonFxRevision_, &summonFx_, &summonFxAt_))
+                for (size_t i = 0; i < summonFx_.size(); ++i)
+                    summonFx_[i].revision = summonFxRevision_ * 1000u + static_cast<unsigned>(i) + 1u;
             std::vector<PlatformEnemyHit> hits;
             decomp_->TakeEnemyHits(&hits);
             if (mode == ViewMode::FirstPerson && settings_.Bool(SettingId::FpDamageNumbers))
@@ -1181,6 +1186,14 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                     renderer_.DrawTexturedWorld(held, vpTracking * model,
                                                 nearest, WorldMotion(), 1);
                     renderer_.SetWorldOpacity(1.0f);
+                    // The game's own summoning effect round it (recorded from Roxas's), frame by
+                    // frame as the game played it, in the same frame as the Keyblade.
+                    if (h == weapon && !summonFx_.empty() && since <= summonFxAt_.back() + 0.05f) {
+                        size_t f = 0;
+                        while (f + 1 < summonFxAt_.size() && summonFxAt_[f + 1] <= since) ++f;
+                        if (!summonFx_[f].vertices.empty())
+                            renderer_.DrawTexturedWorld(summonFx_[f], vpTracking * model, nearest, WorldMotion(), 5);
+                    }
                     continue;
                 }
                 // Until the game has drawn its own, none (no stand-in).
@@ -1196,7 +1209,8 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         const float life = settings_.Get(SettingId::FpTrailLength);
         for (int h = 0; h < 2; ++h) swingTrail_[h].Build(&effects, in.time, life);
         const float since = static_cast<float>(in.time - keybladeAppearedAt_);
-        if (keybladeShown_ && since < kSummonGlintSeconds && in.gripValid[weapon]) {
+        // (Our own glint only until the game's summoning effect has been recorded.)
+        if (keybladeShown_ && summonFx_.empty() && since < kSummonGlintSeconds && in.gripValid[weapon]) {
             const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
             const Pose &g = in.grip[weapon];
             const Vec3 axis = BladeAxis(g, gripAngle);

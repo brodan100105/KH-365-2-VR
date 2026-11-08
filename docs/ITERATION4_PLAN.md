@@ -161,7 +161,10 @@ and into VR as real geometry around you.
       second, facing you (First person > Damage numbers). The first hits go to the boot log.
 - [x] The Keyblade kept between launches (khvr_keyblade.bin), so a grip hold brings it out
       before Roxas has drawn it; held weapons gripped where Roxas's hand is (the Struggle bat).
-- [ ] The game's own summoning effect in place of the glint, if one exists to borrow.
+- [x] The game's own summoning effect (in test): when Roxas draws his Keyblade after a second
+      without it, the see-through models on him (his effects) are recorded for a second, frame
+      by frame, in the Keyblade's frame, kept on the headset (khvr_summon_N.bin) and played round
+      the Keyblade you summon; our glint until then. The Keyblade fades in over 0.12 s, no delay.
 
 ## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
 

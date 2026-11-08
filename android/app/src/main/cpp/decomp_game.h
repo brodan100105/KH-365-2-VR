@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "khvr/game_source.h"
+#include "khvr/held_weapon.h"
 #include "khvr/platform.h"
 
 namespace khvr {
@@ -104,6 +105,33 @@ private:
     void TakeHeldWeapon(const PlatformWorld &w);
     // The scene loaded another weapon for Roxas: the one kept for it into heldWeapon_.
     void KeepEquippedWeapon();
+    // The game's own Keyblade summoning effect, recorded when Roxas draws it (RecordSummon, each
+    // frame his Keyblade is or is not drawn), played round the Keyblade in your hand.
+    void RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblade, double now);
+    void FinishSummon();
+    void LoadSummon();
+    bool summonRecording_ = false;
+    double summonStart_ = 0.0, heldDrawnAt_ = -10.0;
+    std::vector<TexturedWorld> summonTake_, summon_;
+    std::vector<float> summonTimes_, summonAt_;
+    unsigned summonRevision_ = 0;
+
+    mutable std::mutex summonMu_;
+
+public:
+    // The game's summoning effect, frame by frame in the hand's frame (as heldWeapon), and each
+    // frame's time from its start (seconds), copied out when it changed since `*revision`;
+    // empty until Roxas has drawn his Keyblade once.
+    bool TakeSummonEffect(unsigned *revision, std::vector<TexturedWorld> *frames, std::vector<float> *times) const {
+        std::lock_guard<std::mutex> lock(summonMu_);
+        if (*revision == summonRevision_) return false;
+        *revision = summonRevision_;
+        *frames = summon_;
+        *times = summonAt_;
+        return true;
+    }
+
+private:
     int heldRow_ = -1;  // the weapon (row) heldWeapon_ is, -1 not known
     // ... and his hands, into hands_.
     TexturedWorld hands_[2];

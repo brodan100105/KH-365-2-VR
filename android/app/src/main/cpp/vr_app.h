@@ -167,6 +167,11 @@ private:
     float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
     double keybladeAppearedAt_ = 0.0;
     SwingTrail swingTrail_[2];  // the Keyblade's trail behind your swings, per hand
+    // The game's own Keyblade summoning effect (recorded from Roxas's), frame by frame in the
+    // hand's frame, and each frame's time from its start.
+    std::vector<TexturedWorld> summonFx_;
+    std::vector<float> summonFxAt_;
+    unsigned summonFxRevision_ = 0;
     // Damage numbers floating up from hits enemies took (world space), in first person.
     struct DamageNumber {
         Vec3 world;
