@@ -26,7 +26,7 @@ endorsed by Square Enix, Disney, Nintendo or Meta.*
 > engine. You can stand in the game's world in third or first person, cutscenes play around you,
 > and first person has motion combat with Roxas's hands and the game's own Keyblade in yours
 > ([roadmap](docs/ROADMAP.md), [iteration 4 plan](docs/ITERATION4_PLAN.md)). Story tested in the
-> headset up to Day 97.
+> headset up to Day 119.
 
 ## VR progress
 
@@ -36,7 +36,7 @@ from the project plan and playtesting on a Quest 3 (as of November 7, 2026).
 | Area | Done | What it covers |
 |---|---|---|
 | **Native VR compatibility** | 86% | The game runs natively from your own cartridge dump (3D, 2D, saves, movies, music and sound); its world drawn around you with sprites that face you, the HUD and cutscenes; third and first person movement with comfort options; the loading area and menus. |
-| **Completed story** | Day 97 of 358 (27%) | How far the story has been played through in the headset. Later days may still have scenes that need fixes. |
+| **Completed story** | Day 119 of 358 (33%) | How far the story has been played through in the headset. Later days may still have scenes that need fixes. |
 | **VR combat** | 42% | Roxas's hands and the game's Keyblade in yours, motion swings, guard and combos. Still to come: Keyblade effects, magic from the Keyblade, and combat where your own swing is the attack. |
 | **Additional VR features** | 5% | Extras planned on top of the game: haptics, a wrist quickbar, positional sound, speech bubbles, photo mode. |
 | **PC VR** | 0% | The same app for SteamVR and Meta Link, once the Quest version is stable. |
