@@ -13,6 +13,10 @@ on:
           ordinary build, its APK only for the owner.
         required: false
         default: ''
+      release_notes:
+        description: The Experimental build's notes (Markdown); empty for the standard text.
+        required: false
+        default: ''
 
 # A newer push to the same branch cancels the older build still running.
 concurrency:
@@ -142,11 +146,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REF: ${{ inputs.experimental_ref }}
+          NOTES: ${{ inputs.release_notes }}
         run: |
           sha=$(git rev-parse HEAD)
           day=$(TZ=America/New_York date '+%B %-d, %Y')
           cp android/app/build/outputs/apk/release/*.apk KH-Days-VR-experimental.apk
+          {
+            echo "Experimental build of KH 358/2 Days VR from commit ${sha:0:7}, built $day."
+            echo
+            if [ -n "$NOTES" ]; then printf '%s\n\n' "$NOTES"; fi
+            echo "Expect bugs: newer work is still being tested. You need your own dump of the European cartridge (YKGP); see the README for installing."
+          } > notes.md
           gh release delete experimental --cleanup-tag --yes || true
           gh release create experimental KH-Days-VR-experimental.apk --prerelease --target "$sha" \
-            --title "Experimental build ($day)" \
-            --notes "Experimental build of KH 358/2 Days VR from commit ${sha:0:7}, built $day. Expect bugs: newer work is still being tested. You need your own dump of the European cartridge (YKGP); see the README for installing."
+            --title "Experimental build ($day)" --notes-file notes.md
