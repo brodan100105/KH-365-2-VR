@@ -636,7 +636,10 @@ int RenderWorld(const char *in, const char *outPpm) {
         std::fprintf(stderr, "cannot read %s\n", in);
         return 1;
     }
-    const int W = 512, H = 384;
+    // KHVR_RENDER_SCALE: a larger picture (1 is 512 x 384), for screenshots.
+    const char *scaleEnv = std::getenv("KHVR_RENDER_SCALE");
+    const int scale = scaleEnv ? std::clamp(std::atoi(scaleEnv), 1, 8) : 1;
+    const int W = 512 * scale, H = 384 * scale;
     std::vector<uint32_t> px(W * H, 0xff000000u);
     std::vector<float> depth(W * H, 1e30f);
     // Viewport: the DS's 256 x 192, bottom-left origin.
