@@ -771,38 +771,63 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
 }
 
 void DecompGame::RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblade, double now) {
-    // The game's own summoning effect: when Roxas draws his Keyblade after a second without it,
-    // the see-through models on him (his effects) over the next second, frame by frame, in the
-    // Keyblade's frame (as the Keyblade in your hand is), kept on the headset to play round the
-    // Keyblade you summon.
-    if (!keyblade) {
-        if (summonRecording_) FinishSummon();
-        return;
+    // The game's own summoning effect: the see-through models on Roxas (his effects) as he draws
+    // his Keyblade after a second without it. The glow starts a few frames before the Keyblade is
+    // drawn and lasts only a few: the effects of the last moment are kept (in the world), and as
+    // the Keyblade appears they and those that follow go into its frame (as the Keyblade in your
+    // hand is), kept on the headset to play round the Keyblade you summon.
+    TexturedWorld fx;
+    CopyTriangles(w, kWorldModelEffect, [](const Vec3 &p) { return p; }, &fx, true);
+    const bool has = !fx.vertices.empty();
+    auto toHand = [](TexturedWorld f, const WeaponFrame &k) {
+        for (TexturedVertex &v : f.vertices) v.position = k.ToHand(v.position);
+        return f;
+    };
+    if (keyblade) summonFrame_ = *keyblade;
+    if (!summonRecording_) {
+        if (keyblade && now - heldDrawnAt_ > 1.0) {
+            // It appears: the glow from the moment before, from its first frame.
+            summonRecording_ = true;
+            summonTake_.clear();
+            summonTimes_.clear();
+            size_t first = summonBefore_.size();
+            for (size_t i = 0; i < summonBefore_.size(); ++i)
+                if (!summonBefore_[i].second.vertices.empty()) {
+                    first = i;
+                    break;
+                }
+            summonStart_ = first < summonBefore_.size() ? summonBefore_[first].first : now;
+            for (size_t i = first; i < summonBefore_.size(); ++i) {
+                summonTake_.push_back(toHand(summonBefore_[i].second, *keyblade));
+                summonTimes_.push_back(static_cast<float>(summonBefore_[i].first - summonStart_));
+            }
+            summonLastFx_ = has || summonTake_.empty() ? now : summonBefore_.back().first;
+            summonBefore_.clear();
+        } else {
+            summonBefore_.push_back({now, std::move(fx)});
+            while (!summonBefore_.empty() && now - summonBefore_.front().first > 0.6) summonBefore_.pop_front();
+            if (keyblade) heldDrawnAt_ = now;
+            return;
+        }
     }
-    if (!summonRecording_ && now - heldDrawnAt_ > 1.0) {
-        summonRecording_ = true;
-        summonStart_ = now;
-        summonTake_.clear();
-        summonTimes_.clear();
-    }
-    heldDrawnAt_ = now;
-    if (!summonRecording_) return;
-    if (now - summonStart_ > 1.0 || summonTake_.size() >= 48) {
-        FinishSummon();
-        return;
-    }
-    TexturedWorld f;
-    CopyTriangles(w, kWorldModelEffect, [&](const Vec3 &p) { return keyblade->ToHand(p); }, &f, true);
-    summonTake_.push_back(std::move(f));
+    if (keyblade) heldDrawnAt_ = now;
+    if (has) summonLastFx_ = now;
+    summonTake_.push_back(toHand(std::move(fx), summonFrame_));
     summonTimes_.push_back(static_cast<float>(now - summonStart_));
+    // Done once the glow has been gone a fifth of a second, or after a second and a half.
+    if (now - summonLastFx_ > 0.2 || now - summonStart_ > 1.5 || summonTake_.size() >= 64) FinishSummon();
 }
 
 void DecompGame::FinishSummon() {
     summonRecording_ = false;
+    // Without the frames after the glow last showed; at least three frames of it.
+    while (!summonTake_.empty() && summonTake_.back().vertices.empty()) {
+        summonTake_.pop_back();
+        summonTimes_.pop_back();
+    }
     size_t drawn = 0;
     for (const TexturedWorld &f : summonTake_) drawn += !f.vertices.empty();
-    // Only a take with the effect in most of it (a summoning, not a swing's trail now and then).
-    if (summonTake_.size() < 6 || drawn * 2 < summonTake_.size()) return;
+    if (drawn < 3) return;
     {
         std::lock_guard<std::mutex> lock(summonMu_);
         summon_ = summonTake_;

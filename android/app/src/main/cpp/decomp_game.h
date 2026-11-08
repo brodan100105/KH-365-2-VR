@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -111,6 +112,9 @@ private:
     void FinishSummon();
     void LoadSummon();
     bool summonRecording_ = false;
+    std::deque<std::pair<double, TexturedWorld>> summonBefore_;  // the effects of the last moment, world
+    WeaponFrame summonFrame_;   // the Keyblade's frame in the world, last seen
+    double summonLastFx_ = 0.0;  // when the glow last showed while recording
     double summonStart_ = 0.0, heldDrawnAt_ = -10.0;
     std::vector<TexturedWorld> summonTake_, summon_;
     std::vector<float> summonTimes_, summonAt_;
