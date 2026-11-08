@@ -68,7 +68,6 @@ enum class SettingId : int {
     FpSummonAlong,
     FpSummonRight,
     FpSummonUp,
-    FpSummonTilt,
     FpSummonTurn,
     FpSummonFlip,
     FpSummonRecord,

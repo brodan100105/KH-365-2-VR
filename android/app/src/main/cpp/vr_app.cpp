@@ -928,17 +928,26 @@ void VrApp::Frame(const XrFrameInput &in) {
             // so the renderer takes each as new.
             if (decomp_->TakeSummonEffect(&summonFxRevision_, &summonFx_, &summonFxAt_))
             {
-                // (and its middle, over all its frames: what it is sized and turned about)
-                Vec3 sum;
-                size_t count = 0;
+                // (and its two ends, over all its frames: what is fitted to the Keyblade's)
+                std::vector<Vec3> all;
                 for (size_t i = 0; i < summonFx_.size(); ++i) {
                     summonFx_[i].revision = summonFxRevision_ * 1000u + static_cast<unsigned>(i) + 1u;
-                    for (const TexturedVertex &v : summonFx_[i].vertices) {
-                        sum += v.position;
-                        ++count;
-                    }
+                    for (const TexturedVertex &v : summonFx_[i].vertices) all.push_back(v.position);
                 }
-                summonFxCentre_ = count ? sum * (1.0f / static_cast<float>(count)) : Vec3{};
+                summonFxEnds_[0] = summonFxEnds_[1] = Vec3{};
+                if (!all.empty()) {
+                    auto farthest = [&](const Vec3 &from) {
+                        Vec3 best = from;
+                        for (const Vec3 &q : all)
+                            if (Length(q - from) > Length(best - from)) best = q;
+                        return best;
+                    };
+                    Vec3 a = farthest(all[0]), b = farthest(a);
+                    // [0] the end nearer the grip (larger z: the blade runs along -Z), [1] the other.
+                    if (a.z < b.z) std::swap(a, b);
+                    summonFxEnds_[0] = a;
+                    summonFxEnds_[1] = b;
+                }
             }
             std::vector<PlatformEnemyHit> hits;
             decomp_->TakeEnemyHits(&hits);
@@ -1217,18 +1226,21 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                         while (f + 1 < summonFxAt_.size() && summonFxAt_[f + 1] <= since) ++f;
                         // Its own size and place round the blade (First person > Summon effect...),
                         // in the Keyblade's frame: one blade length a unit, the blade along -Z.
-                        // Sized, flipped, tilted and turned about its own middle (on the blade),
-                        // then moved: First person > Summon effect size, flipped, tilt, turn, along,
-                        // sideways, up.
+                        // Fitted to the Keyblade: the glow's long axis turned onto the blade and
+                        // scaled so its ends are at the Keyblade's pommel and tip (flipped swaps
+                        // which end goes where); then sized, turned about the blade and moved about
+                        // the Keyblade's middle (First person > Summon effect ...).
                         const float l = std::max(1e-3f, len);
-                        Quat spin = Quat::AxisAngle({0, 0, 1}, DegToRad(settings_.Get(SettingId::FpSummonTurn))) *
-                                    Quat::AxisAngle({1, 0, 0}, DegToRad(settings_.Get(SettingId::FpSummonTilt)));
-                        if (settings_.Bool(SettingId::FpSummonFlip)) spin = spin * Quat::AxisAngle({1, 0, 0}, kPi);
+                        const Mat4 fit = SummonFit(held, settings_.Bool(SettingId::FpSummonFlip));
+                        float zTop = 0.0f, zBottom = 0.0f;
+                        KeybladeEnds(held, &zTop, &zBottom);
+                        const Vec3 middle{0, 0, 0.5f * (zTop + zBottom)};
                         const Vec3 move{settings_.Get(SettingId::FpSummonRight) / l, settings_.Get(SettingId::FpSummonUp) / l,
                                         -settings_.Get(SettingId::FpSummonAlong) / l};
-                        const Mat4 fx = model * Mat4::FromSimilarity({1.0f, Quat(), summonFxCentre_ + move}) *
+                        const Quat spin = Quat::AxisAngle({0, 0, 1}, DegToRad(settings_.Get(SettingId::FpSummonTurn)));
+                        const Mat4 fx = model * Mat4::FromSimilarity({1.0f, Quat(), middle + move}) *
                                         Mat4::FromSimilarity({settings_.Get(SettingId::FpSummonSize), spin, Vec3{}}) *
-                                        Mat4::FromSimilarity({1.0f, Quat(), summonFxCentre_ * -1.0f});
+                                        Mat4::FromSimilarity({1.0f, Quat(), middle * -1.0f}) * fit;
                         if (!summonFx_[f].vertices.empty())
                             renderer_.DrawTexturedWorld(summonFx_[f], vpTracking * fx, nearest, WorldMotion(), 5);
                     }
@@ -1298,6 +1310,40 @@ void VrApp::DrawDamageNumbers(const XrFrameInput &in, const Mat4 &vpTracking) {
             renderer_.DrawQuad(digitTex_[digit].id(), p, h * 28.0f / 48.0f, h, vpTracking, alpha, 0.0f, 1.0f, false, true);
         }
     }
+}
+
+void VrApp::KeybladeEnds(const TexturedWorld &held, float *top, float *bottom) const {
+    // In the hand's frame (one blade length a unit, the blade along -Z from the grip): the tip at
+    // the least z, the pommel at the most.
+    *top = -1.0f;
+    *bottom = 0.0f;
+    if (held.vertices.empty()) return;
+    *top = 1e9f;
+    *bottom = -1e9f;
+    for (const TexturedVertex &v : held.vertices) {
+        *top = std::min(*top, v.position.z);
+        *bottom = std::max(*bottom, v.position.z);
+    }
+}
+
+Mat4 VrApp::SummonFit(const TexturedWorld &held, bool flip) const {
+    // The summoning glow's two ends onto the Keyblade's pommel and tip, on the blade's line.
+    float zTop = -1.0f, zBottom = 0.0f;
+    KeybladeEnds(held, &zTop, &zBottom);
+    Vec3 low = summonFxEnds_[0], high = summonFxEnds_[1];
+    if (flip) std::swap(low, high);
+    const Vec3 along = high - low;
+    const float length = Length(along);
+    if (length < 1e-5f) return Mat4::Identity();
+    const Vec3 u = along * (1.0f / length), target{0, 0, -1};
+    const Vec3 axis = Cross(u, target);
+    const float s = Length(axis), c = Clamp(Dot(u, target), -1.0f, 1.0f);
+    Quat turn;
+    if (s > 1e-5f) turn = Quat::AxisAngle(axis * (1.0f / s), std::atan2(s, c));
+    else if (c < 0.0f) turn = Quat::AxisAngle({1, 0, 0}, kPi);
+    const float scale = (zBottom - zTop) / length;
+    const Vec3 bottom{0, 0, zBottom};
+    return Mat4::FromSimilarity({scale, turn, bottom - turn.Rotate(low) * scale});
 }
 
 Vec3 VrApp::KeybladeShift(int h, const Pose &grip) const {

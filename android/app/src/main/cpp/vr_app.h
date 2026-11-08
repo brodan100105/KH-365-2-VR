@@ -172,7 +172,9 @@ private:
     std::vector<TexturedWorld> summonFx_;
     std::vector<float> summonFxAt_;
     unsigned summonFxRevision_ = 0;
-    Vec3 summonFxCentre_;  // its middle over all its frames, in the hand's frame
+    Vec3 summonFxEnds_[2];  // its two ends over all its frames (hand's frame): [0] nearer the grip
+    void KeybladeEnds(const TexturedWorld &held, float *top, float *bottom) const;
+    Mat4 SummonFit(const TexturedWorld &held, bool flip) const;
     bool summonAsked_ = false;  // First person > Record the summoning effect again, passed on
     Vec3 KeybladeShift(int hand, const Pose &grip) const;
     // Damage numbers floating up from hits enemies took (world space), in first person.

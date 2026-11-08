@@ -145,19 +145,19 @@ std::vector<SettingDef> BuildDefs() {
     d.push_back(F(S::FpKeybladeForward, "First person", "keyblade_forward", "Keyblade forward", 0.0f, -0.15f, 0.15f, 0.005f, "m",
                   "Moves the Keyblade in your hand forward or back."));
     d.push_back(F(S::FpSummonSize, "First person", "summon_size", "Summon effect size", 1.0f, 0.2f, 2.0f, 0.05f, "x",
-                  "How large the game's summoning glow is round the Keyblade as it appears."));
+                  "How large the game's summoning glow is round the Keyblade as it appears (1: from the "
+                  "Keyblade's pommel to its tip)."));
     d.push_back(F(S::FpSummonAlong, "First person", "summon_along", "Summon effect along blade", 0.0f, -0.6f, 0.6f, 0.01f, "m",
                   "Moves the summoning glow along the Keyblade (above 0 toward its tip)."));
     d.push_back(F(S::FpSummonRight, "First person", "summon_right", "Summon effect sideways", 0.0f, -0.3f, 0.3f, 0.01f, "m",
                   "Moves the summoning glow across the Keyblade, to one side or the other."));
     d.push_back(F(S::FpSummonUp, "First person", "summon_up", "Summon effect up", 0.0f, -0.3f, 0.3f, 0.01f, "m",
                   "Moves the summoning glow across the Keyblade the other way (up or down from it)."));
-    d.push_back(F(S::FpSummonTilt, "First person", "summon_tilt", "Summon effect tilt", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
-                  "Tilts the summoning glow about its middle, toward your wrist (below 0) or away from it."));
     d.push_back(F(S::FpSummonTurn, "First person", "summon_turn", "Summon effect turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",
-                  "Turns the summoning glow about the blade."));
+                  "Turns the summoning glow about the blade, as Keyblade turn turns the Keyblade. (It is "
+                  "fitted to the Keyblade on its own: its ends at the Keyblade's.)"));
     d.push_back(B(S::FpSummonFlip, "First person", "summon_flip", "Summon effect flipped", true,
-                  "Turns the summoning glow end over end (if it shows upside down along the blade)."));
+                  "Swaps the summoning glow's ends: its top at the Keyblade's tip or at its pommel."));
     d.push_back(B(S::FpSummonRecord, "First person", "summon_record", "Record the summoning effect again", false,
                   "Turn on, then let Roxas draw his Keyblade in the game (put away a second or more, then "
                   "attack): its summoning glow is recorded again, replacing the one kept. It turns itself "
