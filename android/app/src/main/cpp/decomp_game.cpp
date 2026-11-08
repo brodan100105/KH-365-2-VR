@@ -51,6 +51,62 @@ aaudio_data_callback_result_t AudioCallback(AAudioStream *, void *, void *data, 
     Platform::Get().ReadAudio(static_cast<int16_t *>(data), static_cast<size_t>(frames));
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
+
+// A captured model as the headset draws it, and back (the saved place, the Keyblade kept from
+// your game between launches).
+void ToTextured(const PlatformWorld &w, TexturedWorld *out) {
+    TexturedWorld &t = *out;
+    t = TexturedWorld();
+    t.vertices.reserve(w.vertices.size());
+    for (const PlatformWorldVertex &v : w.vertices) t.vertices.push_back({{v.x, v.y, v.z}, v.u, v.v, v.color});
+    t.triangleTexture = w.triangleTexture;
+    t.triangleFlags = w.triangleFlags;
+    t.textures.resize(w.textures.size());
+    for (size_t i = 0; i < w.textures.size(); ++i) {
+        const PlatformWorldTexture &a = w.textures[i];
+        WorldTexture &b = t.textures[i];
+        b.key = a.key;
+        b.width = a.width;
+        b.height = a.height;
+        b.repeatS = a.repeatS;
+        b.repeatT = a.repeatT;
+        b.flipS = a.flipS;
+        b.flipT = a.flipT;
+        b.rgba = a.rgba;
+    }
+    t.revision = 1;
+}
+
+void ToPlatform(const TexturedWorld &t, PlatformWorld *out) {
+    PlatformWorld &w = *out;
+    w = PlatformWorld();
+    w.vertices.reserve(t.vertices.size());
+    for (const TexturedVertex &v : t.vertices) {
+        PlatformWorldVertex p{};
+        p.x = v.position.x;
+        p.y = v.position.y;
+        p.z = v.position.z;
+        p.u = v.u;
+        p.v = v.v;
+        p.color = v.color;
+        w.vertices.push_back(p);
+    }
+    w.triangleTexture = t.triangleTexture;
+    w.triangleFlags = t.triangleFlags;
+    w.textures.resize(t.textures.size());
+    for (size_t i = 0; i < t.textures.size(); ++i) {
+        const WorldTexture &a = t.textures[i];
+        PlatformWorldTexture &b = w.textures[i];
+        b.key = a.key;
+        b.width = a.width;
+        b.height = a.height;
+        b.repeatS = a.repeatS;
+        b.repeatT = a.repeatT;
+        b.flipS = a.flipS;
+        b.flipT = a.flipT;
+        b.rgba = a.rgba;
+    }
+}
 }  // namespace
 
 void DecompGame::OpenAudio() {
@@ -115,6 +171,13 @@ bool DecompGame::Start(const std::vector<std::string> &romDirs, const std::strin
     PlatformConfig cfg;
     cfg.romPath = rom;
     dataDir_ = dataDir;
+    {
+        // The Keyblade last taken from your game (khvr_keyblade.bin), until the game draws one.
+        PlatformWorld kept;
+        if (PlatformWorldRead(dataDir + "/khvr_keyblade.bin", &kept) && !kept.vertices.empty() &&
+            kept.vertices.size() == kept.triangleFlags.size() * 3)
+            ToTextured(kept, &heldWeapon_);
+    }
     cfg.savePath = dataDir + "/khdays.sav";
     cfg.logPath = dataDir + "/khvr_boot.log";
     cfg.fileListPath = dataDir + "/khvr_files.txt";
@@ -593,7 +656,15 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
             Platform::Get().LogLine(line);
         }
     }
+    const size_t before = k.vertices.size();
     CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
+    // Kept on the headset (from your own game) so it is in your hand from the start next time,
+    // before Roxas has drawn it in a scene; saved again when another Keyblade is taken.
+    if (k.vertices.size() != before && !dataDir_.empty()) {
+        PlatformWorld keep;
+        ToPlatform(k, &keep);
+        PlatformWorldWrite(dataDir_ + "/khvr_keyblade.bin", keep);
+    }
 }
 
 bool DecompGame::SavePlace() {
@@ -634,26 +705,7 @@ bool DecompGame::LoadPlace(TexturedWorld *world, Vec3 *feet, float *yaw) {
     const int n = std::fscanf(f, "%f %f %f %f", &x, &y, &z, &heading);
     std::fclose(f);
     if (n != 4) return false;
-    TexturedWorld &t = *world;
-    t = TexturedWorld();
-    t.vertices.reserve(w.vertices.size());
-    for (const PlatformWorldVertex &v : w.vertices) t.vertices.push_back({{v.x, v.y, v.z}, v.u, v.v, v.color});
-    t.triangleTexture = w.triangleTexture;
-    t.triangleFlags = w.triangleFlags;
-    t.textures.resize(w.textures.size());
-    for (size_t i = 0; i < w.textures.size(); ++i) {
-        const PlatformWorldTexture &a = w.textures[i];
-        WorldTexture &b = t.textures[i];
-        b.key = a.key;
-        b.width = a.width;
-        b.height = a.height;
-        b.repeatS = a.repeatS;
-        b.repeatT = a.repeatT;
-        b.flipS = a.flipS;
-        b.flipT = a.flipT;
-        b.rgba = a.rgba;
-    }
-    t.revision = 1;
+    ToTextured(w, world);
     *feet = {x, y, z};
     *yaw = YawOf(Vec3{std::sin(heading), 0.0f, std::cos(heading)});
     return true;
