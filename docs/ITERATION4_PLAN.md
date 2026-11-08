@@ -152,10 +152,16 @@ and into VR as real geometry around you.
       kept and given to the game the moment it can (Ov022_TranslateCommandToAction drops an A
       press while Ov022_IsActionAllowed says no), while the enemy is still there and locked or
       soft-locked, so swinging on plays the chain through.
-- [ ] Keyblade effects in first person: the game's own summoning effect (as the game plays it
-      when Roxas draws his Keyblade, read from the running game) when it appears in your hand,
-      with the grow-in kept; trails on your swings, and damage numbers floating up briefly from
-      an enemy you hit (first person in VR only).
+- [x] Keyblade trail and summon glint (in test): a light ribbon behind the blade in your hand
+      when its tip moves fast, and a glint up the blade, in front of it, as it grows in (First
+      person > Keyblade trail, Trail length). Our own effects, from where your blade really goes.
+- [x] Damage numbers (in test): Ov107_CalcHitDamage, which every enemy's hit goes through, is
+      wrapped (guest/overrides) to tell the platform the damage and where the hit landed
+      (khvr_host_enemy_hit); in first person the number floats up 0.35 m from there over a
+      second, facing you (First person > Damage numbers). The first hits go to the boot log.
+- [x] The Keyblade kept between launches (khvr_keyblade.bin), so a grip hold brings it out
+      before Roxas has drawn it; held weapons gripped where Roxas's hand is (the Struggle bat).
+- [ ] The game's own summoning effect in place of the glint, if one exists to borrow.
 
 ## Step 5b: magic from the Keyblade (after full-body IK and first-person Keyblade combat are right)
 
