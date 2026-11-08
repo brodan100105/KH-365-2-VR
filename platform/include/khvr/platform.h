@@ -211,6 +211,9 @@ public:
     void SetCapturedCards(bool on);
     // The hits enemies took since the last call (oldest first), into `out` (replaced).
     void TakeEnemyHits(std::vector<PlatformEnemyHit> *out);
+    // The weapon (row of its weapon table) a scene last loaded for character `slot` (0 Roxas), -1
+    // none yet.
+    int WeaponRow(int slot) const;
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
     // how long CaptureScreens took.
     void NoteDisplay(bool skipped, float captureMs);

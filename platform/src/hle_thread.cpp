@@ -343,6 +343,10 @@ void w2c_env_khvr_host_enemy_hit(struct w2c_env *, u32 actor, u32 damage, u32 po
     NoteEnemyHit(actor, static_cast<int32_t>(damage), p);
 }
 
+void w2c_env_khvr_host_weapon_row(struct w2c_env *, u32 slot, u32 row) {
+    NoteWeaponRow(static_cast<int32_t>(slot), static_cast<int32_t>(row));
+}
+
 void w2c_env_khvr_host_joint(struct w2c_env *, u32 obj, u32 node) { GxJoint(obj, node); }
 
 void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }

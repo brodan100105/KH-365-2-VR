@@ -242,6 +242,7 @@ std::atomic<bool> gWorldCapture{false};
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
 void Platform::SetCapturedCards(bool on) { hle::gCapturedCards = on; }
 void Platform::TakeEnemyHits(std::vector<PlatformEnemyHit> *out) { hle::TakeEnemyHits(out); }
+int Platform::WeaponRow(int slot) const { return hle::WeaponRow(slot); }
 void Platform::SetDrawAll(bool on) { hle::gDrawAll = on; }
 
 void Platform::SetWorldCapture(bool on) {
@@ -365,6 +366,17 @@ void NoteEnemyHit(uint32_t actor, int32_t damage, const float point[3]) {
         Log("hit: enemy 0x%08x took %d at %.2f %.2f %.2f", actor, damage, point[0], point[1], point[2]);
     }
 }
+
+namespace {
+std::atomic<int32_t> gWeaponRow[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+}  // namespace
+
+void NoteWeaponRow(int32_t slot, int32_t row) {
+    if (slot < 0 || slot >= 8) return;
+    if (gWeaponRow[slot].exchange(row) != row) Log("weapon: character %d has weapon %d", slot, row);
+}
+
+int32_t WeaponRow(int32_t slot) { return slot >= 0 && slot < 8 ? gWeaponRow[slot].load() : -1; }
 
 void TakeEnemyHits(std::vector<PlatformEnemyHit> *out) {
     std::lock_guard<std::mutex> lock(gEnemyHitsMu);

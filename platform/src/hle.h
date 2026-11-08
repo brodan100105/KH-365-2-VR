@@ -40,6 +40,9 @@ void TakePlayerStep(int32_t xz[2]);
 // An enemy took damage from a hit at `point` (world, game units): queued for the headset.
 void NoteEnemyHit(uint32_t actor, int32_t damage, const float point[3]);
 void TakeEnemyHits(std::vector<PlatformEnemyHit> *out);
+// A scene loaded character `slot`'s weapon `row`; the last row per slot (-1 none yet).
+void NoteWeaponRow(int32_t slot, int32_t row);
+int32_t WeaponRow(int32_t slot);
 // The index of the joint named `name` in a render object's model, -1 none.
 int ModelJointIndex(uint32_t obj, const char *name);
 

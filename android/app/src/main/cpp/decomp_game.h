@@ -102,6 +102,9 @@ private:
     double heldSeen_ = 0.0;  // steady-clock seconds the held Keyblade was last drawn by the game
     // From a capture with Roxas's models: his Keyblade, in the hand's frame, into heldWeapon_.
     void TakeHeldWeapon(const PlatformWorld &w);
+    // The scene loaded another weapon for Roxas: the one kept for it into heldWeapon_.
+    void KeepEquippedWeapon();
+    int heldRow_ = -1;  // the weapon (row) heldWeapon_ is, -1 not known
     // ... and his hands, into hands_.
     TexturedWorld hands_[2];
     // Room-scale steps already given to the game this game frame, and whether a frame was shown.

@@ -476,6 +476,7 @@ void DecompGame::Advance(double now, const GameRequests &requests, uint16_t (*sa
             b.flipT = a.flipT;
             b.rgba = a.rgba;
         }
+        KeepEquippedWeapon();
         TakeHeldWeapon(w);
         TakeHands(w);
         t.lockOn = w.lockOn;
@@ -616,38 +617,61 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     // His hands as the game draws them this frame (world space): the part of a weapon nearest
     // one is where he holds it (a Struggle bat's guard by its handle was taken for its tip, the
     // bat drawn upside down in your hand).
-    std::vector<Vec3> handPoints;
+    // Each hand's middle: where along a weapon it is held is where the middle of his hand is
+    // (the point of the weapon nearest his hand was a Keyblade's wide guard, not its handle).
+    Vec3 handMid[2];
+    int handCount[2] = {0, 0};
     for (size_t t = 0; t < triangles; ++t)
-        if (w.triangleModel[t] == kWorldModelHand || w.triangleModel[t] == kWorldModelHand + 1)
-            for (int k = 0; k < 3; ++k) {
-                const PlatformWorldVertex &v = w.vertices[t * 3 + k];
-                handPoints.push_back({v.x, v.y, v.z});
-            }
+        for (int hnd = 0; hnd < 2; ++hnd)
+            if (w.triangleModel[t] == kWorldModelHand + hnd)
+                for (int k = 0; k < 3; ++k) {
+                    const PlatformWorldVertex &v = w.vertices[t * 3 + k];
+                    handMid[hnd] += Vec3{v.x, v.y, v.z};
+                    ++handCount[hnd];
+                }
+    for (int hnd = 0; hnd < 2; ++hnd)
+        if (handCount[hnd]) handMid[hnd] = handMid[hnd] * (1.0f / static_cast<float>(handCount[hnd]));
     // Of the models attached to Roxas, the longest is his Keyblade.
     int best = -1;
     WeaponFrame frame;
     for (int a = 0; a < kWorldAttachedMax; ++a) {
-        std::vector<Vec3> points;
-        Vec3 held;
-        float heldDist = 1e30f;
+        std::vector<Vec3> points, world;
         for (size_t t = 0; t < triangles; ++t)
             if (w.triangleModel[t] == kWorldModelAttached + a)
                 for (int k = 0; k < 3; ++k) {
                     const float *l = &w.local[(t * 3 + k) * 3];
                     points.push_back({l[0], l[1], l[2]});
                     const PlatformWorldVertex &v = w.vertices[t * 3 + k];
-                    for (const Vec3 &h : handPoints) {
-                        const float d = Length(Vec3{v.x, v.y, v.z} - h);
-                        if (d < heldDist) {
-                            heldDist = d;
-                            held = points.back();
-                        }
-                    }
+                    world.push_back({v.x, v.y, v.z});
                 }
         // The capture keeps only solid models on him (his Keyblade has 7 to 12 polygons).
         if (points.size() < 4 * 3) continue;
-        // (Only a hand right at it says where it is held: within a hand's length.)
-        WeaponFrame f = FindWeaponFrame(points, heldDist < 0.25f ? &held : nullptr);
+        // Its length in the world (the two vertices farthest apart), and the hand nearest that
+        // line: how far along it the hand's middle is, the same in its own model's space (it is
+        // only moved, turned and scaled).
+        Vec3 held;
+        bool hint = false;
+        {
+            size_t ia = 0, ib = 0;
+            for (size_t i = 0; i < world.size(); ++i)
+                if (Length(world[i] - world[0]) > Length(world[ia] - world[0])) ia = i;
+            for (size_t i = 0; i < world.size(); ++i)
+                if (Length(world[i] - world[ia]) > Length(world[ib] - world[ia])) ib = i;
+            const Vec3 along = world[ib] - world[ia];
+            const float len2 = Dot(along, along);
+            float nearest = 0.25f;  // within a hand's length of the blade's line
+            for (int hnd = 0; hnd < 2 && len2 > 1e-8f; ++hnd) {
+                if (!handCount[hnd]) continue;
+                const float s = Clamp(Dot(handMid[hnd] - world[ia], along) / len2, 0.0f, 1.0f);
+                const float d = Length(world[ia] + along * s - handMid[hnd]);
+                if (d < nearest) {
+                    nearest = d;
+                    held = points[ia] + (points[ib] - points[ia]) * s;
+                    hint = true;
+                }
+            }
+        }
+        WeaponFrame f = FindWeaponFrame(points, hint ? &held : nullptr);
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;
             frame = f;
@@ -684,11 +708,30 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     const size_t before = k.vertices.size();
     CopyTriangles(w, kWorldModelAttached + best, [&](const Vec3 &l) { return frame.ToHand(l); }, &k);
     // Kept on the headset (from your own game) so it is in your hand from the start next time,
-    // before Roxas has drawn it in a scene; saved again when another Keyblade is taken.
-    if (k.vertices.size() != before && !dataDir_.empty()) {
+    // before Roxas has drawn it in a scene: one file per weapon (the row the scene loaded for
+    // him), and the last one taken; saved again when another is taken.
+    const int row = Platform::Get().WeaponRow(0);
+    const bool changed = k.vertices.size() != before || row != heldRow_;
+    heldRow_ = row;
+    if (changed && !dataDir_.empty()) {
         PlatformWorld keep;
         ToPlatform(k, &keep);
         PlatformWorldWrite(dataDir_ + "/khvr_keyblade.bin", keep);
+        if (row >= 0) PlatformWorldWrite(dataDir_ + "/khvr_keyblade_" + std::to_string(row) + ".bin", keep);
+    }
+}
+
+void DecompGame::KeepEquippedWeapon() {
+    // A scene loaded another weapon for Roxas than the one in your hand: the one kept for it, if
+    // he has drawn it before (else the last one stays until he draws this one).
+    const int row = Platform::Get().WeaponRow(0);
+    if (row < 0 || row == heldRow_ || dataDir_.empty()) return;
+    heldRow_ = row;
+    PlatformWorld kept;
+    if (PlatformWorldRead(dataDir_ + "/khvr_keyblade_" + std::to_string(row) + ".bin", &kept) && !kept.vertices.empty() &&
+        kept.vertices.size() == kept.triangleFlags.size() * 3) {
+        ToTextured(kept, &heldWeapon_);
+        Platform::Get().LogLine("keyblade: weapon " + std::to_string(row) + " from the one kept for it");
     }
 }
 
