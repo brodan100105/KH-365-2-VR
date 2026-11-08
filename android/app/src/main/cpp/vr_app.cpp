@@ -927,8 +927,19 @@ void VrApp::Frame(const XrFrameInput &in) {
             // The game's summoning effect, when it was (re)recorded: each frame its own revision,
             // so the renderer takes each as new.
             if (decomp_->TakeSummonEffect(&summonFxRevision_, &summonFx_, &summonFxAt_))
-                for (size_t i = 0; i < summonFx_.size(); ++i)
+            {
+                // (and its middle, over all its frames: what it is sized and turned about)
+                Vec3 sum;
+                size_t count = 0;
+                for (size_t i = 0; i < summonFx_.size(); ++i) {
                     summonFx_[i].revision = summonFxRevision_ * 1000u + static_cast<unsigned>(i) + 1u;
+                    for (const TexturedVertex &v : summonFx_[i].vertices) {
+                        sum += v.position;
+                        ++count;
+                    }
+                }
+                summonFxCentre_ = count ? sum * (1.0f / static_cast<float>(count)) : Vec3{};
+            }
             std::vector<PlatformEnemyHit> hits;
             decomp_->TakeEnemyHits(&hits);
             if (mode == ViewMode::FirstPerson && settings_.Bool(SettingId::FpDamageNumbers))
@@ -1206,12 +1217,18 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
                         while (f + 1 < summonFxAt_.size() && summonFxAt_[f + 1] <= since) ++f;
                         // Its own size and place round the blade (First person > Summon effect...),
                         // in the Keyblade's frame: one blade length a unit, the blade along -Z.
+                        // Sized, flipped, tilted and turned about its own middle (on the blade),
+                        // then moved: First person > Summon effect size, flipped, tilt, turn, along,
+                        // sideways, up.
                         const float l = std::max(1e-3f, len);
-                        const Mat4 fx = model * Mat4::FromSimilarity(
-                                                    {settings_.Get(SettingId::FpSummonSize), Quat(),
-                                                     Vec3{settings_.Get(SettingId::FpSummonRight) / l,
-                                                          settings_.Get(SettingId::FpSummonUp) / l,
-                                                          -settings_.Get(SettingId::FpSummonAlong) / l}});
+                        Quat spin = Quat::AxisAngle({0, 0, 1}, DegToRad(settings_.Get(SettingId::FpSummonTurn))) *
+                                    Quat::AxisAngle({1, 0, 0}, DegToRad(settings_.Get(SettingId::FpSummonTilt)));
+                        if (settings_.Bool(SettingId::FpSummonFlip)) spin = spin * Quat::AxisAngle({1, 0, 0}, kPi);
+                        const Vec3 move{settings_.Get(SettingId::FpSummonRight) / l, settings_.Get(SettingId::FpSummonUp) / l,
+                                        -settings_.Get(SettingId::FpSummonAlong) / l};
+                        const Mat4 fx = model * Mat4::FromSimilarity({1.0f, Quat(), summonFxCentre_ + move}) *
+                                        Mat4::FromSimilarity({settings_.Get(SettingId::FpSummonSize), spin, Vec3{}}) *
+                                        Mat4::FromSimilarity({1.0f, Quat(), summonFxCentre_ * -1.0f});
                         if (!summonFx_[f].vertices.empty())
                             renderer_.DrawTexturedWorld(summonFx_[f], vpTracking * fx, nearest, WorldMotion(), 5);
                     }

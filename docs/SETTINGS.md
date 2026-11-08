@@ -73,6 +73,9 @@ hands, DS + giant screen) and the options changed most.
 | `summon_along` | Summon effect along blade | -0.6 to 0.6 m | `0` | Moves the summoning glow along the Keyblade (above 0 toward its tip). |
 | `summon_right` | Summon effect sideways | -0.3 to 0.3 m | `0` | Moves the summoning glow across the Keyblade, to one side or the other. |
 | `summon_up` | Summon effect up | -0.3 to 0.3 m | `0` | Moves the summoning glow across the Keyblade the other way (up or down from it). |
+| `summon_tilt` | Summon effect tilt | -90 to 90 deg | `0` | Tilts the summoning glow about its middle, toward your wrist (below 0) or away from it. |
+| `summon_turn` | Summon effect turn | -180 to 180 deg | `0` | Turns the summoning glow about the blade. |
+| `summon_flip` | Summon effect flipped | `true` / `false` | `true` | Turns the summoning glow end over end (if it shows upside down along the blade). |
 | `summon_record` | Record the summoning effect again | `true` / `false` | `false` | Turn on, then let Roxas draw his Keyblade in the game (put away a second or more, then attack): its summoning glow is recorded again, replacing the one kept. It turns itself off once recorded. |
 | `hand_size` | Hand size | 0.5 to 1.5 x | `0.9` | How big Roxas's hands are on your controllers. |
 | `hand_turn` | Hand turn | -180 to 180 deg | `0` | Turns Roxas's hands about your wrists (if his palms face the wrong way). The change shows at once while the panel is open. |

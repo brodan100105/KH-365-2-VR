@@ -152,6 +152,12 @@ std::vector<SettingDef> BuildDefs() {
                   "Moves the summoning glow across the Keyblade, to one side or the other."));
     d.push_back(F(S::FpSummonUp, "First person", "summon_up", "Summon effect up", 0.0f, -0.3f, 0.3f, 0.01f, "m",
                   "Moves the summoning glow across the Keyblade the other way (up or down from it)."));
+    d.push_back(F(S::FpSummonTilt, "First person", "summon_tilt", "Summon effect tilt", 0.0f, -90.0f, 90.0f, 5.0f, "deg",
+                  "Tilts the summoning glow about its middle, toward your wrist (below 0) or away from it."));
+    d.push_back(F(S::FpSummonTurn, "First person", "summon_turn", "Summon effect turn", 0.0f, -180.0f, 180.0f, 15.0f, "deg",
+                  "Turns the summoning glow about the blade."));
+    d.push_back(B(S::FpSummonFlip, "First person", "summon_flip", "Summon effect flipped", true,
+                  "Turns the summoning glow end over end (if it shows upside down along the blade)."));
     d.push_back(B(S::FpSummonRecord, "First person", "summon_record", "Record the summoning effect again", false,
                   "Turn on, then let Roxas draw his Keyblade in the game (put away a second or more, then "
                   "attack): its summoning glow is recorded again, replacing the one kept. It turns itself "
