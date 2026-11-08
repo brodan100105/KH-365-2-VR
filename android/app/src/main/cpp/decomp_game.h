@@ -137,6 +137,11 @@ public:
 
 private:
     int heldRow_ = -1;  // the weapon (row) heldWeapon_ is, -1 not known
+    // The Keyblade's frame in its model, kept after its first frames (kHeldFrameTakes).
+    static constexpr int kHeldFrameTakes = 20;
+    WeaponFrame heldFrame_;
+    size_t heldFrameTris_ = 0;
+    int heldFrameRow_ = -2, heldFrameTakes_ = 0;
     // ... and his hands, into hands_.
     TexturedWorld hands_[2];
     // Room-scale steps already given to the game this game frame, and whether a frame was shown.

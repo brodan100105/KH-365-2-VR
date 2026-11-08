@@ -704,6 +704,24 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     // The game's model faces the other way about its blade from the frame found: turned half round.
     frame.side = frame.side * -1.0f;
     {
+        // Worked out over the first frames this Keyblade is seen, then kept: worked out each
+        // frame, Roxas's idle sway moved his hand along it and the Keyblade swayed in yours.
+        size_t n = 0;
+        for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;
+        const int row = Platform::Get().WeaponRow(0);
+        if (n != heldFrameTris_ || row != heldFrameRow_) {
+            heldFrameTris_ = n;
+            heldFrameRow_ = row;
+            heldFrameTakes_ = 0;
+        }
+        if (heldFrameTakes_ < kHeldFrameTakes) {
+            heldFrame_ = frame;
+            ++heldFrameTakes_;
+        } else {
+            frame = heldFrame_;
+        }
+    }
+    {
         // Into the boot log when what is taken changes (to tell a Keyblade from an effect).
         size_t n = 0;
         for (size_t t = 0; t < triangles; ++t) n += w.triangleModel[t] == kWorldModelAttached + best;
@@ -770,6 +788,49 @@ void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     }
 }
 
+// The summoning glow along the blade in the hand's frame (the blade along -Z from the grip at
+// the origin): its long axis, over all its frames, turned onto the blade and its middle onto the
+// blade's line, one turn for all so its animation stays as recorded. Recorded while the
+// Keyblade was still swinging into Roxas's hand, it stood askew of the Keyblade in yours.
+void AlignSummonToBlade(std::vector<TexturedWorld> *frames) {
+    std::vector<Vec3> all;
+    for (const TexturedWorld &f : *frames)
+        for (const TexturedVertex &v : f.vertices) all.push_back(v.position);
+    if (all.size() < 3) return;
+    Vec3 c;
+    for (const Vec3 &p : all) c += p;
+    c = c * (1.0f / static_cast<float>(all.size()));
+    auto farthest = [&](const Vec3 &from) {
+        Vec3 best = from;
+        for (const Vec3 &p : all)
+            if (Length(p - from) > Length(best - from)) best = p;
+        return best;
+    };
+    const Vec3 a = farthest(all[0]), b = farthest(a);
+    const float length = Length(b - a);
+    if (length < 1e-4f) return;
+    Vec3 u = (b - a) * (1.0f / length);
+    float width = 0.0f;
+    for (const Vec3 &p : all) {
+        const Vec3 d = p - c;
+        width = std::max(width, Length(d - u * Dot(d, u)));
+    }
+    Quat turn;
+    if (length > 2.6f * width) {
+        // Long: along the blade, the way nearer the blade's (-Z).
+        if (u.z > 0) u = u * -1.0f;
+        const Vec3 target{0, 0, -1};
+        const Vec3 axis = Cross(u, target);
+        const float s = Length(axis), cosA = Clamp(Dot(u, target), -1.0f, 1.0f);
+        if (s > 1e-5f) turn = Quat::AxisAngle(axis * (1.0f / s), std::acos(cosA));
+    }
+    for (TexturedWorld &f : *frames)
+        for (TexturedVertex &v : f.vertices) {
+            Vec3 p = turn.Rotate(v.position - c);
+            v.position = Vec3{p.x, p.y, p.z + c.z};  // on the blade's line, as far along as it was
+        }
+}
+
 void DecompGame::RecordSummon(const PlatformWorld &w, const WeaponFrame *keyblade, double now) {
     // The game's own summoning effect: the see-through models on Roxas (his effects) as he draws
     // his Keyblade after a second without it. The glow starts a few frames before the Keyblade is
@@ -828,6 +889,7 @@ void DecompGame::FinishSummon() {
     size_t drawn = 0;
     for (const TexturedWorld &f : summonTake_) drawn += !f.vertices.empty();
     if (drawn < 3) return;
+    AlignSummonToBlade(&summonTake_);
     {
         std::lock_guard<std::mutex> lock(summonMu_);
         summon_ = summonTake_;
@@ -868,7 +930,8 @@ void DecompGame::LoadSummon() {
             ToTextured(kept, &f);
         frames.push_back(std::move(f));
     }
-    if (frames.size() < 6) return;
+    if (frames.size() < 3) return;
+    AlignSummonToBlade(&frames);  // (already along it when saved by this version: no change)
     std::lock_guard<std::mutex> lock(summonMu_);
     summon_ = std::move(frames);
     summonAt_ = std::move(times);
