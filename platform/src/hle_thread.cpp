@@ -336,6 +336,13 @@ void w2c_env_khvr_host_room_step(struct w2c_env *, u32 actor, u32 xz) {
     }
 }
 
+void w2c_env_khvr_host_enemy_hit(struct w2c_env *, u32 actor, u32 damage, u32 point) {
+    if (!point || point + 12 > GuestMemSize()) return;
+    float p[3];
+    for (int k = 0; k < 3; ++k) p[k] = static_cast<int32_t>(Read32(point + 4 * k)) / 4096.0f;
+    NoteEnemyHit(actor, static_cast<int32_t>(damage), p);
+}
+
 void w2c_env_khvr_host_joint(struct w2c_env *, u32 obj, u32 node) { GxJoint(obj, node); }
 
 void w2c_env_khvr_host_model_begin(struct w2c_env *, u32 obj) { GxModelBegin(obj); }

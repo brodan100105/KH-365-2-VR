@@ -241,6 +241,7 @@ std::atomic<bool> gWorldCapture{false};
 
 void Platform::Set3dScale(int scale) { g3dScale = scale; }
 void Platform::SetCapturedCards(bool on) { hle::gCapturedCards = on; }
+void Platform::TakeEnemyHits(std::vector<PlatformEnemyHit> *out) { hle::TakeEnemyHits(out); }
 void Platform::SetDrawAll(bool on) { hle::gDrawAll = on; }
 
 void Platform::SetWorldCapture(bool on) {
@@ -342,6 +343,34 @@ std::mutex gPlayerStepMu;
 double gPlayerStep[2] = {0, 0};
 double gPlayerStepTotal[2] = {0, 0};
 int gVBlanksSinceStepTaken = 0;
+
+namespace {
+std::mutex gEnemyHitsMu;
+std::vector<PlatformEnemyHit> gEnemyHits;
+int gEnemyHitsLogged = 0;
+}  // namespace
+
+void NoteEnemyHit(uint32_t actor, int32_t damage, const float point[3]) {
+    PlatformEnemyHit h;
+    h.actor = actor;
+    h.damage = damage;
+    std::copy(point, point + 3, h.point);
+    {
+        std::lock_guard<std::mutex> lock(gEnemyHitsMu);
+        if (gEnemyHits.size() < 64) gEnemyHits.push_back(h);
+    }
+    // The first few into the boot log (to see the hit points are where the enemies are).
+    if (gEnemyHitsLogged < 12) {
+        ++gEnemyHitsLogged;
+        Log("hit: enemy 0x%08x took %d at %.2f %.2f %.2f", actor, damage, point[0], point[1], point[2]);
+    }
+}
+
+void TakeEnemyHits(std::vector<PlatformEnemyHit> *out) {
+    std::lock_guard<std::mutex> lock(gEnemyHitsMu);
+    out->swap(gEnemyHits);
+    gEnemyHits.clear();
+}
 
 void TakePlayerStep(int32_t xz[2]) {
     std::lock_guard<std::mutex> lock(gPlayerStepMu);

@@ -73,6 +73,13 @@ struct PlatformWorldTexture {
 };
 // The player character in the field (Platform::ReadPlayer): where the game keeps it, in its own
 // units (fixed point 1.0 = 4096 there, given here as floats), and its heading.
+// A hit an enemy took (Ov107_CalcHitDamage): for the damage numbers in first person.
+struct PlatformEnemyHit {
+    uint32_t actor = 0;
+    int damage = 0;
+    float point[3] = {};  // where it landed, world space, game units
+};
+
 struct PlatformPlayer {
     bool valid = false;        // false outside the field, or before the player actor exists
     uint32_t actor = 0;        // guest address of the player actor
@@ -202,6 +209,8 @@ public:
     // Captured pictures on cards in the world (the DS's own screen shown through a card, as
     // Agrabah's static): off, left out (the second screen goes to the wrist instead).
     void SetCapturedCards(bool on);
+    // The hits enemies took since the last call (oldest first), into `out` (replaced).
+    void TakeEnemyHits(std::vector<PlatformEnemyHit> *out);
     // From the driver, for the heartbeat: a frame whose screens were skipped (it ran late), or
     // how long CaptureScreens took.
     void NoteDisplay(bool skipped, float captureMs);

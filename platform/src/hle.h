@@ -7,6 +7,9 @@
 #include <cstdarg>
 #include <cstdint>
 #include <string>
+#include <vector>
+
+#include "khvr/platform.h"
 
 namespace khvr::hle {
 
@@ -34,6 +37,9 @@ extern std::atomic<int32_t> gReachBonus;
 uint32_t SwapPlayerActor();
 // Room-scale walking: the player's step for this frame (fx32 x, z), taken once.
 void TakePlayerStep(int32_t xz[2]);
+// An enemy took damage from a hit at `point` (world, game units): queued for the headset.
+void NoteEnemyHit(uint32_t actor, int32_t damage, const float point[3]);
+void TakeEnemyHits(std::vector<PlatformEnemyHit> *out);
 // The index of the joint named `name` in a render object's model, -1 none.
 int ModelJointIndex(uint32_t obj, const char *name);
 

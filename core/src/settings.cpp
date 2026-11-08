@@ -158,6 +158,8 @@ std::vector<SettingDef> BuildDefs() {
                   "the blade as it appears in your hand."));
     d.push_back(F(S::FpTrailLength, "First person", "trail_length", "Trail length", 0.18f, 0.05f, 0.5f, 0.01f, "s",
                   "How long the Keyblade's trail lasts behind a swing."));
+    d.push_back(B(S::FpDamageNumbers, "First person", "damage_numbers", "Damage numbers", true,
+                  "In first person, the damage an enemy takes floats up from where the hit landed."));
     d.push_back(B(S::FpArmsFollow, "First person", "arms_follow2", "Arms follow your hands (experimental)", false,
                   "With Show body: Body without head or Full body, Roxas's own arms reach for your "
                   "controllers (his shoulders, elbows and wrists bend; his legs keep the game's "

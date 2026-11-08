@@ -904,6 +904,21 @@ void VrApp::Frame(const XrFrameInput &in) {
             xr_->Haptic(weapon, 0.5f * settings_.Get(SettingId::CombatHaptics), 0.08f);
         }
         keybladeShown_ = show;
+#ifdef KHVR_HAS_GAME
+        // Hits enemies took: their damage floats up from where each landed (first person only).
+        if (decomp_) {
+            std::vector<PlatformEnemyHit> hits;
+            decomp_->TakeEnemyHits(&hits);
+            if (mode == ViewMode::FirstPerson && settings_.Bool(SettingId::FpDamageNumbers))
+                for (const PlatformEnemyHit &h : hits)
+                    if (h.point[0] != 0.0f || h.point[1] != 0.0f || h.point[2] != 0.0f)
+                        damageNumbers_.push_back({{h.point[0], h.point[1], h.point[2]}, h.damage, in.time});
+        }
+#endif
+        damageNumbers_.erase(std::remove_if(damageNumbers_.begin(), damageNumbers_.end(),
+                                            [&](const DamageNumber &d) { return in.time - d.born > 1.0; }),
+                             damageNumbers_.end());
+        if (damageNumbers_.size() > 24) damageNumbers_.erase(damageNumbers_.begin(), damageNumbers_.end() - 24);
         // Its trail follows the blade in your hand (where it really goes, not Roxas's swing),
         // sampled once a frame; put away or hidden (a script, a cutscene, a menu), it is cleared.
         const GameFrame &gf = game_->frame();
@@ -1186,6 +1201,46 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
     }
 }
 
+void VrApp::DrawDamageNumbers(const XrFrameInput &in, const Mat4 &vpTracking) {
+    if (damageNumbers_.empty() || !settings_.Bool(SettingId::FpDamageNumbers)) return;
+    if (!digitTex_[0].id()) {
+        // The digits, ours (the in-headset font), gold with a dark outline so they read on any
+        // background.
+        for (int d = 0; d < 10; ++d) {
+            Canvas c(28, 48);
+            c.Clear(Rgba(0, 0, 0, 0));
+            const std::string s(1, static_cast<char>('0' + d));
+            for (int dx = -2; dx <= 2; dx += 2)
+                for (int dy = -2; dy <= 2; dy += 2)
+                    if (dx || dy) c.DrawText(4 + dx, 4 + dy, s, Rgba(30, 20, 10, 230), 2);
+            c.DrawText(4, 4, s, Rgba(255, 222, 120), 2);
+            digitTex_[d].Upload(c.width(), c.height(), c.data(), true);
+        }
+    }
+    const Similarity worldToTracking = rig_.trackingToWorld.Inverse();
+    for (const DamageNumber &n : damageNumbers_) {
+        const float age = static_cast<float>(in.time - n.born);
+        if (age < 0.0f || age > 1.0f) continue;
+        // Rises 0.35 m over its second, then fades in its last 0.4 s; a little pop as it appears.
+        Vec3 at = worldToTracking.Transform(n.world);
+        at.y += 0.35f * (1.0f - (1.0f - age) * (1.0f - age));
+        const float alpha = age < 0.6f ? 1.0f : 1.0f - (age - 0.6f) / 0.4f;
+        const float pop = age < 0.12f ? 0.7f + 2.5f * age : 1.0f;
+        const Pose face = FacingEye(at, in.head.position);
+        const Vec3 right = face.orientation.Rotate({1, 0, 0});
+        const std::string text = std::to_string(n.value);
+        const float h = 0.11f * pop, w = h * 28.0f / 48.0f * 0.8f;
+        const float start = -0.5f * w * static_cast<float>(text.size() - 1);
+        for (size_t i = 0; i < text.size(); ++i) {
+            const int digit = text[i] - '0';
+            if (digit < 0 || digit > 9) continue;
+            Pose p = face;
+            p.position = at + right * (start + w * static_cast<float>(i));
+            renderer_.DrawQuad(digitTex_[digit].id(), p, h * 28.0f / 48.0f, h, vpTracking, alpha, 0.0f, 1.0f, false, true);
+        }
+    }
+}
+
 bool VrApp::DrawPlace(const Mat4 &vpTracking) {
 #ifdef KHVR_HAS_GAME
     if (!settings_.Bool(SettingId::GameUsePlace) || !decomp_) return false;
@@ -1399,6 +1454,7 @@ void VrApp::RenderEye(const XrFrameInput &in, int eye) {
                                                    tw.lockOnLocked);
                 renderer_.DrawTriangles(cursor, vpWorld, 0.95f, true);
             }
+            if (mode == ViewMode::FirstPerson) DrawDamageNumbers(in, vpTracking);
         }
         bool drawPlayer = mode == ViewMode::ThirdPerson ||
                           settings_.Enum<BodyDisplay>(SettingId::FpShowBody) == BodyDisplay::FullBody;

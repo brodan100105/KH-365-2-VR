@@ -167,6 +167,15 @@ private:
     float gripHeldFor_ = 0.0f;  // seconds the Keyblade hand's grip has been held
     double keybladeAppearedAt_ = 0.0;
     SwingTrail swingTrail_[2];  // the Keyblade's trail behind your swings, per hand
+    // Damage numbers floating up from hits enemies took (world space), in first person.
+    struct DamageNumber {
+        Vec3 world;
+        int value = 0;
+        double born = 0.0;
+    };
+    std::vector<DamageNumber> damageNumbers_;
+    Texture digitTex_[10];
+    void DrawDamageNumbers(const XrFrameInput &in, const Mat4 &vpTracking);
     int laserHand_ = 1;             // the hand the laser comes from
     int handScreenSide_ = 0;        // the hand holding or wearing the bottom screen
     // The hand the handheld was last left in after a two-handed hold (-1: Hand screen > Hand),

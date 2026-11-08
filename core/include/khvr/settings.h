@@ -70,6 +70,7 @@ enum class SettingId : int {
     FpHandForward,
     FpSwingTrail,
     FpTrailLength,
+    FpDamageNumbers,
     FpArmsFollow,
     // Combat (first person motion controls)
     CombatMotion,
