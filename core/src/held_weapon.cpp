@@ -13,7 +13,7 @@ Vec3 WeaponFrame::ToHand(const Vec3 &p) const {
     return Vec3{Dot(d, side), Dot(d, up), -Dot(d, blade)} * s;
 }
 
-WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points) {
+WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points, const Vec3 *gripHint) {
     WeaponFrame f;
     if (points.size() < 3) return f;
     // The blade: between the two points farthest apart (from the first, then from that one),
@@ -39,12 +39,20 @@ WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points) {
             teeth = p;
         }
     }
-    if (Dot(teeth - a, axis) < 0.5f * total) std::swap(a, b);
+    float gripAt = 0.2f * total;
+    if (gripHint) {
+        // Held there: that end is the pommel, the grip where the hand is along the blade.
+        const float t = Dot(*gripHint - a, axis);
+        if (t > 0.5f * total) std::swap(a, b);
+        gripAt = std::clamp(t > 0.5f * total ? total - t : t, 0.0f, 0.45f * total);
+    } else if (Dot(teeth - a, axis) < 0.5f * total) {
+        std::swap(a, b);
+    }
     f.blade = Normalize(b - a);
-    // The handle: inside the guard, a fifth of the way from the pommel's end (past the chain that
-    // hangs from it in the Kingdom Key).
-    f.grip = a + f.blade * (0.2f * total);
-    f.length = total * 0.8f;
+    // The handle: without a hint, inside the guard, a fifth of the way from the pommel's end
+    // (past the chain that hangs from it in the Kingdom Key).
+    f.grip = a + f.blade * gripAt;
+    f.length = total - gripAt;
     if (Length(off) < 1e-5f) {
         // A plain rod: any way across will do.
         off = Cross(f.blade, std::fabs(f.blade.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0});

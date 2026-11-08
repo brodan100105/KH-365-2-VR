@@ -25,7 +25,11 @@ struct WeaponFrame {
 // Finds the frame of a weapon from its vertices alone (its model's origin may be anywhere): the
 // blade between its two points farthest apart, the tip the end its teeth (the point farthest off
 // that line) are at, the grip a little in from the other end.
-WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points);
+// gripHint, when given: a point of the model where it is held (its point nearest Roxas's hand
+// as the game draws it). The end nearer it is the pommel and the grip is there; without it, the
+// end nearer the teeth (the point farthest off the blade) is the tip. Not every weapon has teeth
+// at its tip: a Struggle bat's guard sits by the handle.
+WeaponFrame FindWeaponFrame(const std::vector<Vec3> &points, const Vec3 *gripHint = nullptr);
 
 // Where a hand model lies in its hand joint's own space (the joint's pivot, the wrist, at the
 // origin): its middle, the way it runs from the wrist to the knuckles, the way its palm faces

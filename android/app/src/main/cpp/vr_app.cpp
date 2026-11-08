@@ -1174,13 +1174,13 @@ void VrApp::DrawProps(const XrFrameInput &in, const Mat4 &vpTracking) {
         const float life = settings_.Get(SettingId::FpTrailLength);
         for (int h = 0; h < 2; ++h) swingTrail_[h].Build(&effects, in.time, life);
         const float since = static_cast<float>(in.time - keybladeAppearedAt_);
-        if (keybladeShown_ && since < 0.35f && in.gripValid[weapon]) {
+        if (keybladeShown_ && since < 0.45f && in.gripValid[weapon]) {
             const float gripAngle = DegToRad(settings_.Get(SettingId::FpGripAngle));
             const Pose &g = in.grip[weapon];
             const Vec3 axis = BladeAxis(g, gripAngle);
             const Vec3 base = g.position + axis * settings_.Get(SettingId::FpKeybladeGrip);
             const float len = CombatRecognizer::kBladeLength * settings_.Get(SettingId::FpKeybladeLength);
-            BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / 0.35f);
+            BuildSummonGlint(&effects, base, base + axis * len, in.head.position, since / 0.45f);
         }
         if (!effects.triangles.empty()) renderer_.DrawTriangles(effects, vpTracking, 0.999f);
     }

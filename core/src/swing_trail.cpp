@@ -74,13 +74,16 @@ void BuildSummonGlint(WorldDrawList *out, const Vec3 &base, const Vec3 &tip, con
     Vec3 across = Cross(axis, eye - (base + tip) * 0.5f);
     if (Length(across) < 1e-5f) return;
     across = Normalize(across);
-    const float halfWidth = 0.035f, halfBand = 0.09f * length;
+    // In front of the blade, toward the eye: along its axis it was inside the Keyblade's model,
+    // hidden by its faces.
+    const Vec3 toEye = Normalize(eye - (base + tip) * 0.5f) * 0.06f;
+    const float halfWidth = 0.055f, halfBand = 0.1f * length;
     const float centre = t * length;
     const float lo = std::max(0.0f, centre - halfBand), hi = std::min(length, centre + halfBand);
     if (hi <= lo) return;
     const float strength = 1.0f - t * t;  // bright, then gone by the tip
-    const Vec3 mid = base + axis * centre;
-    const Vec3 p0 = base + axis * lo, p1 = base + axis * hi;
+    const Vec3 mid = base + toEye + axis * centre;
+    const Vec3 p0 = base + toEye + axis * lo, p1 = base + toEye + axis * hi;
     const uint32_t white = 0xfffff4u;
     // Two quads: from the band's ends to its bright middle.
     const Vec3 lower[4] = {p0 - across * halfWidth, p0 + across * halfWidth, mid + across * halfWidth, mid - across * halfWidth};

@@ -609,20 +609,41 @@ void CopyTriangles(const PlatformWorld &w, uint8_t model, Place place, TexturedW
 void DecompGame::TakeHeldWeapon(const PlatformWorld &w) {
     const size_t triangles = w.triangleFlags.size();
     if (w.triangleModel.size() != triangles || w.local.size() != w.vertices.size() * 3) return;
+    // His hands as the game draws them this frame (world space): the part of a weapon nearest
+    // one is where he holds it (a Struggle bat's guard by its handle was taken for its tip, the
+    // bat drawn upside down in your hand).
+    std::vector<Vec3> handPoints;
+    for (size_t t = 0; t < triangles; ++t)
+        if (w.triangleModel[t] == kWorldModelHand || w.triangleModel[t] == kWorldModelHand + 1)
+            for (int k = 0; k < 3; ++k) {
+                const PlatformWorldVertex &v = w.vertices[t * 3 + k];
+                handPoints.push_back({v.x, v.y, v.z});
+            }
     // Of the models attached to Roxas, the longest is his Keyblade.
     int best = -1;
     WeaponFrame frame;
     for (int a = 0; a < kWorldAttachedMax; ++a) {
         std::vector<Vec3> points;
+        Vec3 held;
+        float heldDist = 1e30f;
         for (size_t t = 0; t < triangles; ++t)
             if (w.triangleModel[t] == kWorldModelAttached + a)
                 for (int k = 0; k < 3; ++k) {
                     const float *l = &w.local[(t * 3 + k) * 3];
                     points.push_back({l[0], l[1], l[2]});
+                    const PlatformWorldVertex &v = w.vertices[t * 3 + k];
+                    for (const Vec3 &h : handPoints) {
+                        const float d = Length(Vec3{v.x, v.y, v.z} - h);
+                        if (d < heldDist) {
+                            heldDist = d;
+                            held = points.back();
+                        }
+                    }
                 }
         // The capture keeps only solid models on him (his Keyblade has 7 to 12 polygons).
         if (points.size() < 4 * 3) continue;
-        WeaponFrame f = FindWeaponFrame(points);
+        // (Only a hand right at it says where it is held: within a hand's length.)
+        WeaponFrame f = FindWeaponFrame(points, heldDist < 0.25f ? &held : nullptr);
         if (f.valid && (best < 0 || f.length > frame.length)) {
             best = a;
             frame = f;

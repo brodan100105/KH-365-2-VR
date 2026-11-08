@@ -172,6 +172,23 @@ TEST(WeaponFrameFromItsShape) {
     CHECK(f.ToHand(o + Vec3{-0.3f, 1.9f, 0}).x > 0.1f);  // the teeth towards +X
 }
 
+TEST(WeaponFrameHeldWhereTheHandIs) {
+    // A bat along +Y from y = 0 to 2 with its guard (the widest part) by the handle, at y = 0.3:
+    // the teeth rule would take the handle for the tip. Held at y = 0.15, it is the pommel end.
+    std::vector<Vec3> pts{{0, 0, 0}, {0, 2, 0}, {0.25f, 0.3f, 0}, {-0.25f, 0.3f, 0}, {0.08f, 1.5f, 0}};
+    const Vec3 held{0.02f, 0.15f, 0};
+    WeaponFrame f = FindWeaponFrame(pts, &held);
+    CHECK(f.valid);
+    CHECK(f.blade.y > 0.99f);                 // from the handle out
+    CHECK_NEAR(f.grip.y, 0.15f, 0.02f);       // where the hand is
+    CHECK_NEAR(f.length, 1.85f, 0.02f);       // grip to tip
+    // Held at the other end, the other way round.
+    const Vec3 other{0, 1.9f, 0};
+    WeaponFrame g = FindWeaponFrame(pts, &other);
+    CHECK(g.blade.y < -0.99f);
+    CHECK_NEAR(g.grip.y, 1.9f, 0.02f);
+}
+
 TEST(HandFrameFromItsShape) {
     // A hand from the wrist at the origin out along +X (0.05 to 0.2), 0.08 wide along Z and 0.03
     // thick along Y: its palm's way is Y.
